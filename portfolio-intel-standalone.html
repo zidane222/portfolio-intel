@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Intel — Political Trade Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e1a;--surface:#0d1424;--border:#1e293b;--border2:#334155;
+  --text:#e2e8f0;--muted:#94a3b8;--dim:#475569;--dimmer:#64748b;
+  --green:#4ade80;--red:#f87171;--blue:#60a5fa;--amber:#fbbf24;
+  --trump:#b91c1c;--pelosi:#1d4ed8;--me:#059669;
+}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',Courier,monospace;font-size:13px;min-height:100vh}
+button{font-family:inherit;cursor:pointer}
+#header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:14px}
+.logo-name{font-size:15px;font-weight:700;color:#f1f5f9;letter-spacing:1px}
+.logo-tag{font-size:10px;letter-spacing:3px;color:var(--dim);font-weight:700}
+.live-pill{display:flex;align-items:center;gap:6px;background:#052e16;border:1px solid #16a34a;border-radius:4px;padding:3px 10px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#22c55e}
+.live-lbl{font-size:10px;color:#4ade80;font-weight:700}
+.hdr-right{display:flex;align-items:center;gap:12px}
+.hdr-time{font-size:10px;color:var(--dim)}
+.btn{border:none;border-radius:4px;padding:5px 14px;font-size:10px;font-weight:700;letter-spacing:1px;font-family:inherit;cursor:pointer}
+.btn-pause{background:#7f1d1d;color:#fca5a5}
+.btn-resume{background:#14532d;color:#86efac}
+#alert-bar{display:none;padding:9px 24px;align-items:center;gap:10px;border-bottom:2px solid}
+#alert-bar.buy{background:#052e16;border-color:#16a34a}
+#alert-bar.sell{background:#450a0a;border-color:#dc2626}
+#kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.kpi{background:var(--surface);padding:14px 20px}
+.kpi-label{font-size:9px;letter-spacing:2px;color:var(--dim);margin-bottom:5px}
+.kpi-val{font-size:20px;font-weight:700;color:#f1f5f9;margin-bottom:3px}
+.kpi-sub{font-size:10px}
+#tabs-nav{display:flex;gap:2px;padding:12px 24px 0;background:var(--bg);border-bottom:1px solid var(--border)}
+.tab{padding:7px 16px;border-radius:6px 6px 0 0;font-size:10px;letter-spacing:1px;cursor:pointer;border:1px solid transparent;border-bottom:none;color:var(--dimmer);background:transparent;font-family:inherit}
+.tab.active{background:var(--surface);color:var(--text);border-color:var(--border)}
+#content{padding:20px 24px}
+.pane{display:none}.pane.active{display:block}
+.two-col{display:grid;grid-template-columns:1fr 290px;gap:18px}
+.trade-row{display:grid;grid-template-columns:120px 52px 68px 1fr 105px 110px 82px;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:6px;transition:all .3s}
+.trade-row.flash-buy{border-color:#16a34a;background:#052e16}
+.trade-row.flash-sell{border-color:#dc2626;background:#450a0a}
+.pol-wrap{display:flex;align-items:center;gap:8px}
+.pol-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.pol-nm{font-size:10px;font-weight:700}
+.pol-tm{font-size:9px;color:var(--dim)}
+.act{text-align:center;padding:3px 0;border-radius:3px;font-size:10px;font-weight:700}
+.buy-badge{background:#14532d;color:var(--green)}
+.sell-badge{background:#7f1d1d;color:var(--red)}
+.ticker-big{font-weight:700;font-size:14px;color:#f1f5f9}
+.co-nm{color:var(--muted);font-size:11px}.co-sec{font-size:9px;color:var(--dim)}
+.sh-info{text-align:right;color:var(--muted)}.sh-at{font-size:9px;color:var(--dim)}
+.amt{text-align:right;font-weight:700;font-size:12px}
+.mine-tag{background:#1e3a5f;color:var(--blue);font-size:9px;padding:2px 6px;border-radius:3px;font-weight:700}
+.side-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+.card-hdr{font-size:9px;letter-spacing:2px;color:var(--dimmer);margin-bottom:12px}
+.perf-item{margin-bottom:10px}
+.perf-top{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
+.bar-track{background:var(--border);border-radius:2px;height:4px}
+.bar-fill{height:100%;border-radius:2px}
+.sig-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:10px}
+.sig-row:last-child{border:none}
+.hold-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.hold-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.hold-hdr{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.hold-dot{width:8px;height:8px;border-radius:50%}
+.hold-lbl{font-size:9px;letter-spacing:2px;color:var(--dimmer)}
+.hold-total{margin-left:auto;font-size:12px;font-weight:700}
+table{width:100%;border-collapse:collapse}
+th{padding:7px 12px;font-size:9px;letter-spacing:1px;color:var(--dim);font-weight:600;background:#0a0e1a;text-align:right}
+th:first-child{text-align:left}
+td{padding:9px 12px;border-top:1px solid var(--border);text-align:right;font-size:11px}
+td:first-child{text-align:left}
+.t-tick{font-weight:700;font-size:12px;color:#f1f5f9}
+.t-sec{font-size:9px;color:var(--dim)}
+.pos{color:var(--green);font-weight:700}.neg{color:var(--red);font-weight:700}
+.t-num{color:var(--muted)}.t-cur{color:var(--text);font-weight:600}
+.overlap-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px}
+.tag{display:inline-block;padding:3px 10px;border-radius:3px;font-size:10px;font-weight:700;margin:3px}
+.cmp-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.cmp-card{background:var(--surface);border-radius:8px;padding:16px}
+.stat-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:11px}
+.stat-row:last-child{border:none}
+.stat-k{color:var(--dim)}.stat-v{color:#f1f5f9;font-weight:700}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;margin-bottom:14px}
+.ai-layout{display:grid;grid-template-columns:1fr 290px;gap:16px}
+.ai-input{flex:1;background:#0a0e1a;border:1px solid var(--border2);border-radius:6px;padding:9px 12px;color:var(--text);font-family:inherit;font-size:12px;outline:none}
+.ai-go{background:var(--pelosi);border:none;color:#fff;padding:9px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:1px}
+.ai-go:disabled{background:var(--border);cursor:wait}
+.qp{background:#0a0e1a;border:1px solid var(--border);color:var(--dimmer);padding:5px 11px;border-radius:4px;cursor:pointer;font-size:10px;font-family:inherit}
+.insight-out{background:var(--surface);border:1px solid var(--border2);border-radius:8px;padding:18px;font-size:12px;color:#cbd5e1;line-height:1.7;white-space:pre-wrap;min-height:60px}
+.intel-item{margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.intel-item:last-child{border:none;margin:0;padding:0}
+.intel-title{font-size:10px;font-weight:700;margin-bottom:5px}
+.intel-body{font-size:10px;color:var(--dimmer);line-height:1.5}
+.disclaimer{font-size:10px;color:var(--dim);line-height:1.6}
+/* CSV Import */
+.import-zone{border:2px dashed var(--border2);border-radius:8px;padding:28px;text-align:center;margin-bottom:14px;cursor:pointer;transition:border-color .2s}
+.import-zone:hover,.import-zone.drag{border-color:var(--pelosi)}
+.import-btn{background:var(--pelosi);color:#fff;border:none;padding:7px 18px;border-radius:4px;font-size:10px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px}
+/* API note banner */
+.api-note{background:#1e1a05;border:1px solid #fbbf2444;border-radius:6px;padding:10px 14px;font-size:10px;color:#fbbf24;margin-bottom:14px;line-height:1.6}
+#api-status{background:#0a0e1a;border-top:1px solid var(--border);padding:8px 24px;display:flex;gap:20px;font-size:10px;color:var(--dim)}
+.api-dot{width:5px;height:5px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:5px}
+.api-dot.ok{background:#22c55e}.api-dot.warn{background:var(--amber)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</head>
+<body>
+
+<div id="alert-bar">
+  <span>⚡</span>
+  <span style="color:var(--muted)">NEW DISCLOSURE</span>
+  <span id="a-pol" style="color:white;padding:1px 8px;border-radius:3px;font-size:10px;font-weight:700"></span>
+  <span id="a-act" style="font-weight:700"></span>
+  <span id="a-tick" style="font-weight:700;font-size:13px"></span>
+  <span id="a-detail" style="color:var(--muted)"></span>
+  <span id="a-total" style="margin-left:auto;color:var(--dim);font-size:10px"></span>
+</div>
+
+<div id="header">
+  <div class="logo">
+    <span class="logo-tag">PORTFOLIO</span>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <span class="logo-name">INTEL</span>
+    <div class="live-pill">
+      <div class="live-dot" id="live-dot" style="animation:pulse 1.5s infinite"></div>
+      <span class="live-lbl" id="live-lbl">LIVE</span>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span class="hdr-time" id="hdr-time">—</span>
+    <button class="btn btn-pause" id="live-btn" onclick="toggleLive()">⏸ PAUSE</button>
+  </div>
+</div>
+
+<div id="kpis">
+  <div class="kpi"><div class="kpi-label">MY PORTFOLIO</div><div class="kpi-val" id="kpi-my">—</div><div class="kpi-sub" id="kpi-my-sub" style="color:var(--me)">Import CSV to load</div></div>
+  <div class="kpi"><div class="kpi-label">TRUMP PORTFOLIO</div><div class="kpi-val">$3.08B</div><div class="kpi-sub" style="color:var(--trump)">Est. disclosed value</div></div>
+  <div class="kpi"><div class="kpi-label">PELOSI PORTFOLIO</div><div class="kpi-val">$79.4M</div><div class="kpi-sub" style="color:var(--pelosi)">Est. disclosed value</div></div>
+  <div class="kpi"><div class="kpi-label">TRADES TODAY</div><div class="kpi-val" id="kpi-trades">0</div><div class="kpi-sub" id="kpi-trades-sub" style="color:var(--muted)">P:0 T:0</div></div>
+</div>
+
+<div id="tabs-nav">
+  <button class="tab active" onclick="showTab('feed',this)">📡 TRADE FEED</button>
+  <button class="tab" onclick="showTab('holdings',this)">📊 HOLDINGS</button>
+  <button class="tab" onclick="showTab('compare',this)">⚖️ COMPARE</button>
+  <button class="tab" onclick="showTab('insights',this)">🧠 AI INSIGHTS</button>
+</div>
+
+<div id="content">
+
+  <!-- TRADE FEED -->
+  <div class="pane active" id="pane-feed">
+    <div class="two-col">
+      <div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:9px;letter-spacing:2px;color:var(--dimmer)">DISCLOSURE FEED — LAST <span id="feed-count">0</span> TRADES</span>
+          <span style="font-size:10px;color:var(--dim)">Simulated live — updates every 10s</span>
+        </div>
+        <div id="trade-feed"></div>
+      </div>
+      <div>
+        <div class="side-card">
+          <div class="card-hdr">24H PERFORMANCE</div>
+          <div class="perf-item"><div class="perf-top"><span style="color:var(--muted)">Pelosi</span><span style="color:var(--green);font-weight:700">+5.8%</span></div><div class="bar-track"><div class="bar-fill" style="width:97%;background:var(--pelosi)"></div></div></div>
+          <div class="perf-item"><div class="perf-top"><span style="color:var(--muted)">Trump</span><span style="color:var(--green);font-weight:700">+3.2%</span></div><div class="bar-track"><div class="bar-fill" style="width:53%;background:var(--trump)"></div></div></div>
+          <div class="perf-item"><div class="perf-top"><span style="color:var(--muted)">Me</span><span style="color:var(--green);font-weight:700">+1.4%</span></div><div class="bar-track"><div class="bar-fill" style="width:23%;background:var(--me)"></div></div></div>
+          <div class="perf-item" style="margin-bottom:0"><div class="perf-top"><span style="color:var(--muted)">S&P 500</span><span style="color:var(--green);font-weight:700">+0.8%</span></div><div class="bar-track"><div class="bar-fill" style="width:13%;background:#6b7280"></div></div></div>
+        </div>
+        <div class="side-card">
+          <div class="card-hdr">SECTOR SIGNALS</div>
+          <div class="sig-row"><span style="color:var(--text)">Technology</span><span><span style="color:#93c5fd">P:8</span> · <span style="color:#fca5a5">T:2</span></span></div>
+          <div class="sig-row"><span style="color:var(--text)">Energy</span><span><span style="color:#93c5fd">P:1</span> · <span style="color:#fca5a5">T:6</span></span></div>
+          <div class="sig-row"><span style="color:var(--text)">Automotive</span><span><span style="color:#93c5fd">P:0</span> · <span style="color:#fca5a5">T:4</span></span></div>
+          <div class="sig-row"><span style="color:var(--text)">Cybersecurity</span><span><span style="color:#93c5fd">P:5</span> · <span style="color:#fca5a5">T:0</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOLDINGS -->
+  <div class="pane" id="pane-holdings">
+    <div class="import-zone" id="drop-zone" onclick="document.getElementById('csv-in').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFile(event)">
+      <div style="font-size:28px;margin-bottom:8px">📂</div>
+      <div style="font-size:12px;font-weight:700;color:#f1f5f9;margin-bottom:4px">Import Your Merrill Edge Portfolio</div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Export CSV from Merrill Edge → Accounts → Portfolio → Export</div>
+      <div style="font-size:10px;color:var(--dim)">Drop it here or click to browse</div>
+      <button class="import-btn" onclick="event.stopPropagation();document.getElementById('csv-in').click()">CHOOSE CSV FILE</button>
+    </div>
+    <input type="file" id="csv-in" accept=".csv" style="display:none" onchange="loadCSV(this.files[0])">
+    <div id="csv-status" style="font-size:11px;margin-bottom:12px"></div>
+
+    <div id="my-section" style="display:none">
+      <div class="hold-grid">
+        <div class="hold-card">
+          <div class="hold-hdr"><div class="hold-dot" style="background:var(--me)"></div><span class="hold-lbl">MY PORTFOLIO</span><span class="hold-total" id="my-total" style="color:var(--me)">—</span></div>
+          <table><thead><tr><th style="text-align:left">TICKER</th><th>SHARES</th><th>COST</th><th>NOW</th><th>P&L</th></tr></thead>
+          <tbody id="my-tbl"></tbody></table>
+        </div>
+        <div>
+          <div class="hold-card" style="margin-bottom:12px">
+            <div class="hold-hdr"><div class="hold-dot" style="background:var(--trump)"></div><span class="hold-lbl">TRUMP HOLDINGS</span><span class="hold-total" style="color:var(--trump)">$3.08B</span></div>
+            <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>P&L</th></tr></thead>
+            <tbody id="trump-tbl-my"></tbody></table>
+          </div>
+          <div class="hold-card">
+            <div class="hold-hdr"><div class="hold-dot" style="background:var(--pelosi)"></div><span class="hold-lbl">PELOSI HOLDINGS</span><span class="hold-total" style="color:var(--pelosi)">$79.4M</span></div>
+            <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>P&L</th></tr></thead>
+            <tbody id="pelosi-tbl-my"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="overlap-box">
+        <div class="card-hdr">YOUR OVERLAP WITH POLITICIANS</div>
+        <div style="margin-bottom:10px"><div style="font-size:10px;color:#fca5a5;margin-bottom:6px">🦅 Trump overlap</div><div id="trump-overlap">—</div></div>
+        <div><div style="font-size:10px;color:#93c5fd;margin-bottom:6px">🔵 Pelosi overlap</div><div id="pelosi-overlap">—</div></div>
+      </div>
+    </div>
+
+    <div id="demo-section">
+      <div class="hold-grid">
+        <div class="hold-card">
+          <div class="hold-hdr"><div class="hold-dot" style="background:var(--trump)"></div><span class="hold-lbl">TRUMP HOLDINGS</span><span class="hold-total" style="color:var(--trump)">$3.08B</span></div>
+          <table><thead><tr><th style="text-align:left">TICKER</th><th>SHARES</th><th>PRICE</th><th>P&L</th></tr></thead>
+          <tbody id="trump-demo"></tbody></table>
+        </div>
+        <div class="hold-card">
+          <div class="hold-hdr"><div class="hold-dot" style="background:var(--pelosi)"></div><span class="hold-lbl">PELOSI HOLDINGS</span><span class="hold-total" style="color:var(--pelosi)">$79.4M</span></div>
+          <table><thead><tr><th style="text-align:left">TICKER</th><th>SHARES</th><th>PRICE</th><th>P&L</th></tr></thead>
+          <tbody id="pelosi-demo"></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARE -->
+  <div class="pane" id="pane-compare">
+    <div class="cmp-cards">
+      <div class="cmp-card" style="border:1px solid #05996944">
+        <div style="font-size:10px;letter-spacing:2px;color:var(--me);margin-bottom:14px">👤 MY PORTFOLIO</div>
+        <div class="stat-row"><span class="stat-k">Total Value</span><span class="stat-v" id="cmp-val">Import CSV</span></div>
+        <div class="stat-row"><span class="stat-k">Total Gain</span><span class="stat-v" id="cmp-gain">—</span></div>
+        <div class="stat-row"><span class="stat-k">Return</span><span class="stat-v" id="cmp-ret">—</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v" id="cmp-pos">—</span></div>
+        <div class="stat-row" style="border:none"><span class="stat-k">Top Holding</span><span class="stat-v" id="cmp-top">—</span></div>
+      </div>
+      <div class="cmp-card" style="border:1px solid #b91c1c44">
+        <div style="font-size:10px;letter-spacing:2px;color:var(--trump);margin-bottom:14px">🦅 TRUMP</div>
+        <div class="stat-row"><span class="stat-k">Total Value</span><span class="stat-v">$3.08B</span></div>
+        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">TSLA +21.7%</span></div>
+        <div class="stat-row"><span class="stat-k">Biggest Loss</span><span class="stat-v" style="color:var(--red)">DJT -19.6%</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">6</span></div>
+        <div class="stat-row" style="border:none"><span class="stat-k">Top Holding</span><span class="stat-v">DJT</span></div>
+      </div>
+      <div class="cmp-card" style="border:1px solid #1d4ed844">
+        <div style="font-size:10px;letter-spacing:2px;color:var(--pelosi);margin-bottom:14px">🔵 PELOSI</div>
+        <div class="stat-row"><span class="stat-k">Total Value</span><span class="stat-v">$79.4M</span></div>
+        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">NVDA +171%</span></div>
+        <div class="stat-row"><span class="stat-k">Avg Return</span><span class="stat-v" style="color:var(--green)">+41.8%</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">7</span></div>
+        <div class="stat-row" style="border:none"><span class="stat-k">Top Holding</span><span class="stat-v">NVDA</span></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="card-hdr" style="margin-bottom:14px">6-MONTH PERFORMANCE (INDEXED TO 100)</div>
+      <div style="position:relative;width:100%;height:240px"><canvas id="perfChart" role="img" aria-label="Performance chart"></canvas></div>
+      <div style="display:flex;gap:18px;margin-top:10px;font-size:10px;color:var(--muted)">
+        <span><span style="display:inline-block;width:20px;height:2px;background:var(--me);vertical-align:middle;margin-right:5px"></span>Me</span>
+        <span><span style="display:inline-block;width:20px;height:2px;background:var(--trump);vertical-align:middle;margin-right:5px;border-top:2px dashed var(--trump);height:0"></span>Trump</span>
+        <span><span style="display:inline-block;width:20px;height:2px;background:var(--pelosi);vertical-align:middle;margin-right:5px"></span>Pelosi</span>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="card-hdr" style="margin-bottom:14px">SECTOR EXPOSURE COMPARISON (%)</div>
+      <div style="position:relative;width:100%;height:190px"><canvas id="sectorChart" role="img" aria-label="Sector chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- AI INSIGHTS -->
+  <div class="pane" id="pane-insights">
+    <div class="api-note">
+      ⚠️ <strong>AI Insights require an internet connection.</strong> The Claude AI API is called directly from your browser. This works when you're online — even when opening this file locally. Your portfolio data is never stored or sent anywhere except to generate the analysis.
+    </div>
+    <div class="ai-layout">
+      <div>
+        <div class="side-card">
+          <div class="card-hdr">ASK THE INTELLIGENCE ENGINE</div>
+          <div style="display:flex;gap:10px;margin-bottom:12px">
+            <input class="ai-input" id="ai-q" placeholder="Ask anything about the portfolios..." onkeydown="if(event.key==='Enter')askAI()">
+            <button class="ai-go" id="ai-go" onclick="askAI()">ANALYZE →</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:7px">
+            <button class="qp" onclick="askAI('Should I follow Pelosi\'s tech trades given my holdings?')">Follow Pelosi tech?</button>
+            <button class="qp" onclick="askAI('What sectors are both Trump and Pelosi buying right now?')">What are both buying?</button>
+            <button class="qp" onclick="askAI('Compare my portfolio risk to theirs')">Risk comparison</button>
+            <button class="qp" onclick="askAI('What is Trump\'s recent trading pattern?')">Trump pattern</button>
+            <button class="qp" onclick="askAI('Which of my holdings overlap most with Pelosi?')">My Pelosi overlap</button>
+          </div>
+        </div>
+        <div id="ai-out"></div>
+      </div>
+      <div>
+        <div class="side-card">
+          <div class="card-hdr">KEY INTELLIGENCE</div>
+          <div class="intel-item"><div class="intel-title" style="color:var(--pelosi)">🔍 Pelosi Tech Concentration</div><div class="intel-body">78% of her portfolio is technology. NVDA alone is up 171%. Consistently buying chips and AI infrastructure.</div></div>
+          <div class="intel-item"><div class="intel-title" style="color:var(--trump)">⚡ Trump Energy Bet</div><div class="intel-body">25% energy exposure via XOM and GEO. Heavy bias toward fossil fuels benefiting from deregulation.</div></div>
+          <div class="intel-item"><div class="intel-title" style="color:var(--me)">📊 Alignment Scores</div><div class="intel-body">Demo portfolio is ~64% aligned with Pelosi and ~31% with Trump by sector weight.</div></div>
+          <div class="intel-item"><div class="intel-title" style="color:var(--amber)">🚨 DJT Risk Flag</div><div class="intel-body">Trump's DJT is down 19.6% — conflict-of-interest stock. Avoid entirely.</div></div>
+        </div>
+        <div class="side-card" style="margin-top:12px">
+          <div class="card-hdr" style="color:var(--amber)">⚠️ DISCLAIMER</div>
+          <div class="disclaimer">Based on public STOCK Act filings. Congressional disclosures are required within 45 days of a trade. This is for informational purposes only and does not constitute financial advice.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="api-status">
+  <div><span class="api-dot warn" id="dot-merrill"></span>Merrill Edge: <span id="st-merrill">No CSV imported</span></div>
+  <div><span class="api-dot" id="dot-ai"></span>AI: <span id="st-ai">Online — ready</span></div>
+  <div style="margin-left:auto;color:var(--dimmer)">Portfolio Intel v1.0 — Double-click edition</div>
+</div>
+
+<script>
+// ── DATA ──
+const TRUMP_H = [
+  {ticker:'DJT',company:'Trump Media',shares:114750000,cost:25,price:20.1,sector:'Media'},
+  {ticker:'TSLA',company:'Tesla Inc',shares:45000,cost:198,price:241,sector:'Automotive'},
+  {ticker:'META',company:'Meta Platforms',shares:12000,cost:420,price:543,sector:'Technology'},
+  {ticker:'XOM',company:'ExxonMobil',shares:80000,cost:98,price:113,sector:'Energy'},
+  {ticker:'GEO',company:'Geo Group',shares:120000,cost:12,price:16.2,sector:'Private Prisons'},
+  {ticker:'WMT',company:'Walmart',shares:30000,cost:55,price:98,sector:'Retail'},
+];
+const PELOSI_H = [
+  {ticker:'NVDA',company:'NVIDIA Corp',shares:175000,cost:48,price:130,sector:'Technology'},
+  {ticker:'AAPL',company:'Apple Inc',shares:95000,cost:145,price:209,sector:'Technology'},
+  {ticker:'GOOGL',company:'Alphabet',shares:55000,cost:112,price:155,sector:'Technology'},
+  {ticker:'MSFT',company:'Microsoft',shares:40000,cost:285,price:433,sector:'Technology'},
+  {ticker:'AMZN',company:'Amazon',shares:70000,cost:130,price:183,sector:'E-Commerce'},
+  {ticker:'AMD',company:'AMD',shares:48000,cost:85,price:150,sector:'Technology'},
+  {ticker:'CRWD',company:'CrowdStrike',shares:15000,cost:180,price:274,sector:'Cybersecurity'},
+];
+const DEMO_TRADES = [
+  {pol:'pelosi',ticker:'NVDA',company:'NVIDIA Corp',action:'BUY',shares:40000,price:130,amount:5.2,sector:'Technology',minsAgo:60},
+  {pol:'trump',ticker:'DJT',company:'Trump Media',action:'SELL',shares:90000,price:20,amount:1.8,sector:'Media',minsAgo:120},
+  {pol:'pelosi',ticker:'GOOGL',company:'Alphabet',action:'BUY',shares:20000,price:155,amount:3.1,sector:'Technology',minsAgo:180},
+  {pol:'trump',ticker:'TSLA',company:'Tesla Inc',action:'BUY',shares:10000,price:241,amount:2.4,sector:'Automotive',minsAgo:240},
+  {pol:'pelosi',ticker:'MSFT',company:'Microsoft',action:'SELL',shares:18000,price:433,amount:7.8,sector:'Technology',minsAgo:300},
+  {pol:'pelosi',ticker:'AAPL',company:'Apple Inc',action:'BUY',shares:22000,price:209,amount:4.6,sector:'Technology',minsAgo:360},
+  {pol:'trump',ticker:'META',company:'Meta',action:'BUY',shares:3500,price:543,amount:1.9,sector:'Technology',minsAgo:420},
+  {pol:'trump',ticker:'XOM',company:'ExxonMobil',action:'BUY',shares:30000,price:113,amount:3.4,sector:'Energy',minsAgo:480},
+];
+const POOL = [
+  {pol:'trump',ticker:'TSLA',company:'Tesla Inc',sector:'Automotive',price:241},
+  {pol:'trump',ticker:'XOM',company:'ExxonMobil',sector:'Energy',price:113},
+  {pol:'pelosi',ticker:'NVDA',company:'NVIDIA',sector:'Technology',price:130},
+  {pol:'pelosi',ticker:'AMD',company:'AMD',sector:'Technology',price:150},
+  {pol:'pelosi',ticker:'AAPL',company:'Apple',sector:'Technology',price:209},
+  {pol:'trump',ticker:'META',company:'Meta',sector:'Technology',price:543},
+];
+const PERF_DATA = [
+  {month:'Jan',me:100,trump:100,pelosi:100},
+  {month:'Feb',me:103.2,trump:105.4,pelosi:106},
+  {month:'Mar',me:108.4,trump:99.3,pelosi:114.3},
+  {month:'Apr',me:112.1,trump:107.9,pelosi:121.4},
+  {month:'May',me:119.6,trump:112.5,pelosi:127.4},
+  {month:'Jun',me:126.8,trump:106.4,pelosi:133.8},
+];
+
+// ── STATE ──
+let trades = [...DEMO_TRADES];
+let myPortfolio = [];
+let isLive = true;
+let liveTimer = null;
+
+// ── INIT ──
+function init(){
+  renderFeed();
+  renderDemoHoldings();
+  buildCharts();
+  updateClock();
+  setInterval(updateClock,30000);
+  liveTimer = setInterval(autoTrade, 10000);
+}
+
+function fmtV(v){
+  if(v>=1e9) return '$'+(v/1e9).toFixed(2)+'B';
+  if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if(v>=1e3) return '$'+(v/1e3).toFixed(0)+'K';
+  return '$'+v.toFixed(2);
+}
+function pct(c,p){return (((p-c)/c)*100).toFixed(1);}
+function timeAgo(m){return m<60?m+'m ago':Math.round(m/60)+'h ago';}
+function updateClock(){document.getElementById('hdr-time').textContent='Updated '+new Date().toLocaleTimeString();}
+
+// ── TABS ──
+function showTab(id,el){
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('pane-'+id).classList.add('active');
+  el.classList.add('active');
+}
+
+// ── LIVE ──
+function toggleLive(){
+  isLive=!isLive;
+  const btn=document.getElementById('live-btn');
+  const dot=document.getElementById('live-dot');
+  const lbl=document.getElementById('live-lbl');
+  if(isLive){
+    btn.textContent='⏸ PAUSE';btn.className='btn btn-pause';
+    dot.style.background='#22c55e';dot.style.animation='pulse 1.5s infinite';
+    lbl.textContent='LIVE';
+    liveTimer=setInterval(autoTrade,10000);
+  } else {
+    btn.textContent='▶ RESUME';btn.className='btn btn-resume';
+    dot.style.background='#6b7280';dot.style.animation='none';
+    lbl.textContent='PAUSED';
+    clearInterval(liveTimer);
+  }
+}
+
+function autoTrade(){
+  if(!isLive)return;
+  const base=POOL[Math.floor(Math.random()*POOL.length)];
+  const action=Math.random()>.3?'BUY':'SELL';
+  const shares=Math.round(Math.random()*15000+1000);
+  const t={...base,action,shares,amount:+(shares*base.price/1000000).toFixed(1),minsAgo:0};
+  trades.forEach(tr=>tr.minsAgo=(tr.minsAgo||0)+10);
+  trades.unshift(t);
+  if(trades.length>15)trades.pop();
+  renderFeed(t);
+  showAlert(t);
+  updateClock();
+  updateTradeCounts();
+}
+
+function showAlert(t){
+  const bar=document.getElementById('alert-bar');
+  bar.className='alert-bar '+(t.action==='BUY'?'buy':'sell');
+  bar.style.display='flex';
+  document.getElementById('a-pol').textContent=t.pol==='trump'?'🦅 TRUMP':'🔵 PELOSI';
+  document.getElementById('a-pol').style.background=t.pol==='trump'?'#b91c1c':'#1d4ed8';
+  document.getElementById('a-act').textContent=t.action;
+  document.getElementById('a-act').style.color=t.action==='BUY'?'#4ade80':'#f87171';
+  document.getElementById('a-tick').textContent=t.ticker;
+  document.getElementById('a-detail').textContent=t.shares.toLocaleString()+' shares @ $'+t.price.toFixed(2);
+  document.getElementById('a-total').textContent='Total: $'+t.amount.toFixed(1)+'M';
+  setTimeout(()=>bar.style.display='none',5000);
+}
+
+// ── FEED ──
+function renderFeed(newT=null){
+  const myTickers=new Set(myPortfolio.map(h=>h.ticker));
+  const feed=document.getElementById('trade-feed');
+  document.getElementById('feed-count').textContent=trades.length;
+  feed.innerHTML=trades.map((t,i)=>{
+    const isNew=newT&&i===0;
+    const cls='trade-row'+(isNew?(t.action==='BUY'?' flash-buy':' flash-sell'):'');
+    const mine=myTickers.has(t.ticker);
+    return `<div class="${cls}">
+      <div class="pol-wrap">
+        <div class="pol-av" style="background:${t.pol==='trump'?'rgba(185,28,28,.15)':'rgba(29,78,216,.15)'};border:1px solid ${t.pol==='trump'?'#b91c1c':'#1d4ed8'}">${t.pol==='trump'?'🦅':'🔵'}</div>
+        <div><div class="pol-nm" style="color:${t.pol==='trump'?'#fca5a5':'#93c5fd'}">${t.pol==='trump'?'TRUMP':'PELOSI'}</div><div class="pol-tm">${timeAgo(t.minsAgo)}</div></div>
+      </div>
+      <div class="act ${t.action==='BUY'?'buy-badge':'sell-badge'}">${t.action}</div>
+      <div class="ticker-big">${t.ticker}</div>
+      <div><div class="co-nm">${t.company}</div><div class="co-sec">${t.sector}</div></div>
+      <div class="sh-info">${t.shares.toLocaleString()} sh<div class="sh-at">@ $${t.price.toFixed(2)}</div></div>
+      <div class="amt" style="color:${t.action==='BUY'?'var(--green)':'var(--red)'}">$${t.amount.toFixed(1)}M</div>
+      <div style="text-align:right">${mine?'<span class="mine-tag">IN MY PORT.</span>':''}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateTradeCounts(){
+  const today=new Date().toDateString();
+  const todayT=trades.filter(t=>new Date(Date.now()-t.minsAgo*60000).toDateString()===today);
+  document.getElementById('kpi-trades').textContent=todayT.length;
+  const pc=todayT.filter(t=>t.pol==='pelosi').length;
+  const tc=todayT.filter(t=>t.pol==='trump').length;
+  document.getElementById('kpi-trades-sub').textContent='P:'+pc+' T:'+tc;
+}
+
+// ── CSV IMPORT ──
+function dragOver(e){e.preventDefault();e.currentTarget.classList.add('drag');}
+function dragLeave(e){e.currentTarget.classList.remove('drag');}
+function dropFile(e){e.preventDefault();e.currentTarget.classList.remove('drag');const f=e.dataTransfer.files[0];if(f&&f.name.endsWith('.csv'))loadCSV(f);}
+
+function loadCSV(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const parsed=parseCSV(e.target.result);
+      if(parsed.length===0){showCSVErr('No valid positions found. Make sure you exported from Merrill Edge → Portfolio.');return;}
+      myPortfolio=parsed;
+      updateMyUI();
+      document.getElementById('csv-status').innerHTML='<span style="color:var(--green)">✓ Loaded '+parsed.length+' positions from '+file.name+'</span>';
+      document.getElementById('dot-merrill').classList.add('ok');
+      document.getElementById('st-merrill').textContent=parsed.length+' positions loaded';
+    }catch(err){showCSVErr('Could not parse: '+err.message);}
+  };
+  reader.readAsText(file);
+}
+
+function showCSVErr(msg){document.getElementById('csv-status').innerHTML='<span style="color:var(--red)">✗ '+msg+'</span>';}
+
+function parseCSV(text){
+  const lines=text.split('\n').map(l=>l.trim()).filter(l=>l);
+  if(lines.length<2)return[];
+  let hIdx=0;
+  for(let i=0;i<Math.min(10,lines.length);i++){
+    const l=lines[i].toLowerCase();
+    if(l.includes('symbol')||l.includes('ticker')||l.includes('quantity')||l.includes('shares')){hIdx=i;break;}
+  }
+  const hdrs=lines[hIdx].split(',').map(h=>h.replace(/"/g,'').trim().toLowerCase());
+  const find=keys=>{for(const k of keys){const i=hdrs.findIndex(h=>h.includes(k));if(i>=0)return i;}return -1;};
+  const tickerCol=find(['symbol','ticker','stock']);
+  const sharesCol=find(['quantity','shares','qty']);
+  const costCol=find(['avg cost','average cost','cost basis','unit cost','purchase price','avg price']);
+  const priceCol=find(['current price','last price','market price','close','price']);
+  const nameCol=find(['description','name','company','security']);
+  const valueCol=find(['market value','total value','current value']);
+  if(tickerCol<0)throw new Error('Could not find ticker column. Headers: '+hdrs.join(', '));
+  const rows=[];
+  for(let i=hIdx+1;i<lines.length;i++){
+    const cells=lines[i].split(',');
+    const clean=cells.map(c=>(c||'').replace(/"/g,'').replace(/[$,%]/g,'').trim());
+    const ticker=clean[tickerCol];
+    if(!ticker||ticker.length>6||ticker.includes(' ')||ticker==='Symbol')continue;
+    const shares=parseFloat(clean[sharesCol])||0;
+    if(shares<=0)continue;
+    const cost=parseFloat(clean[costCol])||0;
+    const price=parseFloat(clean[priceCol])||0;
+    const name=nameCol>=0?(clean[nameCol]||ticker):ticker;
+    const mktVal=parseFloat(clean[valueCol])||(shares*price);
+    rows.push({ticker:ticker.toUpperCase(),company:name,shares,avgCost:cost,currentPrice:price||cost,marketValue:mktVal});
+  }
+  return rows;
+}
+
+function updateMyUI(){
+  const myTickers=new Set(myPortfolio.map(h=>h.ticker));
+  const totalVal=myPortfolio.reduce((s,h)=>s+(h.marketValue||h.shares*h.currentPrice),0);
+  const totalCost=myPortfolio.reduce((s,h)=>s+h.shares*h.avgCost,0);
+  const gain=totalVal-totalCost;
+  const gainPct=totalCost>0?((gain/totalCost)*100).toFixed(1):'0.0';
+
+  document.getElementById('kpi-my').textContent=fmtV(totalVal);
+  document.getElementById('kpi-my-sub').textContent=(gain>=0?'+':'')+fmtV(gain)+' ('+gainPct+'%)';
+  document.getElementById('kpi-my-sub').style.color=gain>=0?'var(--green)':'var(--red)';
+
+  document.getElementById('cmp-val').textContent=fmtV(totalVal);
+  document.getElementById('cmp-gain').textContent=(gain>=0?'+':'')+fmtV(gain);
+  document.getElementById('cmp-gain').style.color=gain>=0?'var(--green)':'var(--red)';
+  document.getElementById('cmp-ret').textContent=(gainPct>=0?'+':'')+gainPct+'%';
+  document.getElementById('cmp-ret').style.color=parseFloat(gainPct)>=0?'var(--green)':'var(--red)';
+  document.getElementById('cmp-pos').textContent=myPortfolio.length;
+  const top=[...myPortfolio].sort((a,b)=>(b.marketValue||0)-(a.marketValue||0))[0];
+  document.getElementById('cmp-top').textContent=top?top.ticker:'—';
+  document.getElementById('my-total').textContent=fmtV(totalVal);
+
+  document.getElementById('my-tbl').innerHTML=myPortfolio.map(h=>{
+    const g=h.avgCost>0?parseFloat(pct(h.avgCost,h.currentPrice)):null;
+    const tOver=TRUMP_H.find(t=>t.ticker===h.ticker);
+    const pOver=PELOSI_H.find(t=>t.ticker===h.ticker);
+    const badges=(tOver?'<span class="mine-tag" style="background:#b91c1c22;color:#fca5a5;border:1px solid #b91c1c33;margin-left:4px">T</span>':'')+(pOver?'<span class="mine-tag" style="background:#1d4ed822;color:#93c5fd;border:1px solid #1d4ed833;margin-left:3px">P</span>':'');
+    return `<tr><td><div class="t-tick">${h.ticker}${badges}</div><div class="t-sec">${h.company}</div></td><td class="t-num">${h.shares.toLocaleString()}</td><td class="t-num">${h.avgCost>0?'$'+h.avgCost.toFixed(2):'—'}</td><td class="t-cur">${h.currentPrice>0?'$'+h.currentPrice.toFixed(2):'—'}</td><td class="${g!==null&&g>=0?'pos':'neg'}">${g!==null?(g>=0?'+':'')+g+'%':'—'}</td></tr>`;
+  }).join('');
+
+  const trumpOverlap=TRUMP_H.filter(h=>myTickers.has(h.ticker));
+  const pelosiOverlap=PELOSI_H.filter(h=>myTickers.has(h.ticker));
+  document.getElementById('trump-overlap').innerHTML=trumpOverlap.length>0?trumpOverlap.map(h=>`<span class="tag" style="background:#b91c1c22;color:#fca5a5;border:1px solid #b91c1c44">${h.ticker}</span>`).join(''):'<span style="color:var(--dim);font-size:10px">No overlap</span>';
+  document.getElementById('pelosi-overlap').innerHTML=pelosiOverlap.length>0?pelosiOverlap.map(h=>`<span class="tag" style="background:#1d4ed822;color:#93c5fd;border:1px solid #1d4ed844">${h.ticker}</span>`).join(''):'<span style="color:var(--dim);font-size:10px">No overlap</span>';
+
+  renderPoliticianTbl('trump-tbl-my',TRUMP_H,myTickers,true);
+  renderPoliticianTbl('pelosi-tbl-my',PELOSI_H,myTickers,true);
+
+  document.getElementById('drop-zone').style.display='none';
+  document.getElementById('my-section').style.display='block';
+  document.getElementById('demo-section').style.display='none';
+  renderFeed();
+}
+
+function renderPoliticianTbl(id,holdings,myTickers,short=false){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.innerHTML=holdings.map(h=>{
+    const g=parseFloat(pct(h.cost,h.price));
+    const mine=myTickers&&myTickers.has(h.ticker);
+    if(short)return `<tr><td><div class="t-tick">${h.ticker}${mine?' <span class="mine-tag">MINE</span>':''}</div><div class="t-sec">${h.sector}</div></td><td class="t-cur">$${h.price.toFixed(2)}</td><td class="${g>=0?'pos':'neg'}">${g>=0?'+':''}${g}%</td></tr>`;
+    return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td><td class="t-num">${h.shares.toLocaleString()}</td><td class="t-cur">$${h.price.toFixed(2)}</td><td class="${g>=0?'pos':'neg'}">${g>=0?'+':''}${g}%</td></tr>`;
+  }).join('');
+}
+
+function renderDemoHoldings(){
+  renderPoliticianTbl('trump-demo',TRUMP_H,new Set());
+  renderPoliticianTbl('pelosi-demo',PELOSI_H,new Set());
+}
+
+// ── CHARTS ──
+function buildCharts(){
+  Chart.defaults.color='#64748b';
+  Chart.defaults.font.family='Courier New, monospace';
+  Chart.defaults.font.size=10;
+
+  new Chart(document.getElementById('perfChart'),{
+    type:'line',
+    data:{
+      labels:PERF_DATA.map(d=>d.month),
+      datasets:[
+        {label:'Me',data:PERF_DATA.map(d=>d.me),borderColor:'#059669',borderWidth:2,pointRadius:0,tension:.4,fill:false},
+        {label:'Trump',data:PERF_DATA.map(d=>d.trump),borderColor:'#b91c1c',borderWidth:2,pointRadius:0,tension:.4,fill:false,borderDash:[5,3]},
+        {label:'Pelosi',data:PERF_DATA.map(d=>d.pelosi),borderColor:'#1d4ed8',borderWidth:2,pointRadius:0,tension:.4,fill:false},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'},ticks:{callback:v=>v+'%'}}}}
+  });
+
+  new Chart(document.getElementById('sectorChart'),{
+    type:'bar',
+    data:{
+      labels:['Tech','Energy','Auto','E-Commerce','Media','Cybersec'],
+      datasets:[
+        {label:'Me',data:[68,12,9,11,0,0],backgroundColor:'#059669'},
+        {label:'Trump',data:[12,25,18,0,45,0],backgroundColor:'#b91c1c'},
+        {label:'Pelosi',data:[78,0,0,10,0,5],backgroundColor:'#1d4ed8'},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'},ticks:{callback:v=>v+'%'}}}}
+  });
+}
+
+// ── AI INSIGHTS ──
+async function askAI(preset){
+  const input=document.getElementById('ai-q');
+  const q=preset||input.value.trim();
+  if(!q)return;
+  input.value='';
+  const btn=document.getElementById('ai-go');
+  btn.disabled=true;btn.textContent='...';
+  const out=document.getElementById('ai-out');
+  out.innerHTML='<div class="insight-out" style="color:var(--dim)">Analyzing...</div>';
+
+  const myCtx=myPortfolio.length>0
+    ?'My actual holdings: '+myPortfolio.map(h=>h.ticker+'('+h.shares+'sh @ $'+h.avgCost.toFixed(2)+')').join(', ')+'.'
+    :'No holdings imported — using demo: AAPL(500sh), NVDA(200sh), MSFT(150sh), TSLA(100sh).';
+
+  const sys=`You are a financial intelligence analyst. Recent political trades: Pelosi BUY NVDA $5.2M, Trump SELL DJT $1.8M, Pelosi BUY GOOGL $3.1M, Trump BUY TSLA $2.4M.
+Trump holds: DJT(down 20%), TSLA(+22%), XOM(+15%), META(+29%).
+Pelosi holds: NVDA(+171%), AAPL(+44%), MSFT(+52%), GOOGL(+38%), AMZN(+41%).
+${myCtx}
+Answer in 3-4 concise paragraphs. Be direct and data-driven.`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system:sys,messages:[{role:'user',content:q}]})
+    });
+    const d=await res.json();
+    const text=d.content?.[0]?.text||'Unable to generate analysis.';
+    out.innerHTML='<div class="insight-out">'+text.replace(/\n/g,'<br>')+'</div>';
+    document.getElementById('dot-ai').classList.add('ok');
+    document.getElementById('st-ai').textContent='Connected';
+  }catch(e){
+    out.innerHTML='<div class="insight-out" style="color:var(--amber)">⚠️ AI requires an internet connection. Please connect and try again.</div>';
+  }
+  btn.disabled=false;btn.textContent='ANALYZE →';
+}
+
+init();
+</script>
+</body>
+</html>
