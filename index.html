@@ -199,10 +199,7 @@ td:first-child{text-align:left}
   </div>
 </div>
 
-<!-- DATA SOURCE BANNER -->
-<div id="data-banner">
-  <span id="banner-text">Connecting to live data...</span>
-</div>
+<div id="data-banner" style="display:none"><span id="banner-text"></span></div>
 
 <!-- KPIs -->
 <div id="kpis">
@@ -377,9 +374,7 @@ td:first-child{text-align:left}
 
   <!-- AI TAB -->
   <div class="pane" id="pane-insights">
-    <div class="card" style="margin-bottom:8px;background:#1e1a05;border-color:#fbbf2433">
-      <div style="font-size:10px;color:#fbbf24;line-height:1.6">⚠️ AI Insights require internet. Claude analyzes your portfolio vs politician trades in real time.</div>
-    </div>
+
     <div class="card">
       <div class="card-hdr">ASK THE INTELLIGENCE ENGINE</div>
       <input class="ai-input" id="ai-q" placeholder="Ask anything about the portfolios..." onkeydown="if(event.key==='Enter')askAI()">
@@ -478,17 +473,45 @@ async function init() {
   updateClock();
   setInterval(updateClock, 60000);
 
-  if (BACKEND_URL) {
-    // Try to load real data
-    await loadRealData();
-    setInterval(loadRealData, 5 * 60 * 1000); // refresh every 5 min
-  } else {
-    // Demo mode
-    showBanner('⚠️ Demo mode — deploy Railway backend for real politician trade data', true);
-    renderFeed();
-    demoTimer = setInterval(demoAutoTrade, 10000);
-    loadYahooPricesDirect(); // try Yahoo direct even without backend
+  // Load real data directly — no backend needed
+  await loadRealTrades();
+  await loadYahooPricesDirect();
+
+  // Refresh every 5 minutes
+  setInterval(loadRealTrades, 5 * 60 * 1000);
+  setInterval(loadYahooPricesDirect, 5 * 60 * 1000);
+}
+
+// Load real politician trades directly from government sources
+async function loadRealTrades() {
+  try {
+    document.getElementById('feed-source').innerHTML = '<span style="color:var(--dim)">Loading real trades...</span>';
+    const res = await fetch('https://housestockwatcher.com/api');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.length > 0) {
+        trades = data.slice(0, 50).map(t => ({
+          pol: guessPol(t.representative),
+          rep: t.representative || '',
+          ticker: (t.ticker || '').toUpperCase().replace('--',''),
+          company: t.asset_description || t.ticker || '',
+          type: t.type || '',
+          amount: t.amount || '',
+          isReal: true,
+          minsAgo: getMinutesAgo(t.transaction_date),
+        })).filter(t => t.ticker && t.ticker.length > 0 && t.ticker.length <= 6);
+        document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
+        document.getElementById('kpi-trades').textContent = trades.length;
+        document.getElementById('kpi-trades-sub').textContent = 'Real STOCK Act filings';
+        document.getElementById('dot-data').classList.add('ok');
+        document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
+      }
+    }
+  } catch(e) {
+    // CORS may block direct fetch — show demo trades
+    document.getElementById('feed-source').textContent = 'Demo — CORS blocked direct API';
   }
+  renderFeed();
 }
 
 // ═══════════════════════════════════════
@@ -544,7 +567,6 @@ async function loadRealData() {
   } catch(e) {
     showBanner('⚠️ Backend offline — showing demo data. Set up Railway to get real trades.', true);
     renderFeed();
-    if (!demoTimer) demoTimer = setInterval(demoAutoTrade, 10000);
     loadYahooPricesDirect();
   }
 }
@@ -905,13 +927,13 @@ ${myCtx}
 Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,system:sys,messages:[{role:'user',content:q}]})
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_OPENAI_KEY_HERE'},
+      body: JSON.stringify({model:'gpt-4o-mini',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
     });
     const d = await res.json();
-    const text = d.content?.[0]?.text || 'Unable to generate analysis.';
+    const text = d.choices?.[0]?.message?.content || 'Unable to generate analysis.';
     out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
     document.getElementById('dot-ai').classList.add('ok');
   } catch(e) {
