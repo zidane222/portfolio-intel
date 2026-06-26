@@ -927,10 +927,10 @@ ${myCtx}
 Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_OPENAI_KEY_HERE'},
-      body: JSON.stringify({model:'gpt-4o-mini',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_DEEPSEEK_KEY_HERE'},
+      body: JSON.stringify({model:'deepseek-chat',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
     });
     const d = await res.json();
     const text = d.choices?.[0]?.message?.content || 'Unable to generate analysis.';
