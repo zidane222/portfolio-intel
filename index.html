@@ -929,7 +929,7 @@ Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
   try {
     const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_DEEPSEEK_KEY_HERE'},
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer sk-a8e52c14ca304bef98f0ce14c4971198'},
       body: JSON.stringify({model:'deepseek-chat',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
     });
     const d = await res.json();
