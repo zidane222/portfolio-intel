@@ -571,28 +571,32 @@ async function loadRealData() {
   }
 }
 
-// Try to get prices directly from Yahoo (works without backend)
+// Get prices through Render backend (avoids CORS)
 async function loadYahooPricesDirect() {
-  const tickers = ['VOO','QQQM','GLD','NVDA','AAPL','TSLA','META','MSFT','XOM','DJT'];
-  for (const ticker of tickers) {
-    try {
-      const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`, {
-        headers: {'User-Agent': 'Mozilla/5.0'}
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const meta = data?.chart?.result?.[0]?.meta;
-        if (meta) {
-          const price = meta.regularMarketPrice;
-          const prev = meta.previousClose || price;
-          livePrices[ticker] = {
-            price: price,
-            change_pct: prev ? ((price-prev)/prev*100) : 0
-          };
-        }
-      }
-    } catch(e) {}
+  try {
+    const res = await fetch(BACKEND_URL + '/api/prices');
+    if (res.ok) {
+      const data = await res.json();
+      livePrices = data.prices || {};
+      updatePriceDisplays();
+      return;
+    }
+  } catch(e) {
+    console.log('Backend price fetch failed:', e);
   }
+  // If backend fails show static prices
+  livePrices = {
+    'VOO':  {price: 680.79, change_pct: 0},
+    'QQQM': {price: 294.75, change_pct: 0},
+    'GLD':  {price: 377.32, change_pct: 0},
+    'NVDA': {price: 130.00, change_pct: 0},
+    'AAPL': {price: 209.00, change_pct: 0},
+    'TSLA': {price: 241.00, change_pct: 0},
+    'META': {price: 543.00, change_pct: 0},
+    'MSFT': {price: 433.00, change_pct: 0},
+    'XOM':  {price: 113.00, change_pct: 0},
+    'DJT':  {price: 20.10,  change_pct: 0},
+  };
   updatePriceDisplays();
 }
 
@@ -929,7 +933,7 @@ Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
   try {
     const res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer sk-a8e52c14ca304bef98f0ce14c4971198'},
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_DEEPSEEK_KEY_HERE'},
       body: JSON.stringify({model:'deepseek-chat',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
     });
     const d = await res.json();
