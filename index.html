@@ -420,7 +420,7 @@ td:first-child{text-align:left}
 
 // YOUR RAILWAY BACKEND URL — update after deploying Railway
 // Leave as empty string to use demo mode
-const BACKEND_URL = '';  // e.g. 'https://portfolio-intel-production.up.railway.app'
+const BACKEND_URL = 'https://portfolio-intel-escf.onrender.com';  // e.g. 'https://portfolio-intel-production.up.railway.app'
 
 const TRUMP_H = [
   {ticker:'DJT',company:'Trump Media',shares:114750000,cost:25,price:20.1,sector:'Media'},
@@ -929,7 +929,7 @@ Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer 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'},
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer YOUR_OPENAI_KEY_HERE'},
       body: JSON.stringify({model:'gpt-4o-mini',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
     });
     const d = await res.json();
