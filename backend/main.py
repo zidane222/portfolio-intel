@@ -96,18 +96,34 @@ def senate_trades():
         'count': len(cache['senate_trades']['data'])
     })
 
-# ── ALL TRADES COMBINED ──
+# ── ALL TRADES COMBINED (reads from GitHub-hosted trades.json updated daily) ──
+TRADES_JSON_URL = 'https://raw.githubusercontent.com/zidane222/portfolio-intel/main/trades.json'
+
 @app.route('/api/all-trades')
 def all_trades():
-    house = house_trades().get_json()
-    senate = senate_trades().get_json()
-    all_t = house.get('trades', []) + senate.get('trades', [])
-    all_t.sort(key=lambda x: x.get('date', ''), reverse=True)
+    if is_stale('house_trades'):
+        try:
+            res = requests.get(TRADES_JSON_URL, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                cache['house_trades']['data'] = data.get('trades', [])
+                cache['house_trades']['updated'] = datetime.now()
+                return jsonify({
+                    'trades': data.get('trades', [])[:150],
+                    'house_count': data.get('house_count', 0),
+                    'senate_count': data.get('senate_count', 0),
+                    'updated': data.get('updated', str(datetime.now()))
+                })
+        except Exception as e:
+            print(f'Trades fetch error: {e}')
+
+    # Return cached data if available
+    cached = cache['house_trades']['data']
     return jsonify({
-        'trades': all_t[:150],
-        'house_count': house.get('count', 0),
-        'senate_count': senate.get('count', 0),
-        'updated': str(datetime.now())
+        'trades': cached[:150],
+        'house_count': len([t for t in cached if t.get('source') == 'house']),
+        'senate_count': len([t for t in cached if t.get('source') == 'senate']),
+        'updated': str(cache['house_trades']['updated'])
     })
 
 # ── STOCK PRICES (Yahoo Finance) ──
