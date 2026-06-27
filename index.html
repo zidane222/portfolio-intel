@@ -476,10 +476,12 @@ async function init() {
   // Load real data directly — no backend needed
   await loadRealTrades();
   await loadYahooPricesDirect();
+  await loadNews();
 
   // Refresh every 5 minutes
   setInterval(loadRealTrades, 5 * 60 * 1000);
   setInterval(loadYahooPricesDirect, 5 * 60 * 1000);
+  setInterval(loadNews, 10 * 60 * 1000);
 }
 
 // Load real politician trades through Render backend
@@ -597,6 +599,23 @@ async function loadYahooPricesDirect() {
     'DJT':  {price: 20.10,  change_pct: 0},
   };
   updatePriceDisplays();
+}
+
+// ═══════════════════════════════════════
+//  NEWS LOADER
+// ═══════════════════════════════════════
+async function loadNews() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/news');
+    if (res.ok) {
+      const data = await res.json();
+      renderNews(data.articles || []);
+    }
+  } catch(e) {
+    console.log('News fetch failed:', e);
+    document.getElementById('news-list').innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">News unavailable — backend offline</div>';
+    document.getElementById('news-source').textContent = 'Offline';
+  }
 }
 
 function updatePriceDisplays() {
@@ -941,7 +960,7 @@ Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
     out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
     document.getElementById('dot-ai').classList.add('ok');
   } catch(e) {
-    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable — make sure DEEPSEEK_API_KEY is set on Render.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
+    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable — check DEEPSEEK_API_KEY on Render.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
   }
   btn.disabled = false; btn.textContent = 'ANALYZE →';
 }
