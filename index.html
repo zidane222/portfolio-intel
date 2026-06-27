@@ -820,13 +820,15 @@ function parseCSV(text) {
   const nameCol   = find(['description','name','company','security']);
   const valueCol  = find(['market value','total value','current value']);
   if (tickerCol < 0) throw new Error('Could not find ticker column');
-  const SKIP_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX']);
+  // Known cash/money market tickers
+  const CASH_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX']);
   const rows = [];
   for (let i = hIdx + 1; i < lines.length; i++) {
     const cells = lines[i].split(',');
     const clean = cells.map(c => (c||'').replace(/"/g,'').replace(/[$,%]/g,'').trim());
     const ticker = (clean[tickerCol] || '').toUpperCase();
-    if (!ticker || ticker.length > 6 || /^\d+$/.test(ticker) || ticker === 'SYMBOL' || SKIP_TICKERS.has(ticker)) continue;
+    // Skip blank, numeric-only account numbers, header repeats
+    if (!ticker || /^\d+$/.test(ticker) || ticker === 'SYMBOL') continue;
     const shares = parseFloat(clean[sharesCol]) || 0;
     if (shares <= 0) continue;
     const price   = parseFloat(clean[priceCol]) || 0;
@@ -834,32 +836,42 @@ function parseCSV(text) {
     const totalCost = parseFloat(clean[costCol]) || 0;
     const avgCost   = (totalCost > 0 && shares > 0) ? Math.round((totalCost / shares) * 100) / 100 : price;
     const name = nameCol >= 0 ? (clean[nameCol] || ticker) : ticker;
-    rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal });
+    const isCash = CASH_TICKERS.has(ticker) || ticker.length > 6;
+    rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal, isCash });
   }
   return rows;
 }
 
 function updateMyUI() {
   const myTickers = new Set(myPortfolio.map(h => h.ticker));
-  const totalVal = myPortfolio.reduce((s,h) => s + (h.marketValue || h.shares * h.currentPrice), 0);
-  const totalCost = myPortfolio.reduce((s,h) => s + h.shares * h.avgCost, 0);
-  const gain = totalVal - totalCost;
-  const gainPct = totalCost > 0 ? ((gain/totalCost)*100).toFixed(1) : '0.0';
+  const stocks = myPortfolio.filter(h => !h.isCash);
+  const cash   = myPortfolio.filter(h => h.isCash);
 
+  const totalVal   = myPortfolio.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const stockVal   = stocks.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const cashVal    = cash.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const totalCost  = stocks.reduce((s,h) => s + h.shares * h.avgCost, 0);
+  const gain       = stockVal - totalCost;
+  const gainPct    = totalCost > 0 ? ((gain/totalCost)*100).toFixed(1) : '0.0';
+
+  // KPI shows total portfolio
   document.getElementById('kpi-my').textContent = fmtV(totalVal);
-  document.getElementById('kpi-my-sub').textContent = (gain>=0?'+':'') + fmtV(gain) + ' (' + gainPct + '%)';
-  document.getElementById('kpi-my-sub').style.color = gain>=0?'var(--green)':'var(--red)';
+  document.getElementById('kpi-my-sub').textContent = 'Stocks: ' + fmtV(stockVal) + ' · Cash: ' + fmtV(cashVal);
+  document.getElementById('kpi-my-sub').style.color = 'var(--me)';
+
+  // Compare tab
   document.getElementById('cmp-val').textContent = fmtV(totalVal);
   document.getElementById('cmp-gain').textContent = (gain>=0?'+':'') + fmtV(gain);
   document.getElementById('cmp-gain').style.color = gain>=0?'var(--green)':'var(--red)';
-  document.getElementById('cmp-ret').textContent = (parseFloat(gainPct)>=0?'+':'') + gainPct + '%';
+  document.getElementById('cmp-ret').textContent = (parseFloat(gainPct)>=0?'+':'') + gainPct + '% (stocks)';
   document.getElementById('cmp-ret').style.color = parseFloat(gainPct)>=0?'var(--green)':'var(--red)';
-  document.getElementById('cmp-pos').textContent = myPortfolio.length;
-  const top = [...myPortfolio].sort((a,b) => (b.marketValue||0)-(a.marketValue||0))[0];
+  document.getElementById('cmp-pos').textContent = stocks.length + ' stocks · ' + cash.length + ' cash';
+  const top = [...stocks].sort((a,b) => (b.marketValue||0)-(a.marketValue||0))[0];
   document.getElementById('cmp-top').textContent = top ? top.ticker : '—';
   document.getElementById('my-total').textContent = fmtV(totalVal);
 
-  document.getElementById('my-tbl').innerHTML = myPortfolio.map(h => {
+  // Holdings table — stocks first, then cash section
+  const stockRows = stocks.map(h => {
     const lp = livePrices[h.ticker];
     const currentPrice = lp ? lp.price : h.currentPrice;
     const g = h.avgCost > 0 ? ((currentPrice - h.avgCost) / h.avgCost * 100).toFixed(1) : null;
@@ -874,6 +886,17 @@ function updateMyUI() {
       <td class="${g!==null&&g>=0?'pos':'neg'}">${g!==null?(g>=0?'+':'')+g+'%':'—'}</td></tr>`;
   }).join('');
 
+  const cashRows = cash.length > 0
+    ? `<tr><td colspan="5" style="padding:8px 10px;font-size:9px;letter-spacing:2px;color:var(--dim);background:var(--bg);font-weight:700">CASH & MONEY MARKET</td></tr>` +
+      cash.map(h => `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.company}</div></td>
+        <td class="t-num">—</td><td class="t-num">—</td>
+        <td class="t-cur">${fmtV(h.marketValue)}</td>
+        <td class="t-num">Cash</td></tr>`).join('')
+    : '';
+
+  document.getElementById('my-tbl').innerHTML = stockRows + cashRows;
+
+  // Overlap
   const trumpOverlap = TRUMP_H.filter(h => myTickers.has(h.ticker));
   const pelosiOverlap = PELOSI_H.filter(h => myTickers.has(h.ticker));
   document.getElementById('trump-overlap').innerHTML = trumpOverlap.length > 0
