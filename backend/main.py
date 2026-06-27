@@ -1,11 +1,8 @@
 """
-Portfolio Intel Backend
-Runs on Railway.app (free tier)
-Fetches real politician trades + stock prices
-No API keys needed
+Portfolio Intel Backend - Render.com free tier
 """
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request as flask_request
 from flask_cors import CORS
 import requests
 import json
@@ -13,16 +10,15 @@ from datetime import datetime
 import os
 
 app = Flask(__name__)
-CORS(app)  # Allow dashboard to call this from any domain
+CORS(app)
 
-# ── Cache to avoid hitting APIs too often ──
 cache = {
     'house_trades': {'data': [], 'updated': None},
     'senate_trades': {'data': [], 'updated': None},
     'prices': {'data': {}, 'updated': None},
     'news': {'data': [], 'updated': None},
 }
-CACHE_MINUTES = 60  # refresh every 60 minutes
+CACHE_MINUTES = 60
 
 def is_stale(key):
     if not cache[key]['updated']:
@@ -30,27 +26,31 @@ def is_stale(key):
     diff = (datetime.now() - cache[key]['updated']).total_seconds() / 60
     return diff > CACHE_MINUTES
 
-# ── HOUSE TRADES (Pelosi etc) ──
+# ── HOUSE TRADES (Capitol Trades API) ──
 @app.route('/api/house-trades')
 def house_trades():
     if is_stale('house_trades'):
         try:
-            res = requests.get('https://housestockwatcher.com/api', timeout=10)
+            res = requests.get(
+                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=house',
+                timeout=10,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
             if res.status_code == 200:
                 data = res.json()
-                # Clean and format
                 trades = []
-                for t in data[:100]:  # last 100 trades
+                for t in (data.get('data') or [])[:100]:
+                    ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--', '')
                     trades.append({
-                        'date': t.get('transaction_date', ''),
-                        'representative': t.get('representative', ''),
-                        'ticker': (t.get('ticker') or '').upper().replace('--', ''),
-                        'type': t.get('type', ''),
-                        'amount': t.get('amount', ''),
-                        'description': t.get('asset_description', ''),
+                        'date': t.get('txDate') or t.get('reportedDate', ''),
+                        'representative': t.get('politician', {}).get('name', ''),
+                        'ticker': ticker,
+                        'type': t.get('txType', ''),
+                        'amount': str(t.get('txValue', '')),
+                        'description': t.get('asset', {}).get('assetName', ticker),
                         'source': 'house'
                     })
-                cache['house_trades']['data'] = trades
+                cache['house_trades']['data'] = [t for t in trades if t['ticker'] and len(t['ticker']) <= 6]
                 cache['house_trades']['updated'] = datetime.now()
         except Exception as e:
             print(f'House trades error: {e}')
@@ -61,12 +61,15 @@ def house_trades():
         'count': len(cache['house_trades']['data'])
     })
 
-# ── SENATE TRADES ──
+# ── SENATE TRADES (GitHub) ──
 @app.route('/api/senate-trades')
 def senate_trades():
     if is_stale('senate_trades'):
         try:
-            res = requests.get('https://senatestockwatcher.com/api', timeout=10)
+            res = requests.get(
+                'https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json',
+                timeout=10
+            )
             if res.status_code == 200:
                 data = res.json()
                 trades = []
@@ -80,7 +83,7 @@ def senate_trades():
                         'description': t.get('asset_description', ''),
                         'source': 'senate'
                     })
-                cache['senate_trades']['data'] = trades
+                cache['senate_trades']['data'] = [t for t in trades if t['ticker'] and len(t['ticker']) <= 6]
                 cache['senate_trades']['updated'] = datetime.now()
         except Exception as e:
             print(f'Senate trades error: {e}')
@@ -97,7 +100,6 @@ def all_trades():
     house = house_trades().get_json()
     senate = senate_trades().get_json()
     all_t = house.get('trades', []) + senate.get('trades', [])
-    # Sort by date descending
     all_t.sort(key=lambda x: x.get('date', ''), reverse=True)
     return jsonify({
         'trades': all_t[:150],
@@ -140,7 +142,7 @@ def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XO
         'updated': str(cache['prices']['updated'])
     })
 
-# ── NEWS (Google News RSS) ──
+# ── NEWS ──
 @app.route('/api/news')
 def news():
     if is_stale('news'):
@@ -158,7 +160,6 @@ def news():
                 res = requests.get(url, timeout=8)
                 if res.status_code != 200:
                     continue
-                # Parse RSS manually (no lxml needed)
                 import re
                 items = re.findall(r'<item>(.*?)</item>', res.text, re.DOTALL)
                 for item in items[:4]:
@@ -189,13 +190,12 @@ def news():
         'count': len(cache['news']['data'])
     })
 
-# ── AI INSIGHTS (DeepSeek via server — key never exposed to browser) ──
+# ── AI INSIGHTS (Groq — free, key set as GROQ_API_KEY env var on Render) ──
 @app.route('/api/ai', methods=['POST'])
 def ai_insights():
-    from flask import request as flask_request
-    api_key = os.environ.get('DEEPSEEK_API_KEY', '')
+    api_key = os.environ.get('GROQ_API_KEY', '')
     if not api_key:
-        return jsonify({'error': 'AI not configured — set DEEPSEEK_API_KEY on Render'}), 503
+        return jsonify({'error': 'AI not configured — set GROQ_API_KEY on Render'}), 503
 
     body = flask_request.get_json()
     if not body or not body.get('question'):
@@ -203,13 +203,13 @@ def ai_insights():
 
     try:
         res = requests.post(
-            'https://api.deepseek.com/chat/completions',
+            'https://api.groq.com/openai/v1/chat/completions',
             headers={
                 'Content-Type': 'application/json',
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'deepseek-chat',
+                'model': 'llama3-8b-8192',
                 'max_tokens': 1000,
                 'messages': [
                     {'role': 'system', 'content': body.get('system', '')},
