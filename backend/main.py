@@ -13,8 +13,7 @@ app = Flask(__name__)
 CORS(app)
 
 cache = {
-    'house_trades': {'data': [], 'updated': None},
-    'senate_trades': {'data': [], 'updated': None},
+    'trades': {'data': {}, 'updated': None},
     'prices': {'data': {}, 'updated': None},
     'news': {'data': [], 'updated': None},
 }
@@ -26,110 +25,35 @@ def is_stale(key):
     diff = (datetime.now() - cache[key]['updated']).total_seconds() / 60
     return diff > CACHE_MINUTES
 
-# ── HOUSE TRADES (Capitol Trades API) ──
-@app.route('/api/house-trades')
-def house_trades():
-    if is_stale('house_trades'):
-        try:
-            res = requests.get(
-                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=house&sortBy=-txDate',
-                timeout=10,
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            if res.status_code == 200:
-                data = res.json()
-                trades = []
-                for t in (data.get('data') or [])[:100]:
-                    ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--', '')
-                    trades.append({
-                        'date': t.get('txDate') or t.get('reportedDate', ''),
-                        'representative': t.get('politician', {}).get('name', ''),
-                        'ticker': ticker,
-                        'type': t.get('txType', ''),
-                        'amount': str(t.get('txValue', '')),
-                        'description': t.get('asset', {}).get('assetName', ticker),
-                        'source': 'house'
-                    })
-                cache['house_trades']['data'] = [t for t in trades if t['ticker'] and len(t['ticker']) <= 6]
-                cache['house_trades']['updated'] = datetime.now()
-        except Exception as e:
-            print(f'House trades error: {e}')
-
-    return jsonify({
-        'trades': cache['house_trades']['data'],
-        'updated': str(cache['house_trades']['updated']),
-        'count': len(cache['house_trades']['data'])
-    })
-
-# ── SENATE TRADES (Capitol Trades API) ──
-@app.route('/api/senate-trades')
-def senate_trades():
-    if is_stale('senate_trades'):
-        try:
-            res = requests.get(
-                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=senate&sortBy=-txDate',
-                timeout=10,
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            if res.status_code == 200:
-                data = res.json()
-                trades = []
-                for t in (data.get('data') or [])[:100]:
-                    ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--', '')
-                    trades.append({
-                        'date': t.get('txDate') or t.get('reportedDate', ''),
-                        'representative': t.get('politician', {}).get('name', ''),
-                        'ticker': ticker,
-                        'type': t.get('txType', ''),
-                        'amount': str(t.get('txValue', '')),
-                        'description': t.get('asset', {}).get('assetName', ticker),
-                        'source': 'senate'
-                    })
-                cache['senate_trades']['data'] = [t for t in trades if t['ticker'] and len(t['ticker']) <= 6]
-                cache['senate_trades']['updated'] = datetime.now()
-        except Exception as e:
-            print(f'Senate trades error: {e}')
-
-    return jsonify({
-        'trades': cache['senate_trades']['data'],
-        'updated': str(cache['senate_trades']['updated']),
-        'count': len(cache['senate_trades']['data'])
-    })
-
-# ── ALL TRADES COMBINED (reads from GitHub-hosted trades.json updated daily) ──
+# ── ALL TRADES (reads from GitHub-hosted trades.json updated daily) ──
 TRADES_JSON_URL = 'https://raw.githubusercontent.com/zidane222/portfolio-intel/main/trades.json'
 
 @app.route('/api/all-trades')
+@app.route('/api/house-trades')
+@app.route('/api/senate-trades')
 def all_trades():
-    if is_stale('house_trades'):
+    if is_stale('trades'):
         try:
             res = requests.get(TRADES_JSON_URL, timeout=10)
             if res.status_code == 200:
                 data = res.json()
-                cache['house_trades']['data'] = data.get('trades', [])
-                cache['house_trades']['updated'] = datetime.now()
-                return jsonify({
-                    'trades': data.get('trades', [])[:150],
-                    'house_count': data.get('house_count', 0),
-                    'senate_count': data.get('senate_count', 0),
-                    'updated': data.get('updated', str(datetime.now()))
-                })
+                cache['trades']['data'] = data
+                cache['trades']['updated'] = datetime.now()
         except Exception as e:
             print(f'Trades fetch error: {e}')
 
-    # Return cached data if available
-    cached = cache['house_trades']['data']
+    data = cache['trades'].get('data', {})
     return jsonify({
-        'trades': cached[:150],
-        'house_count': len([t for t in cached if t.get('source') == 'house']),
-        'senate_count': len([t for t in cached if t.get('source') == 'senate']),
-        'updated': str(cache['house_trades']['updated'])
+        'trades': data.get('trades', [])[:150],
+        'house_count': data.get('house_count', 0),
+        'senate_count': data.get('senate_count', 0),
+        'updated': data.get('updated', str(datetime.now()))
     })
 
 # ── STOCK PRICES (Yahoo Finance) ──
 @app.route('/api/prices')
 @app.route('/api/prices/<tickers>')
-def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XOM,DJT'):
+def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XOM,DJT,INTC,UBER'):
     if is_stale('prices'):
         ticker_list = tickers.split(',')
         price_data = {}
@@ -249,14 +173,7 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'Portfolio Intel API',
-        'endpoints': [
-            '/api/all-trades',
-            '/api/house-trades',
-            '/api/senate-trades',
-            '/api/prices',
-            '/api/news',
-            '/api/ai'
-        ],
+        'endpoints': ['/api/all-trades', '/api/prices', '/api/news', '/api/ai'],
         'updated': str(datetime.now())
     })
 
