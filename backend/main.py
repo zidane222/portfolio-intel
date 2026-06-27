@@ -18,7 +18,7 @@ cache = {
     'prices': {'data': {}, 'updated': None},
     'news': {'data': [], 'updated': None},
 }
-CACHE_MINUTES = 60
+CACHE_MINUTES = 30
 
 def is_stale(key):
     if not cache[key]['updated']:
@@ -32,7 +32,7 @@ def house_trades():
     if is_stale('house_trades'):
         try:
             res = requests.get(
-                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=house',
+                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=house&sortBy=-txDate',
                 timeout=10,
                 headers={'User-Agent': 'Mozilla/5.0'}
             )
@@ -73,7 +73,8 @@ def senate_trades():
             if res.status_code == 200:
                 data = res.json()
                 trades = []
-                for t in data[:100]:
+                data_sorted = sorted(data, key=lambda x: x.get('transaction_date',''), reverse=True)
+                for t in data_sorted[:100]:
                     trades.append({
                         'date': t.get('transaction_date', ''),
                         'representative': t.get('senator', ''),
