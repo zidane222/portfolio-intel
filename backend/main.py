@@ -61,27 +61,28 @@ def house_trades():
         'count': len(cache['house_trades']['data'])
     })
 
-# ── SENATE TRADES (GitHub) ──
+# ── SENATE TRADES (Capitol Trades API) ──
 @app.route('/api/senate-trades')
 def senate_trades():
     if is_stale('senate_trades'):
         try:
             res = requests.get(
-                'https://raw.githubusercontent.com/timothycarambat/senate-stock-watcher-data/master/aggregate/all_transactions.json',
-                timeout=10
+                'https://bff.capitoltrades.com/trades?pageSize=100&chamber=senate&sortBy=-txDate',
+                timeout=10,
+                headers={'User-Agent': 'Mozilla/5.0'}
             )
             if res.status_code == 200:
                 data = res.json()
                 trades = []
-                data_sorted = sorted(data, key=lambda x: x.get('transaction_date',''), reverse=True)
-                for t in data_sorted[:100]:
+                for t in (data.get('data') or [])[:100]:
+                    ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--', '')
                     trades.append({
-                        'date': t.get('transaction_date', ''),
-                        'representative': t.get('senator', ''),
-                        'ticker': (t.get('ticker') or '').upper().replace('--', ''),
-                        'type': t.get('type', ''),
-                        'amount': t.get('amount', ''),
-                        'description': t.get('asset_description', ''),
+                        'date': t.get('txDate') or t.get('reportedDate', ''),
+                        'representative': t.get('politician', {}).get('name', ''),
+                        'ticker': ticker,
+                        'type': t.get('txType', ''),
+                        'amount': str(t.get('txValue', '')),
+                        'description': t.get('asset', {}).get('assetName', ticker),
                         'source': 'senate'
                     })
                 cache['senate_trades']['data'] = [t for t in trades if t['ticker'] and len(t['ticker']) <= 6]
