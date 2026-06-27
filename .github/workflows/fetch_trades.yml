@@ -23,60 +23,83 @@ jobs:
       - name: Scrape House and Senate disclosures
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, re, zipfile, io, xml.etree.ElementTree as ET
+          import requests, json, datetime, re
 
           headers = {
               'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept': 'application/json, text/html, */*',
               'Accept-Language': 'en-US,en;q=0.5',
           }
 
-          all_trades = []
           year = datetime.datetime.now().year
+          all_trades = []
 
-          # ── HOUSE PTR via XML zip ──
+          # ── SENATE eFD - get CSRF then post search ──
           try:
-              url = f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}FD.zip'
-              print(f"Trying House ZIP: {url}")
-              r = requests.get(url, headers=headers, timeout=30)
-              print(f"House ZIP status: {r.status_code}")
-              if r.status_code == 200:
-                  z = zipfile.ZipFile(io.BytesIO(r.content))
-                  xml_files = [f for f in z.namelist() if f.endswith('.xml')]
-                  print(f"Found {len(xml_files)} XML files")
-                  for xml_file in xml_files[:5]:
-                      print(f"XML file: {xml_file}")
-                      content = z.read(xml_file).decode('utf-8', errors='ignore')
-                      print(content[:300])
-          except Exception as e:
-              print(f'House ZIP error: {e}')
+              session = requests.Session()
+              r = session.get('https://efdsearch.senate.gov/search/', headers=headers, timeout=15)
+              print(f"Senate home status: {r.status_code}")
+              # Extract CSRF token
+              csrf = ''
+              for pattern in [r'csrfmiddlewaretoken.*?value=["\']([^"\']+)', r"csrftoken[\"']:\s*[\"']([^\"']+)"]:
+                  m = re.search(pattern, r.text)
+                  if m:
+                      csrf = m.group(1)
+                      print(f"CSRF found: {csrf[:20]}...")
+                      break
+              # Also check cookies
+              if not csrf:
+                  csrf = session.cookies.get('csrftoken', '')
+                  print(f"CSRF from cookie: {csrf[:20] if csrf else 'not found'}")
 
-          # ── HOUSE via search API ──
+              post_headers = {**headers,
+                  'Referer': 'https://efdsearch.senate.gov/search/',
+                  'X-CSRFToken': csrf,
+                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                  'X-Requested-With': 'XMLHttpRequest',
+              }
+              payload = {
+                  'draw': '1', 'columns[0][data]': 'first_name',
+                  'start': '0', 'length': '100',
+                  'search[value]': '', 'search[regex]': 'false',
+                  'report_types[]': '11',
+                  'filer_type': '0',
+                  'submitted_start_date': f'01/01/{year}',
+                  'submitted_end_date': datetime.datetime.now().strftime('%m/%d/%Y'),
+                  'csrfmiddlewaretoken': csrf,
+              }
+              r2 = session.post(
+                  'https://efdsearch.senate.gov/search/report/data/',
+                  data=payload, headers=post_headers, timeout=15
+              )
+              print(f"Senate data status: {r2.status_code}")
+              print(f"Senate data response: {r2.text[:500]}")
+          except Exception as e:
+              print(f'Senate error: {e}')
+
+          # ── HOUSE - find the API endpoint from the JS bundle ──
           try:
-              url = 'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult'
-              r = requests.post(url, headers=headers, data={
-                  'LastName': '', 'State': '', 'District': '',
-                  'FilingYear': str(year), 'FilingType': 'P'
-              }, timeout=15)
-              print(f"\nHouse search status: {r.status_code}")
-              print(f"House search response: {r.text[:500]}")
+              r = requests.get(
+                  'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult',
+                  headers=headers, timeout=15
+              )
+              # Look for API endpoints in JS
+              apis = re.findall(r'["\'](/[a-zA-Z/]+(?:api|search|data|result|ptr)[a-zA-Z/]*)["\']', r.text)
+              print(f"\nHouse API endpoints found: {apis[:10]}")
+              
+              # Try common House API patterns
+              house_apis = [
+                  f'https://disclosures.house.gov/FinancialDisclosure/Search/AjaxSearch',
+                  f'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult/AjaxSearch',
+                  f'https://disclosures.house.gov/api/financialdisclosure',
+              ]
+              for api_url in house_apis:
+                  r2 = requests.post(api_url, headers=headers, json={
+                      'FilingYear': str(year), 'FilingType': 'P', 'State': '', 'District': '', 'LastName': ''
+                  }, timeout=10)
+                  print(f"House API {api_url}: {r2.status_code} - {r2.text[:100]}")
           except Exception as e:
-              print(f'House search error: {e}')
-
-          # ── SENATE via different endpoint ──
-          senate_urls = [
-              'https://efdsearch.senate.gov/search/home/',
-              'https://www.senate.gov/legislative/financial_disclosures.htm',
-              'https://efdsearch.senate.gov/search/',
-          ]
-          for url in senate_urls:
-              try:
-                  r = requests.get(url, headers=headers, timeout=15)
-                  print(f"\nSenate URL: {url}")
-                  print(f"Status: {r.status_code}")
-                  print(f"Response: {r.text[:200]}")
-              except Exception as e:
-                  print(f'Senate error for {url}: {e}')
+              print(f'House error: {e}')
 
           PYEOF
 
