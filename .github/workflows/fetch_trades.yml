@@ -2,8 +2,8 @@ name: Fetch Congress Trades
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # runs daily at 6am UTC
-  workflow_dispatch:       # allows manual trigger
+    - cron: '0 6 * * *'  # daily at 6am UTC
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,78 +17,77 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch trades from Capitol Trades
-        run: |
-          echo "Fetching house trades..."
-          curl -v -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=house&sortBy=-txDate" \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            -H "Referer: https://www.capitoltrades.com/" \
-            -o house_raw.json 2>&1 | tail -5
-          echo "Fetching senate trades..."
-          curl -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=senate&sortBy=-txDate" \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            -H "Referer: https://www.capitoltrades.com/" \
-            -o senate_raw.json
-          echo "House raw:"
-          head -c 200 house_raw.json
-          echo ""
-          echo "Senate raw:"
-          head -c 200 senate_raw.json
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml
 
-      - name: Process and combine trades
+      - name: Scrape government disclosure sites
         run: |
           python3 << 'PYEOF'
-          import json, datetime
+          import requests, json, datetime, re
+          from bs4 import BeautifulSoup
 
-          def parse(path, source):
-              try:
-                  with open(path) as f:
-                      content = f.read()
-                  if not content.strip() or content.startswith('<'):
-                      print(f'{path} returned non-JSON: {content[:100]}')
-                      return []
-                  data = json.loads(content)
-                  trades = []
-                  for t in (data.get('data') or []):
-                      ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--','')
-                      if not ticker or len(ticker) > 6:
-                          continue
-                      trades.append({
-                          'date': t.get('txDate') or t.get('reportedDate', ''),
-                          'representative': t.get('politician', {}).get('name', ''),
-                          'ticker': ticker,
-                          'type': t.get('txType', ''),
-                          'amount': str(t.get('txValue', '')),
-                          'description': t.get('asset', {}).get('assetName', ticker),
-                          'source': source
-                      })
-                  return trades
-              except Exception as e:
-                  print(f'Error parsing {path}: {e}')
-                  return []
-
-          house = parse('house_raw.json', 'house')
-          senate = parse('senate_raw.json', 'senate')
-          all_trades = house + senate
-          all_trades.sort(key=lambda x: x.get('date',''), reverse=True)
-
-          output = {
-              'trades': all_trades[:200],
-              'house_count': len(house),
-              'senate_count': len(senate),
-              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
+          headers = {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': 'application/json, text/html, */*',
           }
-          with open('trades.json', 'w') as f:
-              json.dump(output, f)
-          print(f"Saved {len(all_trades)} trades — house: {len(house)}, senate: {len(senate)}")
+
+          all_trades = []
+
+          # ── SENATE (efdsearch.senate.gov) ──
+          try:
+              session = requests.Session()
+              # Get CSRF token first
+              r = session.get('https://efdsearch.senate.gov/search/', headers=headers, timeout=15)
+              csrf = ''
+              m = re.search(r'csrfmiddlewaretoken["\s]+value="([^"]+)"', r.text)
+              if m:
+                  csrf = m.group(1)
+              
+              payload = {
+                  'draw': '1',
+                  'start': '0', 
+                  'length': '100',
+                  'report_types[]': '11',  # periodic transaction reports
+                  'filer_type': '0',
+                  'submitted_start_date': '01/01/2025',
+                  'submitted_end_date': datetime.datetime.now().strftime('%m/%d/%Y'),
+                  'csrfmiddlewaretoken': csrf,
+              }
+              r2 = session.post(
+                  'https://efdsearch.senate.gov/search/report/data/',
+                  data=payload,
+                  headers={**headers, 'Referer': 'https://efdsearch.senate.gov/search/', 'X-CSRFToken': csrf},
+                  timeout=15
+              )
+              print(f"Senate status: {r2.status_code}")
+              print(f"Senate response: {r2.text[:300]}")
+              if r2.status_code == 200:
+                  data = r2.json()
+                  for row in (data.get('data') or [])[:100]:
+                      # row is typically [name, state, report_type, date, link]
+                      print(f"Senate row: {row}")
+          except Exception as e:
+              print(f'Senate error: {e}')
+
+          # ── HOUSE (disclosures.house.gov) ──
+          try:
+              r = requests.post(
+                  'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult',
+                  headers=headers,
+                  data={'LastName': '', 'State': '', 'District': '', 'FilingYear': '2026', 'FilingType': 'P'},
+                  timeout=15
+              )
+              print(f"House status: {r.status_code}")
+              print(f"House response: {r.text[:300]}")
+          except Exception as e:
+              print(f'House error: {e}')
+
           PYEOF
 
       - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
+          git add trades.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
-          git push
+          git push 2>/dev/null || true
