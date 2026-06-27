@@ -189,6 +189,41 @@ def news():
         'count': len(cache['news']['data'])
     })
 
+# ── AI INSIGHTS (DeepSeek via server — key never exposed to browser) ──
+@app.route('/api/ai', methods=['POST'])
+def ai_insights():
+    from flask import request as flask_request
+    api_key = os.environ.get('DEEPSEEK_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': 'AI not configured — set DEEPSEEK_API_KEY on Render'}), 503
+
+    body = flask_request.get_json()
+    if not body or not body.get('question'):
+        return jsonify({'error': 'Missing question'}), 400
+
+    try:
+        res = requests.post(
+            'https://api.deepseek.com/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            },
+            json={
+                'model': 'deepseek-chat',
+                'max_tokens': 1000,
+                'messages': [
+                    {'role': 'system', 'content': body.get('system', '')},
+                    {'role': 'user', 'content': body.get('question', '')}
+                ]
+            },
+            timeout=30
+        )
+        data = res.json()
+        text = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+        return jsonify({'answer': text})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ── HEALTH CHECK ──
 @app.route('/')
 @app.route('/health')
@@ -201,7 +236,8 @@ def health():
             '/api/house-trades',
             '/api/senate-trades',
             '/api/prices',
-            '/api/news'
+            '/api/news',
+            '/api/ai'
         ],
         'updated': str(datetime.now())
     })
