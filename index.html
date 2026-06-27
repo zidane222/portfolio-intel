@@ -482,34 +482,33 @@ async function init() {
   setInterval(loadYahooPricesDirect, 5 * 60 * 1000);
 }
 
-// Load real politician trades directly from government sources
+// Load real politician trades through Render backend
 async function loadRealTrades() {
   try {
     document.getElementById('feed-source').innerHTML = '<span style="color:var(--dim)">Loading real trades...</span>';
-    const res = await fetch('https://housestockwatcher.com/api');
+    const res = await fetch(BACKEND_URL + '/api/all-trades');
     if (res.ok) {
       const data = await res.json();
-      if (data && data.length > 0) {
-        trades = data.slice(0, 50).map(t => ({
+      if (data.trades && data.trades.length > 0) {
+        trades = data.trades.map(t => ({
           pol: guessPol(t.representative),
           rep: t.representative || '',
           ticker: (t.ticker || '').toUpperCase().replace('--',''),
-          company: t.asset_description || t.ticker || '',
+          company: t.description || t.ticker || '',
           type: t.type || '',
           amount: t.amount || '',
           isReal: true,
-          minsAgo: getMinutesAgo(t.transaction_date),
+          minsAgo: getMinutesAgo(t.date),
         })).filter(t => t.ticker && t.ticker.length > 0 && t.ticker.length <= 6);
         document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
         document.getElementById('kpi-trades').textContent = trades.length;
-        document.getElementById('kpi-trades-sub').textContent = 'Real STOCK Act filings';
+        document.getElementById('kpi-trades-sub').textContent = data.house_count + 'H · ' + data.senate_count + 'S';
         document.getElementById('dot-data').classList.add('ok');
         document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
       }
     }
   } catch(e) {
-    // CORS may block direct fetch — show demo trades
-    document.getElementById('feed-source').textContent = 'Demo — CORS blocked direct API';
+    document.getElementById('feed-source').textContent = 'Backend offline — demo mode';
   }
   renderFeed();
 }
@@ -931,17 +930,18 @@ ${myCtx}
 Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
 
   try {
-    const res = await fetch('https://api.deepseek.com/chat/completions', {
+    const res = await fetch(BACKEND_URL + '/api/ai', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer sk-a8e52c14ca304bef98f0ce14c4971198'},
-      body: JSON.stringify({model:'deepseek-chat',max_tokens:1000,messages:[{role:'system',content:sys},{role:'user',content:q}]})
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({system: sys, question: q})
     });
     const d = await res.json();
-    const text = d.choices?.[0]?.message?.content || 'Unable to generate analysis.';
+    if (d.error) throw new Error(d.error);
+    const text = d.answer || 'Unable to generate analysis.';
     out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
     document.getElementById('dot-ai').classList.add('ok');
   } catch(e) {
-    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI requires internet connection.</div>';
+    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable — make sure DEEPSEEK_API_KEY is set on Render.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
   }
   btn.disabled = false; btn.textContent = 'ANALYZE →';
 }
