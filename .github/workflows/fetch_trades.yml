@@ -1,29 +1,29 @@
 name: Fetch Congress Trades
- 
+
 on:
   schedule:
     - cron: '0 6 * * *'  # runs daily at 6am UTC
   workflow_dispatch:       # allows manual trigger
- 
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
- 
+        uses: actions/checkout@v4
+
       - name: Fetch trades from Capitol Trades
         run: |
           curl -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=house&sortBy=-txDate" \
             -H "User-Agent: Mozilla/5.0" -o house_raw.json
           curl -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=senate&sortBy=-txDate" \
             -H "User-Agent: Mozilla/5.0" -o senate_raw.json
- 
+
       - name: Process and combine trades
         run: |
           python3 << 'PYEOF'
           import json, datetime
- 
+
           def parse(path, source):
               try:
                   with open(path) as f:
@@ -46,12 +46,12 @@ jobs:
               except Exception as e:
                   print(f'Error parsing {path}: {e}')
                   return []
- 
+
           house = parse('house_raw.json', 'house')
           senate = parse('senate_raw.json', 'senate')
           all_trades = house + senate
           all_trades.sort(key=lambda x: x.get('date',''), reverse=True)
- 
+
           output = {
               'trades': all_trades[:200],
               'house_count': len(house),
@@ -62,7 +62,7 @@ jobs:
               json.dump(output, f)
           print(f"Saved {len(all_trades)} trades")
           PYEOF
- 
+
       - name: Commit trades.json
         run: |
           git config user.name "github-actions"
@@ -70,4 +70,3 @@ jobs:
           git add trades.json
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
- 
