@@ -5,19 +5,37 @@ on:
     - cron: '0 6 * * *'  # runs daily at 6am UTC
   workflow_dispatch:       # allows manual trigger
 
+permissions:
+  contents: write
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch trades from Capitol Trades
         run: |
-          curl -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=house&sortBy=-txDate" \
-            -H "User-Agent: Mozilla/5.0" -o house_raw.json
+          echo "Fetching house trades..."
+          curl -v -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=house&sortBy=-txDate" \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            -H "Referer: https://www.capitoltrades.com/" \
+            -o house_raw.json 2>&1 | tail -5
+          echo "Fetching senate trades..."
           curl -s "https://bff.capitoltrades.com/trades?pageSize=200&chamber=senate&sortBy=-txDate" \
-            -H "User-Agent: Mozilla/5.0" -o senate_raw.json
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            -H "Referer: https://www.capitoltrades.com/" \
+            -o senate_raw.json
+          echo "House raw:"
+          head -c 200 house_raw.json
+          echo ""
+          echo "Senate raw:"
+          head -c 200 senate_raw.json
 
       - name: Process and combine trades
         run: |
@@ -27,7 +45,11 @@ jobs:
           def parse(path, source):
               try:
                   with open(path) as f:
-                      data = json.load(f)
+                      content = f.read()
+                  if not content.strip() or content.startswith('<'):
+                      print(f'{path} returned non-JSON: {content[:100]}')
+                      return []
+                  data = json.loads(content)
                   trades = []
                   for t in (data.get('data') or []):
                       ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--','')
@@ -56,11 +78,11 @@ jobs:
               'trades': all_trades[:200],
               'house_count': len(house),
               'senate_count': len(senate),
-              'updated': datetime.datetime.utcnow().isoformat()
+              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
           }
           with open('trades.json', 'w') as f:
               json.dump(output, f)
-          print(f"Saved {len(all_trades)} trades")
+          print(f"Saved {len(all_trades)} trades — house: {len(house)}, senate: {len(senate)}")
           PYEOF
 
       - name: Commit trades.json
