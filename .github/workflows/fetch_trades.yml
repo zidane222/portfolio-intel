@@ -2,7 +2,7 @@ name: Fetch Congress Trades
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # daily at 6am UTC
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -20,67 +20,63 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Scrape government disclosure sites
+      - name: Scrape House and Senate disclosures
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, re
-          from bs4 import BeautifulSoup
+          import requests, json, datetime, re, zipfile, io, xml.etree.ElementTree as ET
 
           headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-              'Accept': 'application/json, text/html, */*',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
           }
 
           all_trades = []
+          year = datetime.datetime.now().year
 
-          # ── SENATE (efdsearch.senate.gov) ──
+          # ── HOUSE PTR via XML zip ──
           try:
-              session = requests.Session()
-              # Get CSRF token first
-              r = session.get('https://efdsearch.senate.gov/search/', headers=headers, timeout=15)
-              csrf = ''
-              m = re.search(r'csrfmiddlewaretoken["\s]+value="([^"]+)"', r.text)
-              if m:
-                  csrf = m.group(1)
-              
-              payload = {
-                  'draw': '1',
-                  'start': '0', 
-                  'length': '100',
-                  'report_types[]': '11',  # periodic transaction reports
-                  'filer_type': '0',
-                  'submitted_start_date': '01/01/2025',
-                  'submitted_end_date': datetime.datetime.now().strftime('%m/%d/%Y'),
-                  'csrfmiddlewaretoken': csrf,
-              }
-              r2 = session.post(
-                  'https://efdsearch.senate.gov/search/report/data/',
-                  data=payload,
-                  headers={**headers, 'Referer': 'https://efdsearch.senate.gov/search/', 'X-CSRFToken': csrf},
-                  timeout=15
-              )
-              print(f"Senate status: {r2.status_code}")
-              print(f"Senate response: {r2.text[:300]}")
-              if r2.status_code == 200:
-                  data = r2.json()
-                  for row in (data.get('data') or [])[:100]:
-                      # row is typically [name, state, report_type, date, link]
-                      print(f"Senate row: {row}")
+              url = f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}FD.zip'
+              print(f"Trying House ZIP: {url}")
+              r = requests.get(url, headers=headers, timeout=30)
+              print(f"House ZIP status: {r.status_code}")
+              if r.status_code == 200:
+                  z = zipfile.ZipFile(io.BytesIO(r.content))
+                  xml_files = [f for f in z.namelist() if f.endswith('.xml')]
+                  print(f"Found {len(xml_files)} XML files")
+                  for xml_file in xml_files[:5]:
+                      print(f"XML file: {xml_file}")
+                      content = z.read(xml_file).decode('utf-8', errors='ignore')
+                      print(content[:300])
           except Exception as e:
-              print(f'Senate error: {e}')
+              print(f'House ZIP error: {e}')
 
-          # ── HOUSE (disclosures.house.gov) ──
+          # ── HOUSE via search API ──
           try:
-              r = requests.post(
-                  'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult',
-                  headers=headers,
-                  data={'LastName': '', 'State': '', 'District': '', 'FilingYear': '2026', 'FilingType': 'P'},
-                  timeout=15
-              )
-              print(f"House status: {r.status_code}")
-              print(f"House response: {r.text[:300]}")
+              url = 'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult'
+              r = requests.post(url, headers=headers, data={
+                  'LastName': '', 'State': '', 'District': '',
+                  'FilingYear': str(year), 'FilingType': 'P'
+              }, timeout=15)
+              print(f"\nHouse search status: {r.status_code}")
+              print(f"House search response: {r.text[:500]}")
           except Exception as e:
-              print(f'House error: {e}')
+              print(f'House search error: {e}')
+
+          # ── SENATE via different endpoint ──
+          senate_urls = [
+              'https://efdsearch.senate.gov/search/home/',
+              'https://www.senate.gov/legislative/financial_disclosures.htm',
+              'https://efdsearch.senate.gov/search/',
+          ]
+          for url in senate_urls:
+              try:
+                  r = requests.get(url, headers=headers, timeout=15)
+                  print(f"\nSenate URL: {url}")
+                  print(f"Status: {r.status_code}")
+                  print(f"Response: {r.text[:200]}")
+              except Exception as e:
+                  print(f'Senate error for {url}: {e}')
 
           PYEOF
 
