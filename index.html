@@ -601,9 +601,8 @@ async function loadYahooPricesDirect() {
   updatePriceDisplays();
 }
 
-// ═══════════════════════════════════════
-//  NEWS LOADER
-// ═══════════════════════════════════════
+
+// ── NEWS LOADER ──
 async function loadNews() {
   try {
     const res = await fetch(BACKEND_URL + '/api/news');
@@ -612,8 +611,7 @@ async function loadNews() {
       renderNews(data.articles || []);
     }
   } catch(e) {
-    console.log('News fetch failed:', e);
-    document.getElementById('news-list').innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">News unavailable — backend offline</div>';
+    document.getElementById('news-list').innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">News unavailable</div>';
     document.getElementById('news-source').textContent = 'Offline';
   }
 }
@@ -817,24 +815,26 @@ function parseCSV(text) {
   const find = keys => { for (const k of keys) { const i = hdrs.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
   const tickerCol = find(['symbol','ticker','stock']);
   const sharesCol = find(['quantity','shares','qty']);
-  const costCol = find(['avg cost','average cost','cost basis','unit cost','purchase price','avg price']);
-  const priceCol = find(['current price','last price','market price','close','price']);
-  const nameCol = find(['description','name','company','security']);
-  const valueCol = find(['market value','total value','current value']);
+  const costCol   = find(['cost basis','avg cost','average cost','unit cost','purchase price','avg price']);
+  const priceCol  = find(['price','current price','last price','market price','close']);
+  const nameCol   = find(['description','name','company','security']);
+  const valueCol  = find(['market value','total value','current value']);
   if (tickerCol < 0) throw new Error('Could not find ticker column');
+  const SKIP_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX']);
   const rows = [];
   for (let i = hIdx + 1; i < lines.length; i++) {
     const cells = lines[i].split(',');
     const clean = cells.map(c => (c||'').replace(/"/g,'').replace(/[$,%]/g,'').trim());
-    const ticker = clean[tickerCol];
-    if (!ticker || ticker.length > 6 || ticker.includes(' ') || ticker === 'Symbol') continue;
+    const ticker = (clean[tickerCol] || '').toUpperCase();
+    if (!ticker || ticker.length > 6 || /^\d+$/.test(ticker) || ticker === 'SYMBOL' || SKIP_TICKERS.has(ticker)) continue;
     const shares = parseFloat(clean[sharesCol]) || 0;
     if (shares <= 0) continue;
-    const cost = parseFloat(clean[costCol]) || 0;
-    const price = parseFloat(clean[priceCol]) || 0;
+    const price   = parseFloat(clean[priceCol]) || 0;
+    const mktVal  = parseFloat(clean[valueCol]) || (shares * price);
+    const totalCost = parseFloat(clean[costCol]) || 0;
+    const avgCost   = (totalCost > 0 && shares > 0) ? Math.round((totalCost / shares) * 100) / 100 : price;
     const name = nameCol >= 0 ? (clean[nameCol] || ticker) : ticker;
-    const mktVal = parseFloat(clean[valueCol]) || (shares * price);
-    rows.push({ ticker: ticker.toUpperCase(), company: name, shares, avgCost: cost, currentPrice: price || cost, marketValue: mktVal });
+    rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal });
   }
   return rows;
 }
@@ -960,7 +960,7 @@ Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
     out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
     document.getElementById('dot-ai').classList.add('ok');
   } catch(e) {
-    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable — check DEEPSEEK_API_KEY on Render.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
+    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
   }
   btn.disabled = false; btn.textContent = 'ANALYZE →';
 }
