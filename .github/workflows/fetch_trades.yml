@@ -1,13 +1,14 @@
-name: Fetch Congress Trades
 
+name: Fetch Congress Trades
+ 
 on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
-
+ 
 permissions:
   contents: write
-
+ 
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -16,66 +17,90 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml
-
-      - name: Fetch House PTR data
+ 
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install chromium
+          playwright install-deps chromium
+ 
+      - name: Scrape Capitol Trades with real browser
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, re, zipfile, io
-          from bs4 import BeautifulSoup
-
-          headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,*/*',
-          }
-
-          year = datetime.datetime.now().year
+          import json, datetime
+          from playwright.sync_api import sync_playwright
+ 
           all_trades = []
-
-          # House PTR XML files are published here
-          try:
-              # Try the FD search API directly
-              r = requests.get(
-                  f'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult?LastName=&State=&District=&FilingYear={year}&FilingType=P',
-                  headers=headers, timeout=15
+ 
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              context = browser.new_context(
+                  user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
               )
-              print(f"FD Search status: {r.status_code}")
-              print(f"FD Search response: {r.text[:300]}")
-          except Exception as e:
-              print(f'FD search error: {e}')
-
-          # Try fetching the XML data directly  
-          for year_try in [year, year-1]:
-              for fname in [f'{year_try}FD', f'FD{year_try}']:
-                  for ext in ['.xml', '.zip']:
-                      url = f'https://disclosures.house.gov/public_disc/financial-pdfs/{year_try}/{fname}{ext}'
+              page = context.new_page()
+ 
+              # Intercept API responses
+              api_data = []
+              def handle_response(response):
+                  if 'capitoltrades.com/trades' in response.url:
                       try:
-                          r = requests.get(url, headers=headers, timeout=15)
-                          print(f"{url}: {r.status_code} ({len(r.content)} bytes)")
-                          if r.status_code == 200:
-                              print(f"Content: {r.text[:200] if ext == '.xml' else 'binary'}")
-                      except Exception as e:
-                          print(f"{url}: error - {e}")
-
-          # Try the clerk.house.gov API
-          try:
-              r = requests.get(
-                  'https://clerk.house.gov/public_disc/financial-pdfs/2026/',
-                  headers=headers, timeout=10
-              )
-              print(f"\nClerk status: {r.status_code}")
-              print(f"Clerk response: {r.text[:300]}")
-          except Exception as e:
-              print(f'Clerk error: {e}')
-
+                          data = response.json()
+                          api_data.append(('trades', data))
+                          print(f"Intercepted: {response.url} - {len(str(data))} bytes")
+                      except:
+                          pass
+ 
+              page.on('response', handle_response)
+ 
+              # Visit Capitol Trades
+              print("Loading Capitol Trades...")
+              page.goto('https://www.capitoltrades.com/trades', wait_until='networkidle', timeout=30000)
+              page.wait_for_timeout(3000)
+ 
+              print(f"Intercepted {len(api_data)} API calls")
+ 
+              # Parse intercepted data
+              for name, data in api_data:
+                  for t in (data.get('data') or []):
+                      ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--','')
+                      if not ticker or len(ticker) > 6:
+                          continue
+                      all_trades.append({
+                          'date': t.get('txDate') or t.get('reportedDate', ''),
+                          'representative': t.get('politician', {}).get('name', ''),
+                          'ticker': ticker,
+                          'type': t.get('txType', ''),
+                          'amount': str(t.get('txValue', '')),
+                          'description': t.get('asset', {}).get('assetName', ticker),
+                          'source': 'house'
+                      })
+ 
+              # If no API data, scrape the HTML
+              if not all_trades:
+                  print("No API data intercepted, trying HTML scrape...")
+                  content = page.content()
+                  print(f"Page content length: {len(content)}")
+                  print(f"First 500 chars: {content[:500]}")
+ 
+              browser.close()
+ 
+          all_trades.sort(key=lambda x: x.get('date',''), reverse=True)
+          output = {
+              'trades': all_trades[:200],
+              'house_count': len(all_trades),
+              'senate_count': 0,
+              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
+          }
+          with open('trades.json', 'w') as f:
+              json.dump(output, f)
+          print(f"Saved {len(all_trades)} trades")
           PYEOF
-
-      - name: Commit
+ 
+      - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
-          git push 2>/dev/null || true
+          git add trades.json
+          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
+          git push
+ 
