@@ -1,106 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Portfolio Intel">
+<title>Portfolio Intel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#080c14;--surface:#0d1424;--card:#111827;--border:#1e293b;--border2:#334155;
+  --text:#e2e8f0;--muted:#94a3b8;--dim:#475569;--dimmer:#64748b;
+  --green:#4ade80;--red:#f87171;--blue:#60a5fa;--amber:#fbbf24;--purple:#a78bfa;
+  --trump:#dc2626;--pelosi:#2563eb;--me:#059669;
+  --radius:8px;--radius-sm:4px;
+}
+html,body{height:100%;overflow-x:hidden}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;font-size:14px}
+button{font-family:inherit;cursor:pointer;border:none;outline:none}
 
-name: Fetch Congress Trades
- 
-on:
-  schedule:
-    - cron: '0 6 * * *'
-  workflow_dispatch:
- 
-permissions:
-  contents: write
- 
-jobs:
-  fetch:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
- 
-      - name: Install Playwright
-        run: |
-          pip install playwright
-          playwright install chromium
-          playwright install-deps chromium
- 
-      - name: Scrape Capitol Trades with real browser
-        run: |
-          python3 << 'PYEOF'
-          import json, datetime
-          from playwright.sync_api import sync_playwright
- 
-          all_trades = []
- 
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              context = browser.new_context(
-                  user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-              )
-              page = context.new_page()
- 
-              # Intercept API responses
-              api_data = []
-              def handle_response(response):
-                  if 'capitoltrades.com/trades' in response.url:
-                      try:
-                          data = response.json()
-                          api_data.append(('trades', data))
-                          print(f"Intercepted: {response.url} - {len(str(data))} bytes")
-                      except:
-                          pass
- 
-              page.on('response', handle_response)
- 
-              # Visit Capitol Trades
-              print("Loading Capitol Trades...")
-              page.goto('https://www.capitoltrades.com/trades', wait_until='networkidle', timeout=30000)
-              page.wait_for_timeout(3000)
- 
-              print(f"Intercepted {len(api_data)} API calls")
- 
-              # Parse intercepted data
-              for name, data in api_data:
-                  for t in (data.get('data') or []):
-                      ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--','')
-                      if not ticker or len(ticker) > 6:
-                          continue
-                      all_trades.append({
-                          'date': t.get('txDate') or t.get('reportedDate', ''),
-                          'representative': t.get('politician', {}).get('name', ''),
-                          'ticker': ticker,
-                          'type': t.get('txType', ''),
-                          'amount': str(t.get('txValue', '')),
-                          'description': t.get('asset', {}).get('assetName', ticker),
-                          'source': 'house'
-                      })
- 
-              # If no API data, scrape the HTML
-              if not all_trades:
-                  print("No API data intercepted, trying HTML scrape...")
-                  content = page.content()
-                  print(f"Page content length: {len(content)}")
-                  print(f"First 500 chars: {content[:500]}")
- 
-              browser.close()
- 
-          all_trades.sort(key=lambda x: x.get('date',''), reverse=True)
-          output = {
-              'trades': all_trades[:200],
-              'house_count': len(all_trades),
-              'senate_count': 0,
-              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
-          }
-          with open('trades.json', 'w') as f:
-              json.dump(output, f)
-          print(f"Saved {len(all_trades)} trades")
-          PYEOF
- 
-      - name: Commit trades.json
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add trades.json
-          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
-          git push
- 
+/* HEADER */
+#header{
+  background:rgba(13,20,36,0.95);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);
+  padding:12px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;
+}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{font-size:18px}
+.logo-text{font-size:16px;font-weight:700;color:#f1f5f9;letter-spacing:-0.3px}
+.logo-sub{font-size:9px;letter-spacing:2px;color:var(--dim);font-weight:600}
+.live-pill{display:flex;align-items:center;gap:5px;background:#052e16;border:1px solid #16a34a33;border-radius:20px;padding:4px 10px}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite}
+.live-lbl{font-size:10px;color:#4ade80;font-weight:700;letter-spacing:1px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ALERT BAR */
+#alert-bar{display:none;padding:10px 16px;align-items:center;gap:8px;border-bottom:2px solid;font-size:12px;flex-wrap:wrap}
+#alert-bar.buy{background:#052e16;border-color:#16a34a}
+#alert-bar.sell{background:#450a0a;border-color:#dc2626}
+#alert-bar.real{background:#1e1b4b;border-color:#6366f1}
+
+/* KPI STRIP */
+#kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+@media(min-width:600px){#kpis{grid-template-columns:repeat(4,1fr)}}
+.kpi{background:var(--surface);padding:12px 14px}
+.kpi-label{font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:4px;font-weight:600}
+.kpi-val{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:2px;line-height:1}
+.kpi-sub{font-size:10px;color:var(--muted)}
+
+/* REAL DATA BANNER */
+#data-banner{display:none;background:#1e1b4b;border-bottom:1px solid #6366f144;padding:8px 16px;font-size:10px;color:#a5b4fc;text-align:center}
+#data-banner.error{background:#450a0a;border-color:#dc262644;color:#fca5a5}
+
+/* TABS */
+#tabs-nav{display:flex;overflow-x:auto;padding:0 16px;background:var(--bg);border-bottom:1px solid var(--border);gap:2px;scrollbar-width:none}
+#tabs-nav::-webkit-scrollbar{display:none}
+.tab{padding:10px 14px;border-radius:var(--radius) var(--radius) 0 0;font-size:10px;letter-spacing:0.5px;cursor:pointer;border:1px solid transparent;border-bottom:none;color:var(--dimmer);background:transparent;white-space:nowrap;font-weight:600}
+.tab.active{background:var(--surface);color:var(--text);border-color:var(--border)}
+
+/* CONTENT */
+#content{padding:14px 16px;max-width:1200px;margin:0 auto}
+.pane{display:none}.pane.active{display:block}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.card-hdr{font-size:9px;letter-spacing:2px;color:var(--dimmer);margin-bottom:12px;font-weight:700}
+
+/* TRADE ROWS */
+.trade-row{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px;transition:all .3s}
+.trade-row.flash-buy{border-color:#16a34a;background:#052e16}
+.trade-row.flash-sell{border-color:#dc2626;background:#450a0a}
+.trade-row.real-trade{border-color:#6366f133;background:#1e1b4b22}
+.trade-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.trade-bottom{display:flex;justify-content:space-between;align-items:center}
+.pol-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.pol-info{flex:1;min-width:0}
+.pol-nm{font-size:10px;font-weight:700}
+.pol-tm{font-size:9px;color:var(--dim)}
+.act-badge{padding:3px 8px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;flex-shrink:0}
+.buy-badge{background:#14532d;color:var(--green)}
+.sell-badge{background:#7f1d1d;color:var(--red)}
+.ticker-nm{font-weight:700;font-size:15px;color:#f1f5f9}
+.co-nm{font-size:10px;color:var(--muted)}
+.trade-amt{font-weight:700;font-size:13px;text-align:right}
+.mine-tag{background:#1e3a5f;color:var(--blue);font-size:8px;padding:2px 5px;border-radius:var(--radius-sm);font-weight:700;margin-left:4px}
+.real-tag{background:#1e1b4b;color:#a5b4fc;font-size:8px;padding:2px 5px;border-radius:var(--radius-sm);font-weight:700;margin-left:4px}
+
+/* GRID LAYOUTS */
+.two-col{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:768px){.two-col{grid-template-columns:1fr 260px}}
+.three-col{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:600px){.three-col{grid-template-columns:repeat(3,1fr)}}
+
+/* HOLDINGS */
+.hold-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:12px}
+.hold-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.hold-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.hold-lbl{font-size:9px;letter-spacing:2px;color:var(--dimmer);font-weight:700}
+.hold-total{margin-left:auto;font-size:13px;font-weight:700}
+table{width:100%;border-collapse:collapse}
+th{padding:6px 10px;font-size:9px;letter-spacing:1px;color:var(--dim);font-weight:600;background:var(--bg);text-align:right}
+th:first-child{text-align:left}
+td{padding:8px 10px;border-top:1px solid var(--border);text-align:right;font-size:11px}
+td:first-child{text-align:left}
+.t-tick{font-weight:700;font-size:12px;color:#f1f5f9}
+.t-sec{font-size:9px;color:var(--dim)}
+.pos{color:var(--green);font-weight:700}.neg{color:var(--red);font-weight:700}
+.t-num{color:var(--muted)}.t-cur{color:var(--text);font-weight:600}
+
+/* IMPORT */
+.import-strip{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px}
+.import-zone{border:2px dashed var(--border2);border-radius:var(--radius);padding:24px;text-align:center;margin-bottom:12px;cursor:pointer;transition:border-color .2s}
+.import-zone:hover{border-color:var(--pelosi)}
+.import-btn{background:var(--pelosi);color:#fff;border:none;padding:7px 16px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;font-family:inherit;cursor:pointer}
+.upload-btn{background:#1e3a5f;color:var(--blue);border:1px solid #1d4ed833;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;font-family:inherit;cursor:pointer}
+
+/* COMPARE */
+.stat-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px}
+.stat-row:last-child{border:none}
+.stat-k{color:var(--dim)}.stat-v{color:#f1f5f9;font-weight:700}
+.chart-wrap{position:relative;width:100%}
+
+/* AI */
+.ai-input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 12px;color:var(--text);font-family:inherit;font-size:13px;outline:none;margin-bottom:8px}
+.ai-go{background:var(--pelosi);color:#fff;padding:10px 20px;border-radius:var(--radius);font-size:11px;font-weight:700;letter-spacing:1px;width:100%}
+.ai-go:disabled{background:var(--border);cursor:wait}
+.qps{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.qp{background:var(--bg);border:1px solid var(--border);color:var(--dimmer);padding:5px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:10px;font-family:inherit}
+.insight-out{background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;font-size:12px;color:#cbd5e1;line-height:1.7;white-space:pre-wrap;min-height:60px}
+
+/* NEWS */
+.news-item{padding:10px 0;border-bottom:1px solid var(--border)}
+.news-item:last-child{border:none}
+.news-title{font-size:12px;color:#f1f5f9;margin-bottom:4px;line-height:1.4}
+.news-meta{font-size:10px;color:var(--dim)}
+.news-link{color:var(--blue);text-decoration:none;font-size:10px}
+
+/* PERF BARS */
+.perf-item{margin-bottom:10px}
+.perf-top{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
+.bar-track{background:var(--border);border-radius:2px;height:4px}
+.bar-fill{height:100%;border-radius:2px;transition:width .5s}
+
+/* OVERLAP */
+.tag{display:inline-block;padding:3px 8px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;margin:2px}
+
+/* STATUS BAR */
+#status-bar{background:var(--bg);border-top:1px solid var(--border);padding:6px 16px;display:flex;gap:16px;font-size:10px;color:var(--dim);flex-wrap:wrap}
+.s-dot{width:5px;height:5px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:4px;vertical-align:middle}
+.s-dot.ok{background:#22c55e}.s-dot.warn{background:var(--amber)}.s-dot.live{background:#6366f1}
+
+/* LOADING */
+.loading{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:11px;padding:20px 0}
+.spin{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* PRICE BADGE */
+.price-badge{font-size:10px;padding:2px 6px;border-radius:var(--radius-sm);font-weight:700}
+.price-up{background:#14532d22;color:var(--green);border:1px solid #14532d44}
+.price-dn{background:#7f1d1d22;color:var(--red);border:1px solid #7f1d1d44}
+
+/* REAL DATA INDICATOR */
+.real-indicator{display:inline-flex;align-items:center;gap:4px;background:#1e1b4b;border:1px solid #6366f133;border-radius:20px;padding:2px 8px;font-size:9px;color:#a5b4fc;font-weight:700;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<!-- ALERT BAR -->
+<div id="alert-bar">
+  <span id="a-icon">⚡</span>
+  <span id="a-pol" style="font-weight:700"></span>
+  <span id="a-act" style="font-weight:700"></span>
+  <span id="a-tick" style="font-weight:700;font-size:14px"></span>
+  <span id="a-detail" style="color:var(--muted)"></span>
+  <span id="a-real" style="margin-left:auto"></span>
+</div>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="logo">
+    <span class="logo-icon">📊</span>
+    <div>
+      <div class="logo-text">Portfolio Intel</div>
+      <div class="logo-sub">POLITICAL TRADE TRACKER</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button class="upload-btn" onclick="document.getElementById('csv-in').click()">↑ CSV</button>
+    <div class="live-pill">
+      <div class="live-dot" id="live-dot"></div>
+      <span class="live-lbl" id="live-lbl">LIVE</span>
+    </div>
+  </div>
+</div>
+
+<div id="data-banner" style="display:none"><span id="banner-text"></span></div>
+
+<!-- KPIs -->
+<div id="kpis">
+  <div class="kpi">
+    <div class="kpi-label">MY PORTFOLIO</div>
+    <div class="kpi-val" id="kpi-my">—</div>
+    <div class="kpi-sub" id="kpi-my-sub" style="color:var(--me)">Upload CSV</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">LIVE PRICES</div>
+    <div class="kpi-val" id="kpi-voo">—</div>
+    <div class="kpi-sub" id="kpi-voo-sub" style="color:var(--muted)">VOO</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">TRADE FEED</div>
+    <div class="kpi-val" id="kpi-trades">0</div>
+    <div class="kpi-sub" id="kpi-trades-sub" style="color:var(--muted)">Loading...</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">LAST UPDATE</div>
+    <div class="kpi-val" id="kpi-time" style="font-size:14px">—</div>
+    <div class="kpi-sub" id="kpi-time-sub" style="color:var(--muted)">Auto-refresh 5min</div>
+  </div>
+</div>
+
+<!-- TABS -->
+<div id="tabs-nav">
+  <button class="tab active" onclick="showTab('feed',this)">📡 FEED</button>
+  <button class="tab" onclick="showTab('holdings',this)">📊 HOLDINGS</button>
+  <button class="tab" onclick="showTab('news',this)">📰 NEWS</button>
+  <button class="tab" onclick="showTab('compare',this)">⚖️ COMPARE</button>
+  <button class="tab" onclick="showTab('insights',this)">🧠 AI</button>
+</div>
+
+<input type="file" id="csv-in" accept=".csv" style="display:none" onchange="loadCSV(this.files[0])">
+
+<div id="content">
+
+  <!-- FEED TAB -->
+  <div class="pane active" id="pane-feed">
+    <div class="two-col">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:9px;letter-spacing:2px;color:var(--dimmer);font-weight:700">DISCLOSURE FEED — <span id="feed-count">0</span> TRADES</span>
+          <span id="feed-source" style="font-size:10px;color:var(--dim)">Loading...</span>
+        </div>
+        <div id="trade-feed"><div class="loading"><div class="spin"></div>Fetching real trades...</div></div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-hdr">LIVE PRICES</div>
+          <div id="price-list"><div class="loading"><div class="spin"></div>Loading...</div></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">SECTOR SIGNALS</div>
+          <div id="sector-signals">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Technology</span><span><span style="color:#93c5fd">P:8</span> · <span style="color:#fca5a5">T:2</span></span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Energy</span><span><span style="color:#93c5fd">P:1</span> · <span style="color:#fca5a5">T:6</span></span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Automotive</span><span><span style="color:#93c5fd">P:0</span> · <span style="color:#fca5a5">T:4</span></span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:11px"><span>Cybersecurity</span><span><span style="color:#93c5fd">P:5</span> · <span style="color:#fca5a5">T:0</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOLDINGS TAB -->
+  <div class="pane" id="pane-holdings">
+    <div class="import-strip" id="import-strip">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#f1f5f9" id="import-status">No portfolio loaded</div>
+        <div style="font-size:10px;color:var(--dim)">Upload your Merrill Edge CSV</div>
+      </div>
+      <button class="import-btn" onclick="document.getElementById('csv-in').click()">↑ UPLOAD CSV</button>
+    </div>
+    <div id="csv-status" style="font-size:11px;margin-bottom:10px"></div>
+
+    <div id="my-section" style="display:none">
+      <div class="hold-card">
+        <div class="hold-hdr">
+          <div class="hold-dot" style="background:var(--me)"></div>
+          <span class="hold-lbl">MY PORTFOLIO</span>
+          <span class="hold-total" id="my-total" style="color:var(--me)">—</span>
+        </div>
+        <table><thead><tr>
+          <th style="text-align:left">TICKER</th><th>SHARES</th><th>COST</th><th>NOW</th><th>P&L</th>
+        </tr></thead><tbody id="my-tbl"></tbody></table>
+      </div>
+      <div class="card">
+        <div class="card-hdr">OVERLAP WITH POLITICIANS</div>
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;color:#fca5a5;margin-bottom:6px">🦅 Trump overlap</div>
+          <div id="trump-overlap">—</div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#93c5fd;margin-bottom:6px">🔵 Pelosi overlap</div>
+          <div id="pelosi-overlap">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="demo-holdings">
+      <div class="hold-card">
+        <div class="hold-hdr">
+          <div class="hold-dot" style="background:var(--trump)"></div>
+          <span class="hold-lbl">TRUMP HOLDINGS</span>
+          <span class="hold-total" style="color:var(--trump)">$3.08B est.</span>
+        </div>
+        <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>DAY</th><th>P&L</th></tr></thead>
+        <tbody id="trump-demo"></tbody></table>
+      </div>
+      <div class="hold-card">
+        <div class="hold-hdr">
+          <div class="hold-dot" style="background:var(--pelosi)"></div>
+          <span class="hold-lbl">PELOSI HOLDINGS</span>
+          <span class="hold-total" style="color:var(--pelosi)">$79.4M est.</span>
+        </div>
+        <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>DAY</th><th>P&L</th></tr></thead>
+        <tbody id="pelosi-demo"></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEWS TAB -->
+  <div class="pane" id="pane-news">
+    <div class="card">
+      <div class="card-hdr" style="display:flex;justify-content:space-between">
+        <span>LIVE MARKET NEWS</span>
+        <span id="news-source" style="color:var(--dim)">Loading...</span>
+      </div>
+      <div id="news-list"><div class="loading"><div class="spin"></div>Fetching news...</div></div>
+    </div>
+  </div>
+
+  <!-- COMPARE TAB -->
+  <div class="pane" id="pane-compare">
+    <div class="three-col" style="margin-bottom:12px">
+      <div class="card" style="border-color:#05996933">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--me);margin-bottom:12px;font-weight:700">👤 MY PORTFOLIO</div>
+        <div class="stat-row"><span class="stat-k">Total Value</span><span class="stat-v" id="cmp-val">Import CSV</span></div>
+        <div class="stat-row"><span class="stat-k">Gain/Loss</span><span class="stat-v" id="cmp-gain">—</span></div>
+        <div class="stat-row"><span class="stat-k">Return</span><span class="stat-v" id="cmp-ret">—</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v" id="cmp-pos">—</span></div>
+        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v" id="cmp-top">—</span></div>
+      </div>
+      <div class="card" style="border-color:#dc262633">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--trump);margin-bottom:12px;font-weight:700">🦅 TRUMP</div>
+        <div class="stat-row"><span class="stat-k">Est. Value</span><span class="stat-v">$3.08B</span></div>
+        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">TSLA +21.7%</span></div>
+        <div class="stat-row"><span class="stat-k">Top Loss</span><span class="stat-v" style="color:var(--red)">DJT -19.6%</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">6</span></div>
+        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v">DJT</span></div>
+      </div>
+      <div class="card" style="border-color:#2563eb33">
+        <div style="font-size:9px;letter-spacing:2px;color:var(--pelosi);margin-bottom:12px;font-weight:700">🔵 PELOSI</div>
+        <div class="stat-row"><span class="stat-k">Est. Value</span><span class="stat-v">$79.4M</span></div>
+        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">NVDA +171%</span></div>
+        <div class="stat-row"><span class="stat-k">Avg Return</span><span class="stat-v" style="color:var(--green)">+41.8%</span></div>
+        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">7</span></div>
+        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v">NVDA</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr" style="margin-bottom:12px">6-MONTH PERFORMANCE</div>
+      <div class="chart-wrap" style="height:200px"><canvas id="perfChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr" style="margin-bottom:12px">SECTOR EXPOSURE (%)</div>
+      <div class="chart-wrap" style="height:180px"><canvas id="sectorChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- AI TAB -->
+  <div class="pane" id="pane-insights">
+
+    <div class="card">
+      <div class="card-hdr">ASK THE INTELLIGENCE ENGINE</div>
+      <input class="ai-input" id="ai-q" placeholder="Ask anything about the portfolios..." onkeydown="if(event.key==='Enter')askAI()">
+      <button class="ai-go" id="ai-go" onclick="askAI()">ANALYZE →</button>
+      <div class="qps" style="margin-top:10px">
+        <button class="qp" onclick="askAI('Should I follow Pelosi tech trades given my holdings?')">Follow Pelosi?</button>
+        <button class="qp" onclick="askAI('What sectors are both Trump and Pelosi buying?')">Both buying?</button>
+        <button class="qp" onclick="askAI('Compare my portfolio risk to theirs')">Risk compare</button>
+        <button class="qp" onclick="askAI('What is Pelosi trading pattern recently?')">Pelosi pattern</button>
+      </div>
+    </div>
+    <div id="ai-out"></div>
+    <div class="card" style="margin-top:8px">
+      <div class="card-hdr">KEY INTELLIGENCE</div>
+      <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;color:var(--pelosi);margin-bottom:4px">🔍 Pelosi Tech Concentration</div>
+        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">78% of her portfolio is technology. NVDA alone up 171%. Consistently buying chips and AI.</div>
+      </div>
+      <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:700;color:var(--trump);margin-bottom:4px">⚡ Trump Energy Bet</div>
+        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">25% energy via XOM and GEO. Fossil fuel bias benefiting from deregulation.</div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--amber);margin-bottom:4px">🚨 DJT Risk Flag</div>
+        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">Trump's DJT down 19.6% — conflict-of-interest stock. Avoid entirely.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="status-bar">
+  <div><span class="s-dot" id="dot-data"></span>Data: <span id="st-data">Connecting...</span></div>
+  <div><span class="s-dot" id="dot-merrill"></span>Portfolio: <span id="st-merrill">No CSV</span></div>
+  <div><span class="s-dot" id="dot-ai"></span>AI: Ready</div>
+  <div style="margin-left:auto;color:var(--dimmer)">Portfolio Intel v2.0</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════
+
+// YOUR RAILWAY BACKEND URL — update after deploying Railway
+// Leave as empty string to use demo mode
+const BACKEND_URL = 'https://portfolio-intel-escf.onrender.com';  // e.g. 'https://portfolio-intel-production.up.railway.app'
+
+const TRUMP_H = [
+  {ticker:'DJT',company:'Trump Media',shares:114750000,cost:25,price:20.1,sector:'Media'},
+  {ticker:'TSLA',company:'Tesla',shares:45000,cost:198,price:241,sector:'Automotive'},
+  {ticker:'META',company:'Meta',shares:12000,cost:420,price:543,sector:'Technology'},
+  {ticker:'XOM',company:'ExxonMobil',shares:80000,cost:98,price:113,sector:'Energy'},
+  {ticker:'GEO',company:'Geo Group',shares:120000,cost:12,price:16.2,sector:'Prisons'},
+  {ticker:'WMT',company:'Walmart',shares:30000,cost:55,price:98,sector:'Retail'},
+];
+const PELOSI_H = [
+  {ticker:'NVDA',company:'NVIDIA',shares:175000,cost:48,price:130,sector:'Technology'},
+  {ticker:'AAPL',company:'Apple',shares:95000,cost:145,price:209,sector:'Technology'},
+  {ticker:'GOOGL',company:'Alphabet',shares:55000,cost:112,price:155,sector:'Technology'},
+  {ticker:'MSFT',company:'Microsoft',shares:40000,cost:285,price:433,sector:'Technology'},
+  {ticker:'AMZN',company:'Amazon',shares:70000,cost:130,price:183,sector:'E-Commerce'},
+  {ticker:'AMD',company:'AMD',shares:48000,cost:85,price:150,sector:'Technology'},
+  {ticker:'CRWD',company:'CrowdStrike',shares:15000,cost:180,price:274,sector:'Cybersecurity'},
+];
+const DEMO_TRADES = [
+  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'NVDA',company:'NVIDIA Corp',type:'Purchase',amount:'$1M-$5M',minsAgo:60,isReal:false},
+  {pol:'trump',rep:'Donald Trump',ticker:'DJT',company:'Trump Media',type:'Sale',amount:'$1M-$5M',minsAgo:120,isReal:false},
+  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'GOOGL',company:'Alphabet',type:'Purchase',amount:'$1M-$5M',minsAgo:180,isReal:false},
+  {pol:'trump',rep:'Donald Trump',ticker:'TSLA',company:'Tesla',type:'Purchase',amount:'$1M-$5M',minsAgo:240,isReal:false},
+  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'MSFT',company:'Microsoft',type:'Sale',amount:'$5M-$25M',minsAgo:300,isReal:false},
+];
+const PERF_DATA = [
+  {month:'Jan',me:100,trump:100,pelosi:100},
+  {month:'Feb',me:103.2,trump:105.4,pelosi:106},
+  {month:'Mar',me:108.4,trump:99.3,pelosi:114.3},
+  {month:'Apr',me:112.1,trump:107.9,pelosi:121.4},
+  {month:'May',me:119.6,trump:112.5,pelosi:127.4},
+  {month:'Jun',me:126.8,trump:106.4,pelosi:133.8},
+];
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let trades = [...DEMO_TRADES];
+let myPortfolio = [];
+let livePrices = {};
+let isUsingRealData = false;
+let demoTimer = null;
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
+async function init() {
+  renderDemoHoldings();
+  buildCharts();
+  updateClock();
+  setInterval(updateClock, 60000);
+
+  // Load real data directly — no backend needed
+  await loadRealTrades();
+  await loadYahooPricesDirect();
+  await loadNews();
+
+  // Refresh every 5 minutes
+  setInterval(loadRealTrades, 5 * 60 * 1000);
+  setInterval(loadYahooPricesDirect, 5 * 60 * 1000);
+  setInterval(loadNews, 10 * 60 * 1000);
+}
+
+// Load real politician trades through Render backend
+async function loadRealTrades() {
+  try {
+    document.getElementById('feed-source').innerHTML = '<span style="color:var(--dim)">Loading real trades...</span>';
+    const res = await fetch(BACKEND_URL + '/api/all-trades');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.trades && data.trades.length > 0) {
+        trades = data.trades.map(t => ({
+          pol: guessPol(t.representative),
+          rep: t.representative || '',
+          ticker: (t.ticker || '').toUpperCase().replace('--',''),
+          company: t.description || t.ticker || '',
+          type: t.type || '',
+          amount: t.amount || '',
+          isReal: true,
+          minsAgo: getMinutesAgo(t.date),
+        })).filter(t => t.ticker && t.ticker.length > 0 && t.ticker.length <= 6);
+        document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
+        document.getElementById('kpi-trades').textContent = trades.length;
+        document.getElementById('kpi-trades-sub').textContent = data.house_count + 'H · ' + data.senate_count + 'S';
+        document.getElementById('dot-data').classList.add('ok');
+        document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
+      }
+    }
+  } catch(e) {
+    document.getElementById('feed-source').textContent = 'Backend offline — demo mode';
+  }
+  renderFeed();
+}
+
+// ═══════════════════════════════════════
+//  REAL DATA LOADING
+// ═══════════════════════════════════════
+async function loadRealData() {
+  try {
+    showBanner('🔄 Fetching real politician trades...');
+
+    // Load trades and prices in parallel
+    const [tradesRes, pricesRes, newsRes] = await Promise.allSettled([
+      fetch(BACKEND_URL + '/api/all-trades'),
+      fetch(BACKEND_URL + '/api/prices'),
+      fetch(BACKEND_URL + '/api/news'),
+    ]);
+
+    if (tradesRes.status === 'fulfilled' && tradesRes.value.ok) {
+      const data = await tradesRes.value.json();
+      if (data.trades && data.trades.length > 0) {
+        trades = data.trades.map(t => ({
+          ...t,
+          pol: guessPol(t.representative),
+          rep: t.representative,
+          ticker: t.ticker,
+          company: t.description || t.ticker,
+          isReal: true,
+          minsAgo: getMinutesAgo(t.date),
+        }));
+        isUsingRealData = true;
+        document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
+        document.getElementById('kpi-trades').textContent = trades.length;
+        document.getElementById('kpi-trades-sub').textContent = `${data.house_count || 0}H · ${data.senate_count || 0}S`;
+      }
+    }
+
+    if (pricesRes.status === 'fulfilled' && pricesRes.value.ok) {
+      const data = await pricesRes.value.json();
+      livePrices = data.prices || {};
+      updatePriceDisplays();
+    }
+
+    if (newsRes.status === 'fulfilled' && newsRes.value.ok) {
+      const data = await newsRes.value.json();
+      renderNews(data.articles || []);
+    }
+
+    renderFeed();
+    showBanner(`✅ Live data loaded — ${trades.length} trades · Prices updated`);
+    document.getElementById('dot-data').classList.add('ok');
+    document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
+    setTimeout(() => document.getElementById('data-banner').style.display = 'none', 3000);
+
+  } catch(e) {
+    showBanner('⚠️ Backend offline — showing demo data. Set up Railway to get real trades.', true);
+    renderFeed();
+    loadYahooPricesDirect();
+  }
+}
+
+// Get prices through Render backend (avoids CORS)
+async function loadYahooPricesDirect() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/prices');
+    if (res.ok) {
+      const data = await res.json();
+      livePrices = data.prices || {};
+      updatePriceDisplays();
+      return;
+    }
+  } catch(e) {
+    console.log('Backend price fetch failed:', e);
+  }
+  // If backend fails show static prices
+  livePrices = {
+    'VOO':  {price: 680.79, change_pct: 0},
+    'QQQM': {price: 294.75, change_pct: 0},
+    'GLD':  {price: 377.32, change_pct: 0},
+    'NVDA': {price: 130.00, change_pct: 0},
+    'AAPL': {price: 209.00, change_pct: 0},
+    'TSLA': {price: 241.00, change_pct: 0},
+    'META': {price: 543.00, change_pct: 0},
+    'MSFT': {price: 433.00, change_pct: 0},
+    'XOM':  {price: 113.00, change_pct: 0},
+    'DJT':  {price: 20.10,  change_pct: 0},
+  };
+  updatePriceDisplays();
+}
+
+
+// ── NEWS LOADER ──
+async function loadNews() {
+  try {
+    const res = await fetch(BACKEND_URL + '/api/news');
+    if (res.ok) {
+      const data = await res.json();
+      renderNews(data.articles || []);
+    }
+  } catch(e) {
+    document.getElementById('news-list').innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">News unavailable</div>';
+    document.getElementById('news-source').textContent = 'Offline';
+  }
+}
+
+function updatePriceDisplays() {
+  // Update VOO KPI
+  if (livePrices['VOO']) {
+    const v = livePrices['VOO'];
+    document.getElementById('kpi-voo').textContent = '$' + v.price.toFixed(2);
+    const chg = v.change_pct;
+    document.getElementById('kpi-voo-sub').innerHTML = `VOO <span style="color:${chg>=0?'var(--green)':'var(--red)'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`;
+  }
+
+  // Render price list
+  const priceListEl = document.getElementById('price-list');
+  const watchlist = ['VOO','QQQM','GLD','NVDA','TSLA','MSFT'];
+  if (Object.keys(livePrices).length > 0) {
+    priceListEl.innerHTML = watchlist.map(t => {
+      const p = livePrices[t];
+      if (!p) return '';
+      const chg = p.change_pct;
+      return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;align-items:center">
+        <span style="font-weight:700">${t}</span>
+        <span>$${p.price.toFixed(2)} <span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span></span>
+      </div>`;
+    }).join('');
+
+    // Update politician holdings with live prices
+    updateHoldingPrices();
+  }
+}
+
+function updateHoldingPrices() {
+  // Update trump demo table
+  const trumpEl = document.getElementById('trump-demo');
+  if (trumpEl) {
+    trumpEl.innerHTML = TRUMP_H.map(h => {
+      const lp = livePrices[h.ticker];
+      const price = lp ? lp.price : h.price;
+      const chg = lp ? lp.change_pct : 0;
+      const gl = ((price - h.cost) / h.cost * 100).toFixed(1);
+      return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
+        <td class="t-cur">$${price.toFixed(2)}</td>
+        <td><span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(1)}%</span></td>
+        <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
+    }).join('');
+  }
+  const pelosiEl = document.getElementById('pelosi-demo');
+  if (pelosiEl) {
+    pelosiEl.innerHTML = PELOSI_H.map(h => {
+      const lp = livePrices[h.ticker];
+      const price = lp ? lp.price : h.price;
+      const chg = lp ? lp.change_pct : 0;
+      const gl = ((price - h.cost) / h.cost * 100).toFixed(1);
+      return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
+        <td class="t-cur">$${price.toFixed(2)}</td>
+        <td><span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(1)}%</span></td>
+        <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
+    }).join('');
+  }
+}
+
+// ═══════════════════════════════════════
+//  TRADE FEED
+// ═══════════════════════════════════════
+function renderFeed(newT=null) {
+  const myTickers = new Set(myPortfolio.map(h => h.ticker));
+  const feed = document.getElementById('trade-feed');
+  document.getElementById('feed-count').textContent = trades.length;
+
+  feed.innerHTML = trades.slice(0, 30).map((t, i) => {
+    const isNew = newT && i === 0;
+    const isBuy = (t.type||'').toLowerCase().includes('purchase') || t.action === 'BUY';
+    const cls = 'trade-row' + (isNew ? (isBuy?' flash-buy':' flash-sell') : '') + (t.isReal?' real-trade':'');
+    const mine = myTickers.has(t.ticker);
+    const pol = t.pol || 'other';
+    const polColor = pol === 'trump' ? 'var(--trump)' : pol === 'pelosi' ? 'var(--pelosi)' : 'var(--muted)';
+    const polEmoji = pol === 'trump' ? '🦅' : pol === 'pelosi' ? '🔵' : '🏛';
+    const polName = pol === 'trump' ? 'TRUMP' : pol === 'pelosi' ? 'PELOSI' : (t.rep||'').split(' ').pop().toUpperCase();
+    const lp = livePrices[t.ticker];
+    const priceStr = lp ? `$${lp.price.toFixed(2)}` : '';
+
+    return `<div class="${cls}">
+      <div class="trade-top">
+        <div class="pol-av" style="background:${polColor}22;border:1px solid ${polColor}44">${polEmoji}</div>
+        <div class="pol-info">
+          <div class="pol-nm" style="color:${polColor}">${polName}${t.isReal?'<span class="real-tag">LIVE</span>':''}</div>
+          <div class="pol-tm">${t.rep||''} · ${timeAgo(t.minsAgo||0)}</div>
+        </div>
+        <div class="act-badge ${isBuy?'buy-badge':'sell-badge'}">${isBuy?'BUY':'SELL'}</div>
+      </div>
+      <div class="trade-bottom">
+        <div>
+          <div class="ticker-nm">${t.ticker}${mine?'<span class="mine-tag">MINE</span>':''}</div>
+          <div class="co-nm">${t.company||t.description||''}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="trade-amt" style="color:${isBuy?'var(--green)':'var(--red)'}">${t.amount||''}</div>
+          ${priceStr?`<div style="font-size:10px;color:var(--muted)">${priceStr}</div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function demoAutoTrade() {
+  const pool = [
+    {pol:'trump',rep:'Donald Trump',ticker:'TSLA',company:'Tesla',type:'Purchase',amount:'$1M-$5M'},
+    {pol:'trump',rep:'Donald Trump',ticker:'XOM',company:'ExxonMobil',type:'Purchase',amount:'$500K-$1M'},
+    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'NVDA',company:'NVIDIA',type:'Purchase',amount:'$1M-$5M'},
+    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'AMD',company:'AMD',type:'Purchase',amount:'$500K-$1M'},
+    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'AAPL',company:'Apple',type:'Sale',amount:'$1M-$5M'},
+  ];
+  const base = pool[Math.floor(Math.random() * pool.length)];
+  const t = {...base, minsAgo: 0, isReal: false};
+  trades.forEach(tr => tr.minsAgo = (tr.minsAgo||0) + 10);
+  trades.unshift(t);
+  if (trades.length > 20) trades.pop();
+  renderFeed(t);
+  showFlashAlert(t);
+  updateClock();
+}
+
+// ═══════════════════════════════════════
+//  NEWS
+// ═══════════════════════════════════════
+function renderNews(articles) {
+  const el = document.getElementById('news-list');
+  if (!articles || articles.length === 0) {
+    el.innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">No news loaded — deploy Railway backend for live news</div>';
+    document.getElementById('news-source').textContent = 'Demo mode';
+    return;
+  }
+  document.getElementById('news-source').innerHTML = '<span class="real-indicator">🟢 LIVE</span>';
+  el.innerHTML = articles.map(a => `
+    <div class="news-item">
+      <div class="news-title">${a.title}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="news-meta">${a.source} · ${formatDate(a.published)}</div>
+        <a href="${a.link}" target="_blank" class="news-link">Read →</a>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════
+//  HOLDINGS
+// ═══════════════════════════════════════
+function renderDemoHoldings() {
+  const trumpEl = document.getElementById('trump-demo');
+  const pelosiEl = document.getElementById('pelosi-demo');
+  if (trumpEl) trumpEl.innerHTML = TRUMP_H.map(h => {
+    const gl = ((h.price - h.cost) / h.cost * 100).toFixed(1);
+    return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
+      <td class="t-cur">$${h.price.toFixed(2)}</td><td class="t-num">—</td>
+      <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
+  }).join('');
+  if (pelosiEl) pelosiEl.innerHTML = PELOSI_H.map(h => {
+    const gl = ((h.price - h.cost) / h.cost * 100).toFixed(1);
+    return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
+      <td class="t-cur">$${h.price.toFixed(2)}</td><td class="t-num">—</td>
+      <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════
+//  CSV IMPORT
+// ═══════════════════════════════════════
+function loadCSV(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = parseCSV(e.target.result);
+      if (parsed.length === 0) {
+        document.getElementById('csv-status').innerHTML = '<span style="color:var(--red)">✗ No valid positions found</span>';
+        return;
+      }
+      myPortfolio = parsed;
+      updateMyUI();
+      document.getElementById('csv-status').innerHTML = `<span style="color:var(--green)">✓ Loaded ${parsed.length} positions from ${file.name}</span>`;
+      document.getElementById('import-status').textContent = parsed.length + ' positions loaded';
+      document.getElementById('dot-merrill').classList.add('ok');
+      document.getElementById('st-merrill').textContent = parsed.length + ' positions';
+    } catch(err) {
+      document.getElementById('csv-status').innerHTML = `<span style="color:var(--red)">✗ ${err.message}</span>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseCSV(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.length < 2) return [];
+  let hIdx = 0;
+  for (let i = 0; i < Math.min(10, lines.length); i++) {
+    const l = lines[i].toLowerCase();
+    if (l.includes('symbol') || l.includes('ticker') || l.includes('quantity') || l.includes('shares')) { hIdx = i; break; }
+  }
+  const hdrs = lines[hIdx].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
+  const find = keys => { for (const k of keys) { const i = hdrs.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
+  const tickerCol = find(['symbol','ticker','stock']);
+  const sharesCol = find(['quantity','shares','qty']);
+  const costCol   = find(['cost basis','avg cost','average cost','unit cost','purchase price','avg price']);
+  const priceCol  = find(['price','current price','last price','market price','close']);
+  const nameCol   = find(['description','name','company','security']);
+  const valueCol  = find(['market value','total value','current value']);
+  if (tickerCol < 0) throw new Error('Could not find ticker column');
+  // Known cash/money market tickers
+  const CASH_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX']);
+  const rows = [];
+  for (let i = hIdx + 1; i < lines.length; i++) {
+    const cells = lines[i].split(',');
+    const clean = cells.map(c => (c||'').replace(/"/g,'').replace(/[$,%]/g,'').trim());
+    const ticker = (clean[tickerCol] || '').toUpperCase();
+    // Skip blank, numeric-only account numbers, header repeats
+    if (!ticker || /^\d+$/.test(ticker) || ticker === 'SYMBOL') continue;
+    const shares = parseFloat(clean[sharesCol]) || 0;
+    if (shares <= 0) continue;
+    const price   = parseFloat(clean[priceCol]) || 0;
+    const mktVal  = parseFloat(clean[valueCol]) || (shares * price);
+    const totalCost = parseFloat(clean[costCol]) || 0;
+    const avgCost   = (totalCost > 0 && shares > 0) ? Math.round((totalCost / shares) * 100) / 100 : price;
+    const name = nameCol >= 0 ? (clean[nameCol] || ticker) : ticker;
+    const isCash = CASH_TICKERS.has(ticker) || ticker.length > 6;
+    rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal, isCash });
+  }
+  return rows;
+}
+
+function updateMyUI() {
+  const myTickers = new Set(myPortfolio.map(h => h.ticker));
+  const stocks = myPortfolio.filter(h => !h.isCash);
+  const cash   = myPortfolio.filter(h => h.isCash);
+
+  const totalVal   = myPortfolio.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const stockVal   = stocks.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const cashVal    = cash.reduce((s,h) => s + (h.marketValue || 0), 0);
+  const totalCost  = stocks.reduce((s,h) => s + h.shares * h.avgCost, 0);
+  const gain       = stockVal - totalCost;
+  const gainPct    = totalCost > 0 ? ((gain/totalCost)*100).toFixed(1) : '0.0';
+
+  // KPI shows total portfolio
+  document.getElementById('kpi-my').textContent = fmtV(totalVal);
+  document.getElementById('kpi-my-sub').textContent = 'Stocks: ' + fmtV(stockVal) + ' · Cash: ' + fmtV(cashVal);
+  document.getElementById('kpi-my-sub').style.color = 'var(--me)';
+
+  // Compare tab
+  document.getElementById('cmp-val').textContent = fmtV(totalVal);
+  document.getElementById('cmp-gain').textContent = (gain>=0?'+':'') + fmtV(gain);
+  document.getElementById('cmp-gain').style.color = gain>=0?'var(--green)':'var(--red)';
+  document.getElementById('cmp-ret').textContent = (parseFloat(gainPct)>=0?'+':'') + gainPct + '% (stocks)';
+  document.getElementById('cmp-ret').style.color = parseFloat(gainPct)>=0?'var(--green)':'var(--red)';
+  document.getElementById('cmp-pos').textContent = stocks.length + ' stocks · ' + cash.length + ' cash';
+  const top = [...stocks].sort((a,b) => (b.marketValue||0)-(a.marketValue||0))[0];
+  document.getElementById('cmp-top').textContent = top ? top.ticker : '—';
+  document.getElementById('my-total').textContent = fmtV(totalVal);
+
+  // Holdings table — stocks first, then cash section
+  const stockRows = stocks.map(h => {
+    const lp = livePrices[h.ticker];
+    const currentPrice = lp ? lp.price : h.currentPrice;
+    const g = h.avgCost > 0 ? ((currentPrice - h.avgCost) / h.avgCost * 100).toFixed(1) : null;
+    const tOver = TRUMP_H.find(t => t.ticker === h.ticker);
+    const pOver = PELOSI_H.find(t => t.ticker === h.ticker);
+    const badges = (tOver?'<span class="mine-tag" style="background:#dc262622;color:#fca5a5">T</span>':'') +
+                   (pOver?'<span class="mine-tag" style="background:#2563eb22;color:#93c5fd">P</span>':'');
+    return `<tr><td><div class="t-tick">${h.ticker}${badges}</div><div class="t-sec">${h.company}</div></td>
+      <td class="t-num">${h.shares.toLocaleString()}</td>
+      <td class="t-num">${h.avgCost>0?'$'+h.avgCost.toFixed(2):'—'}</td>
+      <td class="t-cur">${currentPrice>0?'$'+currentPrice.toFixed(2):'—'}</td>
+      <td class="${g!==null&&g>=0?'pos':'neg'}">${g!==null?(g>=0?'+':'')+g+'%':'—'}</td></tr>`;
+  }).join('');
+
+  const cashRows = cash.length > 0
+    ? `<tr><td colspan="5" style="padding:8px 10px;font-size:9px;letter-spacing:2px;color:var(--dim);background:var(--bg);font-weight:700">CASH & MONEY MARKET</td></tr>` +
+      cash.map(h => `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.company}</div></td>
+        <td class="t-num">—</td><td class="t-num">—</td>
+        <td class="t-cur">${fmtV(h.marketValue)}</td>
+        <td class="t-num">Cash</td></tr>`).join('')
+    : '';
+
+  document.getElementById('my-tbl').innerHTML = stockRows + cashRows;
+
+  // Overlap
+  const trumpOverlap = TRUMP_H.filter(h => myTickers.has(h.ticker));
+  const pelosiOverlap = PELOSI_H.filter(h => myTickers.has(h.ticker));
+  document.getElementById('trump-overlap').innerHTML = trumpOverlap.length > 0
+    ? trumpOverlap.map(h => `<span class="tag" style="background:#dc262622;color:#fca5a5;border:1px solid #dc262633">${h.ticker}</span>`).join('')
+    : '<span style="color:var(--dim);font-size:10px">No overlap</span>';
+  document.getElementById('pelosi-overlap').innerHTML = pelosiOverlap.length > 0
+    ? pelosiOverlap.map(h => `<span class="tag" style="background:#2563eb22;color:#93c5fd;border:1px solid #2563eb33">${h.ticker}</span>`).join('')
+    : '<span style="color:var(--dim);font-size:10px">No overlap</span>';
+
+  document.getElementById('my-section').style.display = 'block';
+  renderFeed();
+}
+
+// ═══════════════════════════════════════
+//  CHARTS
+// ═══════════════════════════════════════
+function buildCharts() {
+  Chart.defaults.color = '#64748b';
+  Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,sans-serif';
+  Chart.defaults.font.size = 10;
+
+  new Chart(document.getElementById('perfChart'), {
+    type: 'line',
+    data: {
+      labels: PERF_DATA.map(d => d.month),
+      datasets: [
+        {label:'Me',data:PERF_DATA.map(d=>d.me),borderColor:'#059669',borderWidth:2,pointRadius:0,tension:.4,fill:false},
+        {label:'Trump',data:PERF_DATA.map(d=>d.trump),borderColor:'#dc2626',borderWidth:2,pointRadius:0,tension:.4,fill:false,borderDash:[5,3]},
+        {label:'Pelosi',data:PERF_DATA.map(d=>d.pelosi),borderColor:'#2563eb',borderWidth:2,pointRadius:0,tension:.4,fill:false},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',boxWidth:20,padding:10}}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'}}}}
+  });
+
+  new Chart(document.getElementById('sectorChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Tech','Energy','Auto','E-Commerce','Media','Cybersec'],
+      datasets: [
+        {label:'Me',data:[68,12,9,11,0,0],backgroundColor:'#059669aa'},
+        {label:'Trump',data:[12,25,18,0,45,0],backgroundColor:'#dc2626aa'},
+        {label:'Pelosi',data:[78,0,0,10,0,5],backgroundColor:'#2563ebaa'},
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',boxWidth:14,padding:10}}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'}}}}
+  });
+}
+
+// ═══════════════════════════════════════
+//  AI INSIGHTS
+// ═══════════════════════════════════════
+async function askAI(preset) {
+  const input = document.getElementById('ai-q');
+  const q = preset || input.value.trim();
+  if (!q) return;
+  input.value = '';
+  const btn = document.getElementById('ai-go');
+  btn.disabled = true; btn.textContent = 'Analyzing...';
+  const out = document.getElementById('ai-out');
+  out.innerHTML = '<div class="insight-out" style="color:var(--dim)">Thinking...</div>';
+
+  const myCtx = myPortfolio.length > 0
+    ? 'My actual holdings: ' + myPortfolio.map(h => h.ticker+'('+h.shares+'sh @ $'+h.avgCost.toFixed(2)+')').join(', ') + '.'
+    : 'No holdings imported yet. Using reference: VOO(15sh), QQQM(34sh), GLD(55sh).';
+
+  const recentTrades = trades.slice(0,10).map(t => `${t.rep||t.pol} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount}`).join('; ');
+
+  const sys = `You are a financial intelligence analyst specializing in congressional trading patterns.
+Recent political disclosures: ${recentTrades}
+Trump holds: DJT(down 20%), TSLA(+22%), XOM(+15%), META(+29%).
+Pelosi holds: NVDA(+171%), AAPL(+44%), MSFT(+52%), GOOGL(+38%), AMZN(+41%).
+${myCtx}
+Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
+
+  try {
+    const res = await fetch(BACKEND_URL + '/api/ai', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({system: sys, question: q})
+    });
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    const text = d.answer || 'Unable to generate analysis.';
+    out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
+    document.getElementById('dot-ai').classList.add('ok');
+  } catch(e) {
+    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
+  }
+  btn.disabled = false; btn.textContent = 'ANALYZE →';
+}
+
+// ═══════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════
+function showTab(id, el) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('pane-'+id).classList.add('active');
+  el.classList.add('active');
+}
+
+function showBanner(msg, isError=false) {
+  const b = document.getElementById('data-banner');
+  b.style.display = 'block';
+  b.className = isError ? 'error' : '';
+  document.getElementById('banner-text').textContent = msg;
+}
+
+function showFlashAlert(t) {
+  const bar = document.getElementById('alert-bar');
+  const isBuy = (t.type||'').toLowerCase().includes('purchase') || t.action === 'BUY';
+  bar.className = isBuy ? 'buy' : 'sell';
+  bar.style.display = 'flex';
+  document.getElementById('a-pol').textContent = (t.rep||t.pol||'').split(' ').pop().toUpperCase();
+  document.getElementById('a-act').textContent = isBuy ? 'BUY' : 'SELL';
+  document.getElementById('a-act').style.color = isBuy ? 'var(--green)' : 'var(--red)';
+  document.getElementById('a-tick').textContent = t.ticker;
+  document.getElementById('a-detail').textContent = t.amount || '';
+  document.getElementById('a-real').innerHTML = t.isReal ? '<span class="real-indicator">LIVE</span>' : '';
+  setTimeout(() => bar.style.display = 'none', 5000);
+}
+
+function guessPol(name) {
+  if (!name) return 'other';
+  const n = name.toLowerCase();
+  if (n.includes('pelosi')) return 'pelosi';
+  if (n.includes('trump')) return 'trump';
+  return 'other';
+}
+
+function getMinutesAgo(dateStr) {
+  if (!dateStr) return 0;
+  try { return Math.round((Date.now() - new Date(dateStr)) / 60000); } catch(e) { return 0; }
+}
+
+function timeAgo(m) {
+  if (m < 60) return m + 'm ago';
+  if (m < 1440) return Math.round(m/60) + 'h ago';
+  return Math.round(m/1440) + 'd ago';
+}
+
+function formatDate(str) {
+  if (!str) return '';
+  try { return new Date(str).toLocaleDateString(); } catch(e) { return str; }
+}
+
+function fmtV(v) {
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(2);
+}
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('kpi-time').textContent = now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+init();
+</script>
+</body>
+</html>
