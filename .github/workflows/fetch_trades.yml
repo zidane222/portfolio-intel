@@ -20,90 +20,65 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Scrape House and Senate disclosures
+      - name: Find and scrape financial disclosures
         run: |
           python3 << 'PYEOF'
           import requests, json, datetime, re
 
           headers = {
               'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'application/json, text/html, */*',
-              'Accept-Language': 'en-US,en;q=0.5',
+              'Accept': 'application/json, */*',
+              'Origin': 'https://disclosurespreview.house.gov',
+              'Referer': 'https://disclosurespreview.house.gov/',
           }
 
           year = datetime.datetime.now().year
           all_trades = []
 
-          # ── SENATE eFD - get CSRF then post search ──
+          # Download the main JS bundle and find API endpoints
           try:
-              session = requests.Session()
-              r = session.get('https://efdsearch.senate.gov/search/', headers=headers, timeout=15)
-              print(f"Senate home status: {r.status_code}")
-              # Extract CSRF token
-              csrf = ''
-              for pattern in [r'csrfmiddlewaretoken.*?value=["\']([^"\']+)', r"csrftoken[\"']:\s*[\"']([^\"']+)"]:
-                  m = re.search(pattern, r.text)
-                  if m:
-                      csrf = m.group(1)
-                      print(f"CSRF found: {csrf[:20]}...")
-                      break
-              # Also check cookies
-              if not csrf:
-                  csrf = session.cookies.get('csrftoken', '')
-                  print(f"CSRF from cookie: {csrf[:20] if csrf else 'not found'}")
-
-              post_headers = {**headers,
-                  'Referer': 'https://efdsearch.senate.gov/search/',
-                  'X-CSRFToken': csrf,
-                  'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                  'X-Requested-With': 'XMLHttpRequest',
-              }
-              payload = {
-                  'draw': '1', 'columns[0][data]': 'first_name',
-                  'start': '0', 'length': '100',
-                  'search[value]': '', 'search[regex]': 'false',
-                  'report_types[]': '11',
-                  'filer_type': '0',
-                  'submitted_start_date': f'01/01/{year}',
-                  'submitted_end_date': datetime.datetime.now().strftime('%m/%d/%Y'),
-                  'csrfmiddlewaretoken': csrf,
-              }
-              r2 = session.post(
-                  'https://efdsearch.senate.gov/search/report/data/',
-                  data=payload, headers=post_headers, timeout=15
-              )
-              print(f"Senate data status: {r2.status_code}")
-              print(f"Senate data response: {r2.text[:500]}")
-          except Exception as e:
-              print(f'Senate error: {e}')
-
-          # ── HOUSE - find the API endpoint from the JS bundle ──
-          try:
-              r = requests.get(
-                  'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult',
-                  headers=headers, timeout=15
-              )
-              # Look for API endpoints in JS
-              apis = re.findall(r'["\'](/[a-zA-Z/]+(?:api|search|data|result|ptr)[a-zA-Z/]*)["\']', r.text)
-              print(f"\nHouse API endpoints found: {apis[:10]}")
+              r = requests.get('https://disclosurespreview.house.gov/', headers=headers, timeout=15)
+              # Find JS bundle URLs
+              js_files = re.findall(r'src="([^"]+\.js)"', r.text)
+              print(f"JS files: {js_files}")
               
-              # Try common House API patterns
-              house_apis = [
-                  f'https://disclosures.house.gov/FinancialDisclosure/Search/AjaxSearch',
-                  f'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult/AjaxSearch',
-                  f'https://disclosures.house.gov/api/financialdisclosure',
-              ]
-              for api_url in house_apis:
-                  r2 = requests.post(api_url, headers=headers, json={
-                      'FilingYear': str(year), 'FilingType': 'P', 'State': '', 'District': '', 'LastName': ''
-                  }, timeout=10)
-                  print(f"House API {api_url}: {r2.status_code} - {r2.text[:100]}")
+              for js_url in js_files:
+                  if not js_url.startswith('http'):
+                      js_url = 'https://disclosurespreview.house.gov' + js_url
+                  js_r = requests.get(js_url, headers=headers, timeout=15)
+                  # Look for API URLs
+                  apis = re.findall(r'https?://[a-zA-Z0-9.\-]+(?:azure|api|search)[a-zA-Z0-9./\-]*', js_r.text)
+                  if apis:
+                      print(f"APIs in {js_url}: {list(set(apis))[:10]}")
+                  # Look for index names
+                  indices = re.findall(r'financial[a-zA-Z\-_]*disclosure[a-zA-Z\-_]*', js_r.text, re.IGNORECASE)
+                  if indices:
+                      print(f"Indices: {list(set(indices))[:5]}")
           except Exception as e:
-              print(f'House error: {e}')
+              print(f'JS scrape error: {e}')
+
+          # Try financial disclosure index directly on Azure
+          try:
+              for index in ['financial-disclosures', 'financialdisclosures', 'ptr-disclosures', 'house-financial', 'fd-disclosures']:
+                  payload = {
+                      "index": index,
+                      "size": 10,
+                      "from": 0,
+                      "filters": {"filingYear": str(year), "filingType": "P"},
+                      "keyword": "",
+                      "applicationName": "disclosures.house.gov"
+                  }
+                  r = requests.post(
+                      'https://app-pub-pri-elastic.azurewebsites.net/search',
+                      headers=headers, json=payload, timeout=10
+                  )
+                  print(f"Index '{index}': {r.status_code} - {r.text[:200]}")
+          except Exception as e:
+              print(f'Azure search error: {e}')
 
           PYEOF
 
-      - name: Commit trades.json
+      - name: Commit
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
