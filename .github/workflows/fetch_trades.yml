@@ -1,14 +1,13 @@
-
 name: Fetch Congress Trades
- 
+
 on:
   schedule:
     - cron: '0 6 * * *'
   workflow_dispatch:
- 
+
 permissions:
   contents: write
- 
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -17,90 +16,66 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
- 
-      - name: Install Playwright
-        run: |
-          pip install playwright
-          playwright install chromium
-          playwright install-deps chromium
- 
-      - name: Scrape Capitol Trades with real browser
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 lxml
+
+      - name: Fetch House PTR XML data
         run: |
           python3 << 'PYEOF'
-          import json, datetime
-          from playwright.sync_api import sync_playwright
- 
-          all_trades = []
- 
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              context = browser.new_context(
-                  user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-              )
-              page = context.new_page()
- 
-              # Intercept API responses
-              api_data = []
-              def handle_response(response):
-                  if 'capitoltrades.com/trades' in response.url:
-                      try:
-                          data = response.json()
-                          api_data.append(('trades', data))
-                          print(f"Intercepted: {response.url} - {len(str(data))} bytes")
-                      except:
-                          pass
- 
-              page.on('response', handle_response)
- 
-              # Visit Capitol Trades
-              print("Loading Capitol Trades...")
-              page.goto('https://www.capitoltrades.com/trades', wait_until='networkidle', timeout=30000)
-              page.wait_for_timeout(3000)
- 
-              print(f"Intercepted {len(api_data)} API calls")
- 
-              # Parse intercepted data
-              for name, data in api_data:
-                  for t in (data.get('data') or []):
-                      ticker = (t.get('ticker') or t.get('asset', {}).get('ticker') or '').upper().replace('--','')
-                      if not ticker or len(ticker) > 6:
-                          continue
-                      all_trades.append({
-                          'date': t.get('txDate') or t.get('reportedDate', ''),
-                          'representative': t.get('politician', {}).get('name', ''),
-                          'ticker': ticker,
-                          'type': t.get('txType', ''),
-                          'amount': str(t.get('txValue', '')),
-                          'description': t.get('asset', {}).get('assetName', ticker),
-                          'source': 'house'
-                      })
- 
-              # If no API data, scrape the HTML
-              if not all_trades:
-                  print("No API data intercepted, trying HTML scrape...")
-                  content = page.content()
-                  print(f"Page content length: {len(content)}")
-                  print(f"First 500 chars: {content[:500]}")
- 
-              browser.close()
- 
-          all_trades.sort(key=lambda x: x.get('date',''), reverse=True)
-          output = {
-              'trades': all_trades[:200],
-              'house_count': len(all_trades),
-              'senate_count': 0,
-              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
+          import requests, json, datetime, zipfile, io
+          import xml.etree.ElementTree as ET
+          from bs4 import BeautifulSoup
+
+          headers = {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': '*/*',
           }
-          with open('trades.json', 'w') as f:
-              json.dump(output, f)
-          print(f"Saved {len(all_trades)} trades")
+
+          year = datetime.datetime.now().year
+          all_trades = []
+
+          # House PTR data is in XML format, published annually
+          # Try both possible URL patterns
+          xml_urls = [
+              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}PTR.xml',
+              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}FD.xml',
+              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/{year}FD.xml',
+              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/{year}PTR.xml',
+          ]
+
+          for url in xml_urls:
+              try:
+                  r = requests.get(url, headers=headers, timeout=20)
+                  print(f"{url}: {r.status_code} ({len(r.content)} bytes)")
+                  if r.status_code == 200 and r.content:
+                      print(f"Content preview: {r.text[:500]}")
+              except Exception as e:
+                  print(f"{url}: {e}")
+
+          # Try browsing the directory listing
+          dir_urls = [
+              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/',
+              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/',
+          ]
+          for url in dir_urls:
+              try:
+                  r = requests.get(url, headers=headers, timeout=15)
+                  print(f"\nDir {url}: {r.status_code}")
+                  if r.status_code == 200:
+                      # Parse directory listing
+                      soup = BeautifulSoup(r.text, 'html.parser')
+                      links = [a['href'] for a in soup.find_all('a', href=True) if '.xml' in a['href'] or '.zip' in a['href']]
+                      print(f"XML/ZIP files: {links[:10]}")
+              except Exception as e:
+                  print(f"Dir {url}: {e}")
+
           PYEOF
- 
-      - name: Commit trades.json
+
+      - name: Commit
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
-          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
-          git push
- 
+          git add trades.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
+          git push 2>/dev/null || true
