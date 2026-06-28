@@ -20,61 +20,37 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Find and scrape financial disclosures
+      - name: Find correct index name
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, re
+          import requests, json, re
 
           headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
               'Accept': 'application/json, */*',
               'Origin': 'https://disclosurespreview.house.gov',
               'Referer': 'https://disclosurespreview.house.gov/',
           }
 
-          year = datetime.datetime.now().year
-          all_trades = []
+          # Download the app JS and find the exact index name
+          r = requests.get(
+              'https://disclosurespreview.house.gov/js/app.6e3857a352d2ff78613e.js',
+              headers=headers, timeout=15
+          )
+          js = r.text
+          
+          # Find all index names referenced in the JS
+          indices = re.findall(r'"index"\s*:\s*"([^"]+)"', js)
+          print(f"All indices found: {list(set(indices))}")
+          
+          # Find all strings containing 'disclosure' or 'financial' or 'ptr'
+          matches = re.findall(r'["\']([^"\']*(?:disclosure|financial|ptr|periodic|transaction)[^"\']*)["\']', js, re.IGNORECASE)
+          print(f"Disclosure-related strings: {list(set(matches))[:20]}")
 
-          # Download the main JS bundle and find API endpoints
-          try:
-              r = requests.get('https://disclosurespreview.house.gov/', headers=headers, timeout=15)
-              # Find JS bundle URLs
-              js_files = re.findall(r'src="([^"]+\.js)"', r.text)
-              print(f"JS files: {js_files}")
-              
-              for js_url in js_files:
-                  if not js_url.startswith('http'):
-                      js_url = 'https://disclosurespreview.house.gov' + js_url
-                  js_r = requests.get(js_url, headers=headers, timeout=15)
-                  # Look for API URLs
-                  apis = re.findall(r'https?://[a-zA-Z0-9.\-]+(?:azure|api|search)[a-zA-Z0-9./\-]*', js_r.text)
-                  if apis:
-                      print(f"APIs in {js_url}: {list(set(apis))[:10]}")
-                  # Look for index names
-                  indices = re.findall(r'financial[a-zA-Z\-_]*disclosure[a-zA-Z\-_]*', js_r.text, re.IGNORECASE)
-                  if indices:
-                      print(f"Indices: {list(set(indices))[:5]}")
-          except Exception as e:
-              print(f'JS scrape error: {e}')
-
-          # Try financial disclosure index directly on Azure
-          try:
-              for index in ['financial-disclosures', 'financialdisclosures', 'ptr-disclosures', 'house-financial', 'fd-disclosures']:
-                  payload = {
-                      "index": index,
-                      "size": 10,
-                      "from": 0,
-                      "filters": {"filingYear": str(year), "filingType": "P"},
-                      "keyword": "",
-                      "applicationName": "disclosures.house.gov"
-                  }
-                  r = requests.post(
-                      'https://app-pub-pri-elastic.azurewebsites.net/search',
-                      headers=headers, json=payload, timeout=10
-                  )
-                  print(f"Index '{index}': {r.status_code} - {r.text[:200]}")
-          except Exception as e:
-              print(f'Azure search error: {e}')
+          # Try the analyzer endpoint to get index info
+          r2 = requests.get('https://app-pub-pri-elastic.azurewebsites.net/analyzer', headers=headers, timeout=10)
+          print(f"Analyzer status: {r2.status_code}")
+          print(f"Analyzer response: {r2.text[:500]}")
 
           PYEOF
 
@@ -83,5 +59,5 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add trades.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
           git push 2>/dev/null || true
