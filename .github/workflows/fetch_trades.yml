@@ -34,21 +34,8 @@ jobs:
               'Referer': BASE + '/FinancialDisclosure',
           }
 
-          # Known valid ticker symbols (common ones to validate against)
-          INVALID_TICKERS = {
-              'THE','AND','FOR','FROM','SALE','FUND','CORP','INC','LLC','LTD','ETF',
-              'USA','USD','SEC','REP','HON','JR','SR','III','IV','VI','ST','RD',
-              'DC','MD','PA','TX','CA','NY','FL','OH','GA','NC','VA','WA','MA',
-              'CO','AZ','NJ','TN','IN','MO','WI','MN','AL','SC','KY','OR','CT',
-              'OK','LA','IA','MS','AR','KS','UT','NV','NM','WV','NE','ID','HI',
-              'ME','NH','RI','MT','ND','SD','DE','AK','VT','WY','AS','GU','PR',
-              'AB','CD','EF','GH','IJ','KL','MN','OP','QR','ST','UV','WX','YZ',
-              'AT','BY','IF','IN','IS','IT','MY','NO','OF','ON','OR','SO','TO',
-              'UP','US','WE','BE','DO','GO','HE','ME','SH','AN','AS','AT','BY',
-              'F','S','A','B','C','D','E','G','H','I','J','K','L','M','N','O',
-              'P','Q','R','T','U','V','W','X','Y','Z','DIA','SPY','GLD','SLV',
-              'OPM','CRS','PTR','FD','NA','NN',
-          }
+          # Skip these — they are asset type codes, not tickers
+          SKIP = {'ST','OT','SP','JT','OP','PT','RE','CO','FX','HE','PE','CS','PS'}
 
           session = requests.Session()
           all_trades = []
@@ -90,27 +77,116 @@ jobs:
 
           print(f"Found {len(filings)} PTR filings")
 
-          # Debug: print first PDF table structure
-          print("\n=== DEBUGGING FIRST PDF ===")
-          try:
-              r3 = session.get(filings[0]['url'], headers=headers, timeout=15)
-              with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
-                  for pi, page in enumerate(pdf.pages[:2]):
-                      tables = page.extract_tables()
-                      print(f"Page {pi+1}: {len(tables)} tables")
-                      for ti, table in enumerate(tables):
-                          print(f"  Table {ti+1}: {len(table)} rows")
-                          for row in table[:5]:
-                              print(f"    ROW: {row}")
-          except Exception as e:
-              print(f"Debug error: {e}")
+          def extract_ticker(text):
+              # Pattern 1: (AAPL) or (BRK.B) — ticker in parens before [ST] or [OT]
+              m = re.search(r'\(([A-Z]{1,5}(?:\.[A-Z])?)\)\s*\[', text)
+              if m and m.group(1) not in SKIP:
+                  return m.group(1)
+              # Pattern 2: NYSEARCA: DIA
+              m = re.search(r'(?:NYSEARCA|NASDAQ|NYSE):\s*([A-Z]{1,5})', text)
+              if m:
+                  return m.group(1)
+              # Pattern 3: (AAPL) anywhere
+              m = re.search(r'\(([A-Z]{1,5})\)', text)
+              if m and m.group(1) not in SKIP:
+                  return m.group(1)
+              return None
 
+          def parse_pdf(name, url):
+              trades = []
+              try:
+                  r3 = session.get(url, headers=headers, timeout=15)
+                  if r3.status_code != 200:
+                      return trades
+                  with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                      for page in pdf.pages:
+                          tables = page.extract_tables()
+                          for tbl in tables:
+                              for row in tbl:
+                                  if not row or len(row) < 5:
+                                      continue
+                                  asset_cell = str(row[2] or '')
+                                  type_cell = str(row[3] or '')
+                                  date_cell = str(row[4] or '')
+                                  amount_cell = str(row[6] or '') if len(row) > 6 else ''
+
+                                  # Must have a transaction type
+                                  if not type_cell or type_cell.strip() in ('', 'None', 'Transaction\nType'):
+                                      continue
+
+                                  ticker = extract_ticker(asset_cell)
+                                  if not ticker:
+                                      continue
+
+                                  # Transaction type
+                                  tx = type_cell.strip()
+                                  if tx.startswith('P'):
+                                      tx_type = 'Purchase'
+                                  elif tx.startswith('S'):
+                                      tx_type = 'Sale'
+                                  else:
+                                      tx_type = tx
+
+                                  # Date
+                                  dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
+                                  trade_date = dm.group(1) if dm else ''
+
+                                  # Company name
+                                  company = re.split(r'\(', asset_cell)[0].strip()
+                                  company = re.sub(r'\s+', ' ', company)[:60]
+
+                                  # Amount
+                                  am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_cell)
+                                  amount = am.group(0) if am else amount_cell.strip()
+
+                                  trades.append({
+                                      'date': trade_date,
+                                      'representative': name,
+                                      'ticker': ticker,
+                                      'type': tx_type,
+                                      'amount': amount,
+                                      'description': company,
+                                      'source': 'house'
+                                  })
+              except Exception as e:
+                  print(f"Error {name}: {e}")
+              return trades
+
+          for i, filing in enumerate(filings[:100]):
+              trades = parse_pdf(filing['name'], filing['url'])
+              all_trades.extend(trades)
+              if (i+1) % 20 == 0:
+                  print(f"Processed {i+1}/100, trades: {len(all_trades)}")
+
+          # Deduplicate
+          seen = set()
+          unique = []
+          for t in all_trades:
+              key = f"{t['representative']}-{t['ticker']}-{t['date']}-{t['type']}"
+              if key not in seen:
+                  seen.add(key)
+                  unique.append(t)
+
+          unique.sort(key=lambda x: x.get('date', ''), reverse=True)
+          print(f"\nTotal unique trades: {len(unique)}")
+          for t in unique[:15]:
+              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']} | {t['amount']}")
+
+          output = {
+              'trades': unique[:200],
+              'house_count': len(unique),
+              'senate_count': 0,
+              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
+          }
+          with open('trades.json', 'w') as f:
+              json.dump(output, f)
+          print(f"Saved {len(unique)} trades")
           PYEOF
 
-      - name: Commit
+      - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
-          git push 2>/dev/null || true
+          git add trades.json
+          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
+          git push
