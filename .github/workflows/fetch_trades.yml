@@ -20,37 +20,55 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Find correct index name
+      - name: Fetch House PTR data
         run: |
           python3 << 'PYEOF'
-          import requests, json, re
+          import requests, json, datetime, re, zipfile, io
+          from bs4 import BeautifulSoup
 
           headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-              'Accept': 'application/json, */*',
-              'Origin': 'https://disclosurespreview.house.gov',
-              'Referer': 'https://disclosurespreview.house.gov/',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,*/*',
           }
 
-          # Download the app JS and find the exact index name
-          r = requests.get(
-              'https://disclosurespreview.house.gov/js/app.6e3857a352d2ff78613e.js',
-              headers=headers, timeout=15
-          )
-          js = r.text
-          
-          # Find all index names referenced in the JS
-          indices = re.findall(r'"index"\s*:\s*"([^"]+)"', js)
-          print(f"All indices found: {list(set(indices))}")
-          
-          # Find all strings containing 'disclosure' or 'financial' or 'ptr'
-          matches = re.findall(r'["\']([^"\']*(?:disclosure|financial|ptr|periodic|transaction)[^"\']*)["\']', js, re.IGNORECASE)
-          print(f"Disclosure-related strings: {list(set(matches))[:20]}")
+          year = datetime.datetime.now().year
+          all_trades = []
 
-          # Try the analyzer endpoint to get index info
-          r2 = requests.get('https://app-pub-pri-elastic.azurewebsites.net/analyzer', headers=headers, timeout=10)
-          print(f"Analyzer status: {r2.status_code}")
-          print(f"Analyzer response: {r2.text[:500]}")
+          # House PTR XML files are published here
+          try:
+              # Try the FD search API directly
+              r = requests.get(
+                  f'https://disclosures.house.gov/FinancialDisclosure/ViewMemberSearchResult?LastName=&State=&District=&FilingYear={year}&FilingType=P',
+                  headers=headers, timeout=15
+              )
+              print(f"FD Search status: {r.status_code}")
+              print(f"FD Search response: {r.text[:300]}")
+          except Exception as e:
+              print(f'FD search error: {e}')
+
+          # Try fetching the XML data directly  
+          for year_try in [year, year-1]:
+              for fname in [f'{year_try}FD', f'FD{year_try}']:
+                  for ext in ['.xml', '.zip']:
+                      url = f'https://disclosures.house.gov/public_disc/financial-pdfs/{year_try}/{fname}{ext}'
+                      try:
+                          r = requests.get(url, headers=headers, timeout=15)
+                          print(f"{url}: {r.status_code} ({len(r.content)} bytes)")
+                          if r.status_code == 200:
+                              print(f"Content: {r.text[:200] if ext == '.xml' else 'binary'}")
+                      except Exception as e:
+                          print(f"{url}: error - {e}")
+
+          # Try the clerk.house.gov API
+          try:
+              r = requests.get(
+                  'https://clerk.house.gov/public_disc/financial-pdfs/2026/',
+                  headers=headers, timeout=10
+              )
+              print(f"\nClerk status: {r.status_code}")
+              print(f"Clerk response: {r.text[:300]}")
+          except Exception as e:
+              print(f'Clerk error: {e}')
 
           PYEOF
 
