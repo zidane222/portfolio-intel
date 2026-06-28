@@ -11,6 +11,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -34,7 +35,6 @@ jobs:
               'Referer': BASE + '/FinancialDisclosure',
           }
 
-          # Skip these — they are asset type codes, not tickers
           SKIP = {'ST','OT','SP','JT','OP','PT','RE','CO','FX','HE','PE','CS','PS'}
 
           session = requests.Session()
@@ -75,22 +75,26 @@ jobs:
                       if href and '.pdf' in href:
                           filings.append({'name': name, 'url': BASE + '/' + href})
 
-          print(f"Found {len(filings)} PTR filings")
+          print(f"Found {len(filings)} PTR filings, parsing all...")
 
           def extract_ticker(text):
-              # Pattern 1: (AAPL) or (BRK.B) — ticker in parens before [ST] or [OT]
               m = re.search(r'\(([A-Z]{1,5}(?:\.[A-Z])?)\)\s*\[', text)
               if m and m.group(1) not in SKIP:
                   return m.group(1)
-              # Pattern 2: NYSEARCA: DIA
               m = re.search(r'(?:NYSEARCA|NASDAQ|NYSE):\s*([A-Z]{1,5})', text)
               if m:
                   return m.group(1)
-              # Pattern 3: (AAPL) anywhere
               m = re.search(r'\(([A-Z]{1,5})\)', text)
               if m and m.group(1) not in SKIP:
                   return m.group(1)
               return None
+
+          def parse_date(date_str):
+              # Convert MM/DD/YYYY to YYYY-MM-DD for proper sorting
+              try:
+                  return datetime.datetime.strptime(date_str, '%m/%d/%Y').strftime('%Y-%m-%d')
+              except:
+                  return date_str
 
           def parse_pdf(name, url):
               trades = []
@@ -110,7 +114,6 @@ jobs:
                                   date_cell = str(row[4] or '')
                                   amount_cell = str(row[6] or '') if len(row) > 6 else ''
 
-                                  # Must have a transaction type
                                   if not type_cell or type_cell.strip() in ('', 'None', 'Transaction\nType'):
                                       continue
 
@@ -118,7 +121,6 @@ jobs:
                                   if not ticker:
                                       continue
 
-                                  # Transaction type
                                   tx = type_cell.strip()
                                   if tx.startswith('P'):
                                       tx_type = 'Purchase'
@@ -127,15 +129,12 @@ jobs:
                                   else:
                                       tx_type = tx
 
-                                  # Date
                                   dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
-                                  trade_date = dm.group(1) if dm else ''
+                                  trade_date = parse_date(dm.group(1)) if dm else ''
 
-                                  # Company name
                                   company = re.split(r'\(', asset_cell)[0].strip()
                                   company = re.sub(r'\s+', ' ', company)[:60]
 
-                                  # Amount
                                   am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_cell)
                                   amount = am.group(0) if am else amount_cell.strip()
 
@@ -152,11 +151,12 @@ jobs:
                   print(f"Error {name}: {e}")
               return trades
 
-          for i, filing in enumerate(filings[:100]):
+          # Process ALL filings
+          for i, filing in enumerate(filings):
               trades = parse_pdf(filing['name'], filing['url'])
               all_trades.extend(trades)
-              if (i+1) % 20 == 0:
-                  print(f"Processed {i+1}/100, trades: {len(all_trades)}")
+              if (i+1) % 50 == 0:
+                  print(f"Processed {i+1}/{len(filings)}, trades: {len(all_trades)}")
 
           # Deduplicate
           seen = set()
@@ -167,13 +167,14 @@ jobs:
                   seen.add(key)
                   unique.append(t)
 
+          # Sort newest first
           unique.sort(key=lambda x: x.get('date', ''), reverse=True)
           print(f"\nTotal unique trades: {len(unique)}")
-          for t in unique[:15]:
-              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']} | {t['amount']}")
+          for t in unique[:10]:
+              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']}")
 
           output = {
-              'trades': unique[:200],
+              'trades': unique[:500],
               'house_count': len(unique),
               'senate_count': 0,
               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
