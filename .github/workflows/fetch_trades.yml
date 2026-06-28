@@ -34,6 +34,22 @@ jobs:
               'Referer': BASE + '/FinancialDisclosure',
           }
 
+          # Known valid ticker symbols (common ones to validate against)
+          INVALID_TICKERS = {
+              'THE','AND','FOR','FROM','SALE','FUND','CORP','INC','LLC','LTD','ETF',
+              'USA','USD','SEC','REP','HON','JR','SR','III','IV','VI','ST','RD',
+              'DC','MD','PA','TX','CA','NY','FL','OH','GA','NC','VA','WA','MA',
+              'CO','AZ','NJ','TN','IN','MO','WI','MN','AL','SC','KY','OR','CT',
+              'OK','LA','IA','MS','AR','KS','UT','NV','NM','WV','NE','ID','HI',
+              'ME','NH','RI','MT','ND','SD','DE','AK','VT','WY','AS','GU','PR',
+              'AB','CD','EF','GH','IJ','KL','MN','OP','QR','ST','UV','WX','YZ',
+              'AT','BY','IF','IN','IS','IT','MY','NO','OF','ON','OR','SO','TO',
+              'UP','US','WE','BE','DO','GO','HE','ME','SH','AN','AS','AT','BY',
+              'F','S','A','B','C','D','E','G','H','I','J','K','L','M','N','O',
+              'P','Q','R','T','U','V','W','X','Y','Z','DIA','SPY','GLD','SLV',
+              'OPM','CRS','PTR','FD','NA','NN',
+          }
+
           session = requests.Session()
           all_trades = []
           year = datetime.datetime.now().year
@@ -44,7 +60,7 @@ jobs:
           csrf = soup.find('input', {'name': '__RequestVerificationToken'})
           csrf_token = csrf['value'] if csrf else ''
 
-          # Get list of PTR filings
+          # Get PTR filings list
           payload = {
               'LastName': '', 'FilingYear': str(year),
               'State': '', 'District': '',
@@ -72,88 +88,29 @@ jobs:
                       if href and '.pdf' in href:
                           filings.append({'name': name, 'url': BASE + '/' + href})
 
-          print(f"Found {len(filings)} PTR filings, parsing PDFs...")
+          print(f"Found {len(filings)} PTR filings")
 
-          # Parse PDFs — limit to most recent 50 to avoid timeout
-          ticker_pattern = re.compile(r'\b([A-Z]{1,5})\b')
-          
-          for filing in filings[:50]:
-              try:
-                  r3 = session.get(filing['url'], headers=headers, timeout=15)
-                  if r3.status_code != 200:
-                      continue
-                  
-                  with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
-                      text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
-                  
-                  # Look for transaction date pattern
-                  date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', text)
-                  trade_date = date_match.group(1) if date_match else ''
-                  
-                  # Extract tables from PDF
-                  with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
-                      for page in pdf.pages:
-                          tables = page.extract_tables()
-                          for table in tables:
-                              for row in table:
-                                  if not row:
-                                      continue
-                                  row_text = ' '.join(str(c) for c in row if c)
-                                  # Look for ticker symbols and transaction type
-                                  if any(word in row_text.upper() for word in ['PURCHASE', 'SALE', 'BUY', 'SELL']):
-                                      tickers = re.findall(r'\b([A-Z]{1,5})\b', row_text)
-                                      tx_type = 'Purchase' if 'PURCHASE' in row_text.upper() or 'BUY' in row_text.upper() else 'Sale'
-                                      amount_match = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', row_text)
-                                      amount = amount_match.group(0) if amount_match else ''
-                                      
-                                      for ticker in tickers:
-                                          if len(ticker) >= 1 and len(ticker) <= 5 and ticker not in ['THE','AND','FOR','FROM','SALE','FUND','CORP','INC','LLC','LTD','ETF','USA','USD']:
-                                              all_trades.append({
-                                                  'date': trade_date,
-                                                  'representative': filing['name'],
-                                                  'ticker': ticker,
-                                                  'type': tx_type,
-                                                  'amount': amount,
-                                                  'description': '',
-                                                  'source': 'house'
-                                              })
-                                              break  # one ticker per row
-                  
-                  if len(all_trades) % 10 == 0:
-                      print(f"Processed {filings.index(filing)+1}/{min(50,len(filings))} filings, {len(all_trades)} trades so far")
-                      
-              except Exception as e:
-                  print(f"Error processing {filing['name']}: {e}")
+          # Debug: print first PDF table structure
+          print("\n=== DEBUGGING FIRST PDF ===")
+          try:
+              r3 = session.get(filings[0]['url'], headers=headers, timeout=15)
+              with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                  for pi, page in enumerate(pdf.pages[:2]):
+                      tables = page.extract_tables()
+                      print(f"Page {pi+1}: {len(tables)} tables")
+                      for ti, table in enumerate(tables):
+                          print(f"  Table {ti+1}: {len(table)} rows")
+                          for row in table[:5]:
+                              print(f"    ROW: {row}")
+          except Exception as e:
+              print(f"Debug error: {e}")
 
-          # Deduplicate and sort
-          seen = set()
-          unique_trades = []
-          for t in all_trades:
-              key = f"{t['representative']}-{t['ticker']}-{t['date']}-{t['type']}"
-              if key not in seen:
-                  seen.add(key)
-                  unique_trades.append(t)
-
-          unique_trades.sort(key=lambda x: x.get('date',''), reverse=True)
-          print(f"\nTotal unique trades: {len(unique_trades)}")
-          for t in unique_trades[:10]:
-              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']}")
-
-          output = {
-              'trades': unique_trades[:200],
-              'house_count': len(unique_trades),
-              'senate_count': 0,
-              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
-          }
-          with open('trades.json', 'w') as f:
-              json.dump(output, f)
-          print(f"Saved {len(unique_trades)} trades to trades.json")
           PYEOF
 
-      - name: Commit trades.json
+      - name: Commit
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
-          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
-          git push
+          git add trades.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
+          git push 2>/dev/null || true
