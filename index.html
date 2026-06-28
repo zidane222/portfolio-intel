@@ -690,7 +690,9 @@ function renderFeed(newT=null) {
     const pol = t.pol || 'other';
     const polColor = pol === 'trump' ? 'var(--trump)' : pol === 'pelosi' ? 'var(--pelosi)' : 'var(--muted)';
     const polEmoji = pol === 'trump' ? '🦅' : pol === 'pelosi' ? '🔵' : '🏛';
-    const polName = pol === 'trump' ? 'TRUMP' : pol === 'pelosi' ? 'PELOSI' : (t.rep||'').split(' ').pop().toUpperCase();
+    const repName = (t.rep||t.representative||'');
+    const lastName = repName.includes(',') ? repName.split(',')[0].trim() : repName.split(' ').slice(-1)[0];
+    const polName = pol === 'trump' ? 'TRUMP' : pol === 'pelosi' ? 'PELOSI' : lastName.toUpperCase();
     const lp = livePrices[t.ticker];
     const priceStr = lp ? `$${lp.price.toFixed(2)}` : '';
 
@@ -746,6 +748,10 @@ function renderNews(articles) {
     return;
   }
   document.getElementById('news-source').innerHTML = '<span class="real-indicator">🟢 LIVE</span>';
+  // Sort by published date, newest first
+  articles.sort((a, b) => {
+    try { return new Date(b.published) - new Date(a.published); } catch(e) { return 0; }
+  });
   el.innerHTML = articles.map(a => `
     <div class="news-item">
       <div class="news-title">${a.title}</div>
