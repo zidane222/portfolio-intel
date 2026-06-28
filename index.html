@@ -575,7 +575,12 @@ async function loadRealData() {
 // Get prices through Render backend (avoids CORS)
 async function loadYahooPricesDirect() {
   try {
-    const res = await fetch(BACKEND_URL + '/api/prices');
+    // Build dynamic ticker list from portfolio + recent trades
+    const portfolioTickers = myPortfolio.filter(h => !h.isCash).map(h => h.ticker);
+    const tradeTickers = [...new Set(trades.slice(0,30).map(t => t.ticker).filter(t => t && t.length <= 5))];
+    const allTickers = [...new Set([...portfolioTickers, ...tradeTickers, 'VOO','QQQM','GLD'])].slice(0, 30);
+    const tickerParam = allTickers.join(',');
+    const res = await fetch(BACKEND_URL + '/api/prices/' + tickerParam);
     if (res.ok) {
       const data = await res.json();
       livePrices = data.prices || {};
@@ -627,7 +632,10 @@ function updatePriceDisplays() {
 
   // Render price list
   const priceListEl = document.getElementById('price-list');
-  const watchlist = ['VOO','QQQM','GLD','NVDA','TSLA','MSFT'];
+  // Build watchlist dynamically from portfolio + recent trades
+  const portfolioTickers = myPortfolio.filter(h => !h.isCash).map(h => h.ticker);
+  const tradeTickers = [...new Set(trades.slice(0,20).map(t => t.ticker).filter(t => t && t.length <= 5))];
+  const watchlist = [...new Set([...portfolioTickers, ...tradeTickers, 'VOO'])].slice(0, 12);
   if (Object.keys(livePrices).length > 0) {
     priceListEl.innerHTML = watchlist.map(t => {
       const p = livePrices[t];
@@ -969,9 +977,12 @@ async function askAI(preset) {
     : 'No holdings imported yet. Using reference: VOO(15sh), QQQM(34sh), GLD(55sh).';
 
   // Build rich context from real live trades
-  const allRecentTrades = trades.slice(0, 50).map(t =>
-    `${t.representative||t.rep||t.pol} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.description?'('+t.description+')':''} ${t.amount} on ${t.date||t.minsAgo+'min ago'}`
-  ).join('\n');
+  const allRecentTrades = trades.slice(0, 50).map(t => {
+    const name = t.representative||t.rep||t.pol||'';
+    const action = (t.type||'').toLowerCase().includes('purchase') ? 'BUY' : 'SELL';
+    const date = t.date ? t.date : (t.minsAgo ? timeAgo(t.minsAgo) : 'recent');
+    return `${name} ${action} ${t.ticker} ${t.amount} on ${date}`;
+  }).join('\n');
 
   // Pelosi-specific trades from live feed
   const pelosiTrades = trades.filter(t => (t.representative||t.rep||'').toLowerCase().includes('pelosi'))
