@@ -839,8 +839,8 @@ function parseCSV(text) {
     if (shares <= 0) continue;
     const price   = parseFloat(clean[priceCol]) || 0;
     const mktVal  = parseFloat(clean[valueCol]) || (shares * price);
-    const totalCost = parseFloat(clean[costCol]) || 0;
-    const avgCost   = (totalCost > 0 && shares > 0) ? Math.round((totalCost / shares) * 100) / 100 : price;
+    // Cost Basis in Merrill Edge CSV is already per-share
+    const avgCost = parseFloat(clean[costCol]) || price;
     const name = nameCol >= 0 ? (clean[nameCol] || ticker) : ticker;
     const isCash = CASH_TICKERS.has(ticker) || ticker.length > 6;
     rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal, isCash });
@@ -968,14 +968,41 @@ async function askAI(preset) {
     ? 'My actual holdings: ' + myPortfolio.map(h => h.ticker+'('+h.shares+'sh @ $'+h.avgCost.toFixed(2)+')').join(', ') + '.'
     : 'No holdings imported yet. Using reference: VOO(15sh), QQQM(34sh), GLD(55sh).';
 
-  const recentTrades = trades.slice(0,10).map(t => `${t.rep||t.pol} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount}`).join('; ');
+  // Build rich context from real live trades
+  const allRecentTrades = trades.slice(0, 50).map(t =>
+    `${t.representative||t.rep||t.pol} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.description?'('+t.description+')':''} ${t.amount} on ${t.date||t.minsAgo+'min ago'}`
+  ).join('\n');
+
+  // Pelosi-specific trades from live feed
+  const pelosiTrades = trades.filter(t => (t.representative||t.rep||'').toLowerCase().includes('pelosi'))
+    .map(t => `${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount} on ${t.date}`).join(', ');
+
+  // Other notable traders
+  const notableTrades = trades.filter(t => {
+    const name = (t.representative||t.rep||'').toLowerCase();
+    return name.includes('pelosi') || name.includes('gottheimer') || name.includes('mcguire') || name.includes('donalds');
+  }).slice(0,20).map(t => `${t.representative||t.rep} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount} on ${t.date}`).join('\n');
+
+  // Build live prices context
+  const livePriceCtx = Object.entries(livePrices).map(([ticker, p]) =>
+    `${ticker}: $${p.price.toFixed(2)} (${p.change_pct >= 0 ? '+' : ''}${p.change_pct.toFixed(2)}% today)`
+  ).join(', ');
 
   const sys = `You are a financial intelligence analyst specializing in congressional trading patterns.
-Recent political disclosures: ${recentTrades}
-Trump holds: DJT(down 20%), TSLA(+22%), XOM(+15%), META(+29%).
-Pelosi holds: NVDA(+171%), AAPL(+44%), MSFT(+52%), GOOGL(+38%), AMZN(+41%).
+You have access to REAL recent congressional stock disclosures and LIVE market prices.
+
+LIVE STOCK PRICES RIGHT NOW:
+${livePriceCtx}
+
+RECENT CONGRESSIONAL TRADES (last 50 disclosures, newest first):
+${allRecentTrades}
+
+PELOSI RECENT TRADES: ${pelosiTrades || 'No recent Pelosi trades in current dataset'}
+NOTABLE TRADER ACTIVITY:
+${notableTrades}
+
 ${myCtx}
-Answer in 3-4 concise paragraphs. Be direct, data-driven, and actionable.`;
+Use the actual trade data and live prices above. Calculate gains/losses when possible (e.g. "Pelosi bought UBER at $X range on DATE, current price is $Y"). Be direct, data-driven, and actionable. Answer in 3-4 concise paragraphs.`;
 
   try {
     const res = await fetch(BACKEND_URL + '/api/ai', {
