@@ -18,9 +18,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml
+        run: pip install requests beautifulsoup4 lxml pdfplumber
 
-      - name: Scrape House financial disclosures
+      - name: Scrape House PTR filings
         run: |
           python3 << 'PYEOF'
           import requests, json, datetime, re
@@ -39,60 +39,62 @@ jobs:
 
           # Step 1: Get CSRF token
           r = session.get(BASE + '/FinancialDisclosure/ViewSearch', headers=headers, timeout=15)
-          print(f"Search page status: {r.status_code}")
           soup = BeautifulSoup(r.text, 'html.parser')
           csrf = soup.find('input', {'name': '__RequestVerificationToken'})
           csrf_token = csrf['value'] if csrf else ''
-          print(f"CSRF token: {csrf_token[:30]}...")
+          print(f"CSRF token obtained: {bool(csrf_token)}")
 
-          # Step 2: Search for PTR filings (Periodic Transaction Reports = stock trades)
-          for filing_type in ['P', 'X']:  # P = PTR, X = extension
-              payload = {
-                  'LastName': '',
-                  'FilingYear': str(year),
-                  'State': '',
-                  'District': '',
-                  '__RequestVerificationToken': csrf_token,
-                  'FilingType': filing_type,
-              }
-              r2 = session.post(
-                  BASE + '/FinancialDisclosure/ViewMemberSearchResult',
-                  data=payload,
-                  headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'},
-                  timeout=20
-              )
-              print(f"\nSearch FilingType={filing_type} status: {r2.status_code}")
-              
-              soup2 = BeautifulSoup(r2.text, 'html.parser')
-              
-              # Find results table
-              table = soup2.find('table')
-              if table:
-                  rows = table.find_all('tr')[1:]  # skip header
-                  print(f"Found {len(rows)} rows")
-                  for row in rows[:20]:
-                      cells = row.find_all('td')
-                      if len(cells) >= 4:
-                          name = cells[0].get_text(strip=True)
-                          office = cells[1].get_text(strip=True)
-                          year_filed = cells[2].get_text(strip=True)
-                          filing_type_txt = cells[3].get_text(strip=True)
-                          link = row.find('a')
-                          href = link['href'] if link else ''
-                          print(f"  {name} | {office} | {year_filed} | {filing_type_txt} | {href}")
-              else:
-                  print(f"No table found. Response preview: {r2.text[:300]}")
+          # Step 2: Get list of PTR filings
+          payload = {
+              'LastName': '', 'FilingYear': str(year),
+              'State': '', 'District': '',
+              '__RequestVerificationToken': csrf_token,
+              'FilingType': 'P',
+          }
+          r2 = session.post(
+              BASE + '/FinancialDisclosure/ViewMemberSearchResult',
+              data=payload,
+              headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'},
+              timeout=20
+          )
+          soup2 = BeautifulSoup(r2.text, 'html.parser')
+          table = soup2.find('table')
+          
+          filings = []
+          if table:
+              rows = table.find_all('tr')[1:]
+              for row in rows:
+                  cells = row.find_all('td')
+                  if len(cells) >= 4:
+                      name = cells[0].get_text(strip=True).replace('Hon.. ', '').strip()
+                      link = row.find('a')
+                      href = link['href'] if link else ''
+                      if href and '.pdf' in href:
+                          # Try XML version instead of PDF
+                          xml_url = BASE + '/' + href.replace('.pdf', '.xml')
+                          filings.append({'name': name, 'pdf': BASE + '/' + href, 'xml': xml_url})
+          
+          print(f"Found {len(filings)} filings, checking XML versions...")
+          
+          # Step 3: Try XML for first few filings to see the format
+          for filing in filings[:5]:
+              try:
+                  r3 = session.get(filing['xml'], headers=headers, timeout=10)
+                  print(f"\n{filing['name']} XML status: {r3.status_code}")
+                  if r3.status_code == 200 and r3.text.strip().startswith('<'):
+                      print(f"XML content: {r3.text[:500]}")
+                  else:
+                      print(f"Not XML: {r3.text[:100]}")
+              except Exception as e:
+                  print(f"Error: {e}")
 
-          # Save whatever we found
           output = {
-              'trades': all_trades[:200],
-              'house_count': len(all_trades),
+              'trades': all_trades, 'house_count': 0,
               'senate_count': 0,
               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
           }
           with open('trades.json', 'w') as f:
               json.dump(output, f)
-          print(f"\nSaved {len(all_trades)} trades")
           PYEOF
 
       - name: Commit trades.json
