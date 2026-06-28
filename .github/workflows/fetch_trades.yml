@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Fetch House PTR XML data
+      - name: Fetch from clerk.house.gov and senate data
         run: |
           python3 << 'PYEOF'
           import requests, json, datetime, zipfile, io
@@ -35,40 +35,40 @@ jobs:
           year = datetime.datetime.now().year
           all_trades = []
 
-          # House PTR data is in XML format, published annually
-          # Try both possible URL patterns
-          xml_urls = [
-              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}PTR.xml',
-              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/{year}FD.xml',
-              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/{year}FD.xml',
-              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/{year}PTR.xml',
+          # Try clerk.house.gov — separate from disclosures.house.gov
+          clerk_urls = [
+              f'https://clerk.house.gov/public_disc/ptr-pdfs/{year}/{year}PTR.xml',
+              f'https://clerk.house.gov/public_disc/ptr-pdfs/{year}/',
+              f'https://clerk.house.gov/financial-disclosure',
+              f'https://clerk.house.gov/public_disc/financial-pdfs/{year}/{year}FD.xml',
           ]
-
-          for url in xml_urls:
-              try:
-                  r = requests.get(url, headers=headers, timeout=20)
-                  print(f"{url}: {r.status_code} ({len(r.content)} bytes)")
-                  if r.status_code == 200 and r.content:
-                      print(f"Content preview: {r.text[:500]}")
-              except Exception as e:
-                  print(f"{url}: {e}")
-
-          # Try browsing the directory listing
-          dir_urls = [
-              f'https://disclosures.house.gov/public_disc/ptr-pdfs/{year}/',
-              f'https://disclosures.house.gov/public_disc/financial-pdfs/{year}/',
-          ]
-          for url in dir_urls:
+          for url in clerk_urls:
               try:
                   r = requests.get(url, headers=headers, timeout=15)
-                  print(f"\nDir {url}: {r.status_code}")
-                  if r.status_code == 200:
-                      # Parse directory listing
+                  print(f"CLERK {url}: {r.status_code} ({len(r.content)} bytes)")
+                  if r.status_code == 200 and '<?xml' in r.text[:10]:
+                      print(f"XML FOUND: {r.text[:300]}")
+                  elif r.status_code == 200:
                       soup = BeautifulSoup(r.text, 'html.parser')
-                      links = [a['href'] for a in soup.find_all('a', href=True) if '.xml' in a['href'] or '.zip' in a['href']]
-                      print(f"XML/ZIP files: {links[:10]}")
+                      links = [a.get('href','') for a in soup.find_all('a') if '.xml' in a.get('href','') or '.zip' in a.get('href','')]
+                      print(f"Links: {links[:5]}")
+                      print(f"Title: {soup.title.string if soup.title else 'no title'}")
               except Exception as e:
-                  print(f"Dir {url}: {e}")
+                  print(f"CLERK {url}: {e}")
+
+          # Try Senate bulk data
+          senate_urls = [
+              f'https://efdsearch.senate.gov/search/home/',
+              f'https://senate.gov/legislative/financial_disclosures_archive.htm',
+              f'https://efdsearch.senate.gov/search/report/data/',
+          ]
+          for url in senate_urls:
+              try:
+                  r = requests.get(url, headers=headers, timeout=15)
+                  print(f"\nSENATE {url}: {r.status_code}")
+                  print(f"Content: {r.text[:200]}")
+              except Exception as e:
+                  print(f"SENATE {url}: {e}")
 
           PYEOF
 
