@@ -23,13 +23,14 @@ jobs:
       - name: Scrape House PTR filings
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, re
+          import requests, json, datetime, re, io
           from bs4 import BeautifulSoup
+          import pdfplumber
 
           BASE = 'https://disclosures-clerk.house.gov'
           headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,*/*',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': '*/*',
               'Referer': BASE + '/FinancialDisclosure',
           }
 
@@ -37,14 +38,13 @@ jobs:
           all_trades = []
           year = datetime.datetime.now().year
 
-          # Step 1: Get CSRF token
+          # Get CSRF token
           r = session.get(BASE + '/FinancialDisclosure/ViewSearch', headers=headers, timeout=15)
           soup = BeautifulSoup(r.text, 'html.parser')
           csrf = soup.find('input', {'name': '__RequestVerificationToken'})
           csrf_token = csrf['value'] if csrf else ''
-          print(f"CSRF token obtained: {bool(csrf_token)}")
 
-          # Step 2: Get list of PTR filings
+          # Get list of PTR filings
           payload = {
               'LastName': '', 'FilingYear': str(year),
               'State': '', 'District': '',
@@ -59,7 +59,7 @@ jobs:
           )
           soup2 = BeautifulSoup(r2.text, 'html.parser')
           table = soup2.find('table')
-          
+
           filings = []
           if table:
               rows = table.find_all('tr')[1:]
@@ -70,31 +70,84 @@ jobs:
                       link = row.find('a')
                       href = link['href'] if link else ''
                       if href and '.pdf' in href:
-                          # Try XML version instead of PDF
-                          xml_url = BASE + '/' + href.replace('.pdf', '.xml')
-                          filings.append({'name': name, 'pdf': BASE + '/' + href, 'xml': xml_url})
+                          filings.append({'name': name, 'url': BASE + '/' + href})
+
+          print(f"Found {len(filings)} PTR filings, parsing PDFs...")
+
+          # Parse PDFs — limit to most recent 50 to avoid timeout
+          ticker_pattern = re.compile(r'\b([A-Z]{1,5})\b')
           
-          print(f"Found {len(filings)} filings, checking XML versions...")
-          
-          # Step 3: Try XML for first few filings to see the format
-          for filing in filings[:5]:
+          for filing in filings[:50]:
               try:
-                  r3 = session.get(filing['xml'], headers=headers, timeout=10)
-                  print(f"\n{filing['name']} XML status: {r3.status_code}")
-                  if r3.status_code == 200 and r3.text.strip().startswith('<'):
-                      print(f"XML content: {r3.text[:500]}")
-                  else:
-                      print(f"Not XML: {r3.text[:100]}")
+                  r3 = session.get(filing['url'], headers=headers, timeout=15)
+                  if r3.status_code != 200:
+                      continue
+                  
+                  with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                      text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+                  
+                  # Look for transaction date pattern
+                  date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4})', text)
+                  trade_date = date_match.group(1) if date_match else ''
+                  
+                  # Extract tables from PDF
+                  with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                      for page in pdf.pages:
+                          tables = page.extract_tables()
+                          for table in tables:
+                              for row in table:
+                                  if not row:
+                                      continue
+                                  row_text = ' '.join(str(c) for c in row if c)
+                                  # Look for ticker symbols and transaction type
+                                  if any(word in row_text.upper() for word in ['PURCHASE', 'SALE', 'BUY', 'SELL']):
+                                      tickers = re.findall(r'\b([A-Z]{1,5})\b', row_text)
+                                      tx_type = 'Purchase' if 'PURCHASE' in row_text.upper() or 'BUY' in row_text.upper() else 'Sale'
+                                      amount_match = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', row_text)
+                                      amount = amount_match.group(0) if amount_match else ''
+                                      
+                                      for ticker in tickers:
+                                          if len(ticker) >= 1 and len(ticker) <= 5 and ticker not in ['THE','AND','FOR','FROM','SALE','FUND','CORP','INC','LLC','LTD','ETF','USA','USD']:
+                                              all_trades.append({
+                                                  'date': trade_date,
+                                                  'representative': filing['name'],
+                                                  'ticker': ticker,
+                                                  'type': tx_type,
+                                                  'amount': amount,
+                                                  'description': '',
+                                                  'source': 'house'
+                                              })
+                                              break  # one ticker per row
+                  
+                  if len(all_trades) % 10 == 0:
+                      print(f"Processed {filings.index(filing)+1}/{min(50,len(filings))} filings, {len(all_trades)} trades so far")
+                      
               except Exception as e:
-                  print(f"Error: {e}")
+                  print(f"Error processing {filing['name']}: {e}")
+
+          # Deduplicate and sort
+          seen = set()
+          unique_trades = []
+          for t in all_trades:
+              key = f"{t['representative']}-{t['ticker']}-{t['date']}-{t['type']}"
+              if key not in seen:
+                  seen.add(key)
+                  unique_trades.append(t)
+
+          unique_trades.sort(key=lambda x: x.get('date',''), reverse=True)
+          print(f"\nTotal unique trades: {len(unique_trades)}")
+          for t in unique_trades[:10]:
+              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']}")
 
           output = {
-              'trades': all_trades, 'house_count': 0,
+              'trades': unique_trades[:200],
+              'house_count': len(unique_trades),
               'senate_count': 0,
               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
           }
           with open('trades.json', 'w') as f:
               json.dump(output, f)
+          print(f"Saved {len(unique_trades)} trades to trades.json")
           PYEOF
 
       - name: Commit trades.json
