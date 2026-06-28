@@ -20,62 +20,85 @@ jobs:
       - name: Install dependencies
         run: pip install requests beautifulsoup4 lxml
 
-      - name: Fetch from clerk.house.gov and senate data
+      - name: Scrape House financial disclosures
         run: |
           python3 << 'PYEOF'
-          import requests, json, datetime, zipfile, io
-          import xml.etree.ElementTree as ET
+          import requests, json, datetime, re
           from bs4 import BeautifulSoup
 
+          BASE = 'https://disclosures-clerk.house.gov'
           headers = {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-              'Accept': '*/*',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,*/*',
+              'Referer': BASE + '/FinancialDisclosure',
           }
 
-          year = datetime.datetime.now().year
+          session = requests.Session()
           all_trades = []
+          year = datetime.datetime.now().year
 
-          # Try clerk.house.gov — separate from disclosures.house.gov
-          clerk_urls = [
-              f'https://clerk.house.gov/public_disc/ptr-pdfs/{year}/{year}PTR.xml',
-              f'https://clerk.house.gov/public_disc/ptr-pdfs/{year}/',
-              f'https://clerk.house.gov/financial-disclosure',
-              f'https://clerk.house.gov/public_disc/financial-pdfs/{year}/{year}FD.xml',
-          ]
-          for url in clerk_urls:
-              try:
-                  r = requests.get(url, headers=headers, timeout=15)
-                  print(f"CLERK {url}: {r.status_code} ({len(r.content)} bytes)")
-                  if r.status_code == 200 and '<?xml' in r.text[:10]:
-                      print(f"XML FOUND: {r.text[:300]}")
-                  elif r.status_code == 200:
-                      soup = BeautifulSoup(r.text, 'html.parser')
-                      links = [a.get('href','') for a in soup.find_all('a') if '.xml' in a.get('href','') or '.zip' in a.get('href','')]
-                      print(f"Links: {links[:5]}")
-                      print(f"Title: {soup.title.string if soup.title else 'no title'}")
-              except Exception as e:
-                  print(f"CLERK {url}: {e}")
+          # Step 1: Get CSRF token
+          r = session.get(BASE + '/FinancialDisclosure/ViewSearch', headers=headers, timeout=15)
+          print(f"Search page status: {r.status_code}")
+          soup = BeautifulSoup(r.text, 'html.parser')
+          csrf = soup.find('input', {'name': '__RequestVerificationToken'})
+          csrf_token = csrf['value'] if csrf else ''
+          print(f"CSRF token: {csrf_token[:30]}...")
 
-          # Try Senate bulk data
-          senate_urls = [
-              f'https://efdsearch.senate.gov/search/home/',
-              f'https://senate.gov/legislative/financial_disclosures_archive.htm',
-              f'https://efdsearch.senate.gov/search/report/data/',
-          ]
-          for url in senate_urls:
-              try:
-                  r = requests.get(url, headers=headers, timeout=15)
-                  print(f"\nSENATE {url}: {r.status_code}")
-                  print(f"Content: {r.text[:200]}")
-              except Exception as e:
-                  print(f"SENATE {url}: {e}")
+          # Step 2: Search for PTR filings (Periodic Transaction Reports = stock trades)
+          for filing_type in ['P', 'X']:  # P = PTR, X = extension
+              payload = {
+                  'LastName': '',
+                  'FilingYear': str(year),
+                  'State': '',
+                  'District': '',
+                  '__RequestVerificationToken': csrf_token,
+                  'FilingType': filing_type,
+              }
+              r2 = session.post(
+                  BASE + '/FinancialDisclosure/ViewMemberSearchResult',
+                  data=payload,
+                  headers={**headers, 'Content-Type': 'application/x-www-form-urlencoded'},
+                  timeout=20
+              )
+              print(f"\nSearch FilingType={filing_type} status: {r2.status_code}")
+              
+              soup2 = BeautifulSoup(r2.text, 'html.parser')
+              
+              # Find results table
+              table = soup2.find('table')
+              if table:
+                  rows = table.find_all('tr')[1:]  # skip header
+                  print(f"Found {len(rows)} rows")
+                  for row in rows[:20]:
+                      cells = row.find_all('td')
+                      if len(cells) >= 4:
+                          name = cells[0].get_text(strip=True)
+                          office = cells[1].get_text(strip=True)
+                          year_filed = cells[2].get_text(strip=True)
+                          filing_type_txt = cells[3].get_text(strip=True)
+                          link = row.find('a')
+                          href = link['href'] if link else ''
+                          print(f"  {name} | {office} | {year_filed} | {filing_type_txt} | {href}")
+              else:
+                  print(f"No table found. Response preview: {r2.text[:300]}")
 
+          # Save whatever we found
+          output = {
+              'trades': all_trades[:200],
+              'house_count': len(all_trades),
+              'senate_count': 0,
+              'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
+          }
+          with open('trades.json', 'w') as f:
+              json.dump(output, f)
+          print(f"\nSaved {len(all_trades)} trades")
           PYEOF
 
-      - name: Commit
+      - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json 2>/dev/null || true
-          git diff --staged --quiet || git commit -m "update" 2>/dev/null || true
-          git push 2>/dev/null || true
+          git add trades.json
+          git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
+          git push
