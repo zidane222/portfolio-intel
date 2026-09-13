@@ -227,7 +227,7 @@ def ai_insights():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'llama-3.3-70b-versatile',
+                'model': 'qwen-qwen3.6-27b',
                 'max_tokens': 1000,
                 'messages': [
                     {'role': 'system', 'content': body.get('system', '')},
