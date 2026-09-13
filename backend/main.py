@@ -227,7 +227,7 @@ def ai_insights():
                 'Authorization': f'Bearer {api_key}'
             },
             json={
-                'model': 'qwen-qwen3.6-27b',
+             'model': 'openai/gpt-oss-120b',
                 'max_tokens': 1000,
                 'messages': [
                     {'role': 'system', 'content': body.get('system', '')},
