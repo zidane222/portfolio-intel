@@ -771,7 +771,7 @@ function renderHoldings() {
   const pel = new Set(REF.pelosi.map(h => h.ticker)), tr = new Set(REF.trump.map(h => h.ticker));
   const rows = [...myPortfolio].sort((a, b) => (a.isCash - b.isCash) || ((b.shares * priceOf(b.ticker, b.currentPrice || 0)) - (a.shares * priceOf(a.ticker, a.currentPrice || 0))));
   tb.innerHTML = rows.map(h => {
-    if (h.isCash) return `<tr><td><strong>${esc(h.ticker)}</strong><div class="co">Cash</div></td><td>–</td><td>–</td><td>${usd(h.marketValue || 0)}</td><td class="muted-l">Cash</td><td></td></tr>`;
+    if (h.isCash) return `<tr><td><strong>${esc(h.ticker)}</strong><div class="co">${esc(h.company && h.company !== h.ticker ? h.company : 'Money market')}</div></td><td>–</td><td>$1.00</td><td>${usd(h.marketValue || 0)}</td><td class="muted-l">Money market</td><td></td></tr>`;
     const p = priceOf(h.ticker, h.currentPrice || 0);
     const r = h.avgCost > 0 && p > 0 ? (p - h.avgCost) / h.avgCost * 100 : null;
     const n = tradersOf(h.ticker);
@@ -940,9 +940,9 @@ function renderReview() {
     return `<div class="review-row ${f.length ? 'flag' : ''}" data-i="${i}">
       <input aria-label="Ticker" class="${f.includes('ticker') ? 'f' : ''}" data-k="ticker" value="${esc(r.ticker)}" autocapitalize="characters">
       ${r.isCash
-        ? `<input aria-label="Cash value" data-k="marketValue" inputmode="decimal" value="${r.marketValue || ''}" placeholder="Cash $">`
+        ? `<input aria-label="Money market balance" data-k="marketValue" inputmode="decimal" value="${r.marketValue || ''}" placeholder="Balance $">`
         : `<input aria-label="Shares" class="${f.includes('shares') ? 'f' : ''}" data-k="shares" inputmode="decimal" value="${r.shares || ''}" placeholder="0">`}
-      ${r.isCash ? '<span class="fine">Cash</span>' : `<input aria-label="Average cost" data-k="avgCost" inputmode="decimal" value="${r.avgCost || ''}" placeholder="Optional">`}
+      ${r.isCash ? '<span class="fine">Money market</span>' : `<input aria-label="Average cost" data-k="avgCost" inputmode="decimal" value="${r.avgCost || ''}" placeholder="Optional">`}
       <button class="icon-btn" type="button" aria-label="Remove ${esc(r.ticker || 'row')}" data-del="${i}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>`;
   }).join('') || '<div class="empty" style="padding:16px">No rows yet.</div>';
@@ -1112,20 +1112,20 @@ function mixData(who) {
   const list = who === 'pelosi' ? REF.pelosi.map(h => ({ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.cost), sector: h.sector}))
     : who === 'trump' ? REF.trump.map(h => ({ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.cost), sector: h.sector}))
     : myPortfolio.map(h => h.isCash
-        ? {ticker: h.ticker, value: h.marketValue || 0, sector: 'Cash'}
+        ? {ticker: h.ticker, value: h.marketValue || 0, sector: 'Money market'}
         : {ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.currentPrice || h.avgCost || 0), sector: sectorOf(h.ticker) || 'Other'});
   const groups = {};
   list.filter(x => x.value > 0).forEach(x => { (groups[x.sector] = groups[x.sector] || {sector: x.sector, value: 0, tickers: []}); groups[x.sector].value += x.value; groups[x.sector].tickers.push(x); });
   let arr = Object.values(groups).sort((a, b) => b.value - a.value);
-  // Keep at most 7 named slices; fold the rest into Other. Cash and Other always sit last in gray tones.
-  const tail = arr.filter(g => g.sector === 'Cash' || g.sector === 'Other');
-  let named = arr.filter(g => g.sector !== 'Cash' && g.sector !== 'Other');
+  // Keep at most 7 named slices; fold the rest into Other. Money market and Other always sit last in gray tones.
+  const tail = arr.filter(g => g.sector === 'Money market' || g.sector === 'Other');
+  let named = arr.filter(g => g.sector !== 'Money market' && g.sector !== 'Other');
   if (named.length > 7) {
     const extra = named.slice(7); named = named.slice(0, 7);
     const other = tail.find(g => g.sector === 'Other') || (tail.push({sector: 'Other', value: 0, tickers: []}), tail[tail.length - 1]);
     extra.forEach(g => { other.value += g.value; other.tickers.push(...g.tickers); });
   }
-  arr = [...named.map((g, i) => ({...g, color: MIX_COLORS[i]})), ...tail.sort((a, b) => a.sector === 'Cash' ? 1 : -1).map(g => ({...g, color: g.sector === 'Cash' ? '#C7D2E3' : '#6E7F9C'}))];
+  arr = [...named.map((g, i) => ({...g, color: MIX_COLORS[i]})), ...tail.sort((a, b) => a.sector === 'Money market' ? 1 : -1).map(g => ({...g, color: g.sector === 'Money market' ? '#C7D2E3' : '#6E7F9C'}))];
   const total = arr.reduce((s, g) => s + g.value, 0);
   return {groups: arr.map(g => ({...g, pct: total ? g.value / total * 100 : 0, tickers: g.tickers.sort((a, b) => b.value - a.value).map(x => x.ticker)})), total};
 }
