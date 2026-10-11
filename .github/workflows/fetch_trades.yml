@@ -166,6 +166,19 @@ jobs:
                   print(f"Error {name}: {e}")
               return trades
 
+          # TEMP DEBUG: dump raw Pelosi PTR rows so the parser can be checked
+          dbg = []
+          for f in [f for f in filings if 'pelosi' in f['name'].lower()]:
+              try:
+                  rr = session.get(f['url'], headers=headers, timeout=15)
+                  with pdfplumber.open(io.BytesIO(rr.content)) as pdf:
+                      txt = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
+                      rows = [r for pg in pdf.pages for tb in pg.extract_tables() for r in tb]
+                  dbg.append({'name': f['name'], 'url': f['url'], 'text': txt[:3000], 'rows': rows[:40]})
+              except Exception as e:
+                  dbg.append({'name': f['name'], 'url': f['url'], 'error': str(e)})
+          json.dump(dbg, open('debug_pelosi.json', 'w'), indent=1)
+
           # Process ALL filings
           for i, filing in enumerate(filings):
               trades = parse_pdf(filing['name'], filing['url'])
@@ -203,6 +216,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
+          git add trades.json debug_pelosi.json
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
