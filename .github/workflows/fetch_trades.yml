@@ -19,7 +19,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 lxml pdfplumber
+        run: |
+          pip install requests beautifulsoup4 lxml pdfplumber pyyaml
+          # Keep yesterday's data so new filings can be detected for alerts
+          cp trades.json /tmp/old_trades.json 2>/dev/null || echo '{"trades":[]}' > /tmp/old_trades.json
 
       - name: Scrape House PTR filings
         run: |
@@ -292,10 +295,138 @@ jobs:
               print(f['date'], f['type'], f['pages'], f['url'][-60:])
           PYEOF
 
+      - name: Add sectors and committee overlaps
+        continue-on-error: true
+        run: |
+          python3 << 'PYEOF'
+          import requests, json, re, time, yaml
+          H = {'User-Agent': 'Mozilla/5.0'}
+          data = json.load(open('trades.json'))
+          trades = data['trades']
+
+          # Sector per ticker, cached in sectors.json so each ticker is looked up once
+          try:
+              cache = json.load(open('sectors.json'))
+          except Exception:
+              cache = {}
+          need = sorted({t['ticker'] for t in trades if t['ticker'] and t['ticker'] not in cache})[:900]
+          for tk in need:
+              try:
+                  r = requests.get('https://query2.finance.yahoo.com/v1/finance/search',
+                                   params={'q': tk, 'quotesCount': 5, 'newsCount': 0}, headers=H, timeout=8)
+                  q = next((x for x in (r.json().get('quotes') or []) if (x.get('symbol') or '').upper() == tk), None)
+                  if q:
+                      qt = (q.get('quoteType') or '').upper()
+                      cache[tk] = 'Funds & ETFs' if qt in ('ETF', 'MUTUALFUND') else (q.get('sectorDisp') or q.get('sector') or '')
+                  else:
+                      cache[tk] = ''
+              except Exception as e:
+                  print('sector error', tk, e)
+              time.sleep(0.15)
+          json.dump(cache, open('sectors.json', 'w'), indent=0, sort_keys=True)
+          print(f'Sectors known: {sum(1 for v in cache.values() if v)} / {len(cache)}')
+
+          # House committee memberships (public @unitedstates/congress-legislators data)
+          BASE = 'https://raw.githubusercontent.com/unitedstates/congress-legislators/main/'
+          legs = yaml.safe_load(requests.get(BASE + 'legislators-current.yaml', timeout=30).text)
+          comms = yaml.safe_load(requests.get(BASE + 'committees-current.yaml', timeout=30).text)
+          members = yaml.safe_load(requests.get(BASE + 'committee-membership-current.yaml', timeout=30).text)
+          house_names = {c['thomas_id']: re.sub(r'^House (Permanent )?(Select )?Committee on (the )?', '', c['name']) for c in comms if c.get('type') == 'house'}
+          house_names.update({k: 'China Select Committee' for k in house_names if k == 'HSZS'})
+          by_bio = {}
+          for cid, rows in members.items():
+              if cid in house_names:  # main committees only, not subcommittees
+                  for m in rows:
+                      by_bio.setdefault(m.get('bioguide'), []).append(cid)
+          reps = [l for l in legs if l['terms'][-1]['type'] == 'rep']
+
+          # Which industries each committee oversees
+          OVERSEES = {
+              'HSAG': ['Consumer Defensive', 'Basic Materials'],
+              'HSAS': ['Industrials'],
+              'HSBA': ['Financial Services', 'Real Estate'],
+              'HSIF': ['Energy', 'Healthcare', 'Communication Services', 'Technology', 'Utilities'],
+              'HSII': ['Energy', 'Basic Materials', 'Utilities'],
+              'HSPW': ['Industrials'],
+              'HSSY': ['Technology', 'Industrials'],
+              'HSHM': ['Technology'],
+              'HSVR': ['Healthcare'],
+              'HSWM': ['Healthcare'],
+              'HLIG': ['Technology'],
+              'HSZS': ['Technology'],
+          }
+
+          import unicodedata
+          plain = lambda x: unicodedata.normalize('NFKD', x or '').encode('ascii', 'ignore').decode().lower().strip()
+
+          def find_rep(name):
+              # Filing names look like "Pelosi, Nancy" or "Beyer, Donald Sternoff Jr."
+              last, _, first = name.partition(',')
+              last, first = plain(last), plain(first)
+              cands = [l for l in reps if plain(l['name'].get('last')) == last]
+              if not cands:
+                  # Compound surnames: "Delaney, April McClain" vs "McClain Delaney"
+                  cands = [l for l in reps if last in plain(l['name'].get('last')).split() and first.split()[:1] and plain(l['name'].get('first')).startswith(first.split()[0][:3])]
+              if len(cands) > 1 and first:
+                  f = first.split()[0]
+                  cands = [l for l in cands if l['name'].get('first', '').lower().startswith(f[:3]) or l['name'].get('nickname', '').lower().startswith(f[:3])] or cands[:1]
+              return cands[0] if cands else None
+
+          rep_cache, matched = {}, 0
+          for t in trades:
+              t['sector'] = cache.get(t['ticker'], '') if t['ticker'] else ''
+              name = t['representative']
+              if name not in rep_cache:
+                  r = find_rep(name)
+                  rep_cache[name] = by_bio.get(r['id']['bioguide'], []) if r else []
+              cids = rep_cache[name]
+              hits = [house_names[c] for c in cids if t['sector'] in OVERSEES.get(c, [])]
+              t['committees'] = hits
+              matched += bool(hits)
+          data['members_committees'] = {n: [house_names[c] for c in cids] for n, cids in rep_cache.items() if cids}
+          json.dump(data, open('trades.json', 'w'))
+          print(f'Committee overlaps flagged: {matched}')
+          PYEOF
+
+      - name: Send alerts for new filings
+        continue-on-error: true
+        env:
+          NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
+          ALERT_TICKERS: ${{ vars.ALERT_TICKERS }}
+          ALERT_MEMBERS: ${{ vars.ALERT_MEMBERS }}
+        run: |
+          python3 << 'PYEOF'
+          # Push a notification through ntfy.sh when a watched member or ticker shows up in a new filing.
+          # Set repo variables NTFY_TOPIC (required), ALERT_TICKERS ("NVDA,VOO") and ALERT_MEMBERS ("Pelosi").
+          import json, os, requests, datetime
+          topic = (os.environ.get('NTFY_TOPIC') or '').strip()
+          if not topic:
+              print('NTFY_TOPIC not set; skipping alerts'); raise SystemExit
+          tickers = {t.strip().upper() for t in (os.environ.get('ALERT_TICKERS') or '').split(',') if t.strip()}
+          names = [m.strip().lower() for m in (os.environ.get('ALERT_MEMBERS') or 'Pelosi').split(',') if m.strip()]
+          key = lambda t: f"{t['representative']}|{t['ticker'] or t['description']}|{t['date']}|{t['type']}"
+          old = {key(t) for t in json.load(open('/tmp/old_trades.json')).get('trades', [])}
+          new = json.load(open('trades.json'))['trades']
+          cutoff = (datetime.date.today() - datetime.timedelta(days=10)).isoformat()
+          fresh = [t for t in new if key(t) not in old and (t.get('filed') or '') >= cutoff]
+          hits = [t for t in fresh if t['ticker'] in tickers or any(n in t['representative'].lower() for n in names)]
+          print(f'{len(fresh)} new filings, {len(hits)} match alerts')
+          for t in hits[:8]:
+              who = ' '.join(reversed(t['representative'].split(', ', 1)))
+              what = t['ticker'] or t['description']
+              msg = f"{who} {'bought' if t['type'] == 'Purchase' else 'sold'} {what} ({t['amount']}). Traded {t['date']}, filed {t.get('filed') or 'n/a'}."
+              requests.post(f'https://ntfy.sh/{topic}', data=msg.encode(), timeout=15,
+                            headers={'Title': f'New filing: {what}', 'Tags': 'chart_with_upwards_trend',
+                                     'Click': 'https://zidane222.github.io/portfolio-intel/#disclosures'})
+          if len(hits) > 8:
+              requests.post(f'https://ntfy.sh/{topic}', data=f'{len(hits) - 8} more new filings match your alerts.'.encode(), timeout=15)
+          PYEOF
+
       - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json trump_filings.json 2>/dev/null || git add trades.json
+          git add trades.json
+          git add trump_filings.json sectors.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push

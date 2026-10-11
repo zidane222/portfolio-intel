@@ -241,6 +241,56 @@ def sectors(tickers):
     return jsonify({'sectors': out})
 
 # ── NEWS ──
+# ── NEWS FOR SPECIFIC TICKERS (Google News RSS, last 7 days) ──
+ticker_news_cache = {}
+TICKER_NEWS_MINUTES = 20
+
+def _rss_items(query, limit):
+    import re
+    url = f'https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-US&gl=US&ceid=US:en'
+    res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+    if res.status_code != 200:
+        return []
+    out = []
+    for item in re.findall(r'<item>(.*?)</item>', res.text, re.DOTALL)[:limit]:
+        title = re.search(r'<title>(.*?)</title>', item)
+        link = re.search(r'<link>(.*?)</link>', item)
+        pub = re.search(r'<pubDate>(.*?)</pubDate>', item)
+        source = re.search(r'<source[^>]*>(.*?)</source>', item)
+        if title and link:
+            t = title.group(1).replace('<![CDATA[', '').replace(']]>', '').strip()
+            src = source.group(1).strip() if source else ''
+            # Google appends " - Source" to titles; drop it since the source is shown separately
+            if src and t.endswith(' - ' + src):
+                t = t[: -len(' - ' + src)]
+            out.append({'title': t, 'link': link.group(1).strip(),
+                        'published': pub.group(1).strip() if pub else '', 'source': src})
+    return out
+
+@app.route('/api/news/tickers/<tickers>')
+def ticker_news(tickers):
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:12]
+    per = max(2, min(int(flask_request.args.get('per', 3)), 6))
+    articles, seen = [], set()
+    for ticker in ticker_list:
+        hit = ticker_news_cache.get(ticker)
+        if not hit or (datetime.now() - hit['updated']).total_seconds() / 60 > TICKER_NEWS_MINUTES:
+            try:
+                items = _rss_items(f'"{ticker}" stock when:7d', 6)
+                ticker_news_cache[ticker] = {'data': items, 'updated': datetime.now()}
+            except Exception as e:
+                print(f'Ticker news error for {ticker}: {e}')
+                items = hit['data'] if hit else []
+        else:
+            items = hit['data']
+        for a in items[:per]:
+            key = a['title'].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            articles.append({**a, 'ticker': ticker})
+    return jsonify({'articles': articles, 'updated': str(datetime.now())})
+
 @app.route('/api/news')
 def news():
     if is_stale('news'):
@@ -337,6 +387,7 @@ def health():
             '/api/history/<tickers>?range=6mo',
             '/api/sectors/<tickers>',
             '/api/news',
+            '/api/news/tickers/<tickers>',
             '/api/ai'
         ],
         'updated': str(datetime.now())
