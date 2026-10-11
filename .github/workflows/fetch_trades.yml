@@ -217,10 +217,85 @@ jobs:
           print(f"Saved {len(unique)} trades")
           PYEOF
 
+      - name: Fetch Trump OGE filings list
+        continue-on-error: true
+        run: |
+          python3 << 'PYEOF'
+          # Trump files with the Office of Government Ethics. His reports are scanned PDFs,
+          # so we list the filings (date, type, link, pages) rather than parse the trades.
+          import requests, json, re, io, datetime, html
+          import pdfplumber
+          API = 'https://extapps2.oge.gov/201/Presiden.nsf/API.xsp/v3/rest'
+          H = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'application/json'}
+
+          def page(start, length, search=''):
+              params = {'draw': 1, 'start': start, 'length': length, 'search[value]': search}
+              r = requests.get(API, params=params, headers=H, timeout=60)
+              r.raise_for_status()
+              return r.json()
+
+          def is_trump(row):
+              return re.search(r'trump,\s*donald', row.get('name', ''), re.I)
+
+          rows = []
+          try:
+              d = page(0, 500, 'Trump')
+              rows = [x for x in d.get('data', []) if is_trump(x)]
+          except Exception as e:
+              print('Search request failed:', e)
+          if not rows:
+              # Server-side search not supported: walk every page and filter locally
+              start, total = 0, None
+              while total is None or start < total:
+                  d = page(start, 100)
+                  data = d.get('data', [])
+                  total = d.get('recordsTotal', 0) if total is None else total
+                  if not data:
+                      break
+                  rows += [x for x in data if is_trump(x)]
+                  start += len(data)
+                  if start > 20000:
+                      break
+          print(f'Trump rows: {len(rows)}')
+
+          filings = []
+          for x in rows:
+              raw = x.get('type', '')
+              link = re.search(r"href=['\"]([^'\"]+\.pdf[^'\"]*)['\"]", raw, re.I) or re.search(r"href=['\"]([^'\"]+\$FILE[^'\"]*)['\"]", raw, re.I)
+              url = html.unescape(link.group(1)) if link else ''
+              if url.startswith('/'):
+                  url = 'https://extapps2.oge.gov' + url
+              label = re.sub(r'<[^>]+>', '', raw).replace('()', '').strip()
+              filings.append({
+                  'date': (x.get('docDate') or '')[:10],
+                  'type': label,
+                  'url': url.replace(' ', '%20'),
+                  'amended': bool(x.get('amended')),
+                  'title': x.get('title', ''),
+                  'pages': None,
+              })
+          filings.sort(key=lambda f: f['date'], reverse=True)
+          # Page counts for the newest reports
+          for f in filings[:15]:
+              if not f['url']:
+                  continue
+              try:
+                  r = requests.get(f['url'], headers=H, timeout=60)
+                  if r.ok and r.content[:4] == b'%PDF':
+                      with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+                          f['pages'] = len(pdf.pages)
+              except Exception as e:
+                  print('Page count failed', f['url'], e)
+          out = {'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'filings': filings[:40]}
+          json.dump(out, open('trump_filings.json', 'w'), indent=1)
+          for f in filings[:8]:
+              print(f['date'], f['type'], f['pages'], f['url'][-60:])
+          PYEOF
+
       - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
+          git add trades.json trump_filings.json 2>/dev/null || git add trades.json
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
