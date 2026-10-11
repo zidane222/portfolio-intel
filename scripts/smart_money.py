@@ -120,6 +120,11 @@ def investors():
             quarters = []
             for filed, acc, period in filings:
                 rows = parse_13f(inv['cik'], acc)
+                # Some filers still report values in thousands. If the implied share price
+                # is implausibly low for most positions, scale the values up.
+                implied = sorted(r['value'] / r['shares'] for r in rows if r['shares'])
+                if implied and implied[len(implied) // 2] < 1:
+                    rows = [{**r, 'value': r['value'] * 1000} for r in rows]
                 total = sum(r['value'] for r in rows)
                 top = rows[:TOP_N]
                 map_cusips([r['cusip'] for r in top], cmap)
@@ -205,7 +210,7 @@ def insiders():
         for p in new:
             try:
                 b = parse_form4(sec_get('https://www.sec.gov/Archives/' + p).text, day.isoformat())
-                if b and b['ticker']:
+                if b and re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,6}', b['ticker'] or '') and b['ticker'] not in ('NA', 'N.A.', 'NONE'):
                     buys.append(b)
             except Exception as e:
                 print('form4 error', p, e)
