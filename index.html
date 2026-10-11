@@ -479,6 +479,8 @@ let myPortfolio = loadPortfolio();
 let prices = {};
 let trades = [];
 let tradesUpdated = null;
+let trumpFilings = [];
+let trumpLimit = 6;
 let range = '6mo';
 let feedFilter = 'all';
 let feedLimit = 12;
@@ -729,12 +731,13 @@ async function loadTrades() {
     trades = d.trades.filter(t => (t.ticker && t.ticker.length <= 6) || (t.private && t.description)).map(t => ({...t, amount: String(t.amount || '').replace(/\s+/g, ' ').replace(/\s*-\s*/, ' - ')})).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tradesUpdated = d.updated ? new Date(d.updated) : null;
   }
+  try { const t = await getJSON('./trump_filings.json?v=' + Math.floor(Date.now() / 3.6e6)); trumpFilings = t.filings || []; } catch (e) {}
   renderFeed(); renderHoldings(); renderSignals();
 }
 function renderFeed() {
   const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['mine','My stocks']];
   $('feed-filter').innerHTML = filters.map(([k, l]) => `<button type="button" aria-pressed="${k === feedFilter}" data-f="${k}">${l}</button>`).join('');
-  $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; renderFeed(); });
+  $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; trumpLimit = 6; renderFeed(); });
 
   const mine = new Set(stocks().map(h => h.ticker));
   let list = trades;
@@ -768,15 +771,37 @@ function renderFeed() {
 // aren't in the House feed. Show his disclosed positions with live prices instead.
 function renderTrumpFeed(feed) {
   const mine = new Set(stocks().map(h => h.ticker));
-  const rows = REF.trump.map(h => ({...h, price: priceOf(h.ticker, 0), value: h.shares * priceOf(h.ticker, h.cost)})).sort((a, b) => b.value - a.value);
-  feed.innerHTML = `<div class="trade" style="display:block"><div class="who" style="line-height:1.5">Trump files with the Office of Government Ethics, not the House, so individual trades aren't in this feed. These are his disclosed positions (estimated) with live prices.</div></div>` +
-    rows.map(h => {
-      const p = prices[h.ticker], chg = p ? p.change_pct : null;
-      return `<div class="trade">
-        <div><div class="who">Donald Trump · ${esc(h.sector)}</div><div class="what">${esc(h.ticker)}<span class="pill hold-pill">Holds</span>${mine.has(h.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
-        <div><div class="amt num">${compact(h.value)} est.</div><div class="when">${p ? usd(p.price) : ''}${chg !== null ? ` · <span class="${chg >= 0 ? 'up' : 'down'}">${pct(chg, 2)}</span> today` : ''}</div></div>
-      </div>`;
-    }).join('');
+  const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  const head = t => `<div class="trade" style="display:block;padding-top:22px"><div class="what" style="font-size:13px;color:var(--ink-3);font-weight:600">${t}</div></div>`;
+  const note = `<div class="trade" style="display:block;border-top:0"><div class="who" style="line-height:1.5">Trump files with the Office of Government Ethics, not the House. His reports are scanned documents, so they're listed here with links to the originals.</div></div>`;
+
+  const filings = trumpFilings.slice(0, trumpLimit).map(f => {
+    // The filename carries the date he signed it, e.g. "Donald-J-Trump.09.17.2026-278T.pdf"
+    const m = decodeURIComponent(f.url || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    const signed = m ? fmtD(`${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`) : '';
+    const kind = /annual/i.test(f.type) ? f.type.replace(/^Annual/i, 'Annual report') : /transaction/i.test(f.type) ? 'Transaction report' : f.type;
+    const href = /^https:\/\/extapps2\.oge\.gov\//.test(f.url) ? f.url : '';
+    return `<div class="trade">
+      <div><div class="who">${signed ? 'Signed ' + esc(signed) : 'Office of Government Ethics'}</div><div class="what" style="font-size:15px">${esc(kind)}${f.amended ? '<span class="pill hold-pill">Amended</span>' : ''}</div></div>
+      <div style="text-align:right"><div class="amt">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color:#8EC5FF;text-decoration:none;font-weight:600">Open</a>` : ''}</div><div class="when">Posted ${esc(fmtD(f.date))}${f.pages ? ` · ${f.pages} pages` : ''}</div></div>
+    </div>`;
+  }).join('');
+  const moreFilings = trumpFilings.length > trumpLimit ? `<div class="more"><button class="btn glass small" type="button" id="trump-more">Show more reports</button></div>` : '';
+
+  const rows = REF.trump.map(h => ({...h, value: h.shares * priceOf(h.ticker, h.cost)})).sort((a, b) => b.value - a.value);
+  const positions = rows.map(h => {
+    const p = prices[h.ticker], chg = p ? p.change_pct : null;
+    return `<div class="trade">
+      <div><div class="who">${esc(h.sector)}</div><div class="what">${esc(h.ticker)}<span class="pill hold-pill">Holds</span>${mine.has(h.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
+      <div><div class="amt num">${compact(h.value)} est.</div><div class="when">${p ? usd(p.price) : ''}${chg !== null ? ` · <span class="${chg >= 0 ? 'up' : 'down'}">${pct(chg, 2)}</span> today` : ''}</div></div>
+    </div>`;
+  }).join('');
+
+  feed.innerHTML = note
+    + (trumpFilings.length ? head('Latest filings') + filings + moreFilings : '')
+    + head('Disclosed positions (estimated)') + positions;
+  const btn = $('trump-more');
+  if (btn) btn.onclick = () => { trumpLimit += 10; renderFeed(); };
   $('feed-more').style.display = 'none';
 }
 
