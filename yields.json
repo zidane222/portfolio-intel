@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-11T11:49:17.243473+00:00",
+ "updated": "2026-10-11T18:30:38.476241+00:00",
  "date": "2026-10-09",
  "curve": {
   "1 Mo": 4.13,
@@ -28,5 +28,34 @@
    "30 Yr": 5.35
   }
  },
- "source": "U.S. Department of the Treasury, Daily Treasury Par Yield Curve Rates"
+ "year_end": {
+  "date": "2025-12-31",
+  "curve": {
+   "1 Mo": 3.74,
+   "2 Mo": 3.67,
+   "3 Mo": 3.67,
+   "4 Mo": 3.63,
+   "6 Mo": 3.59,
+   "1 Yr": 3.48,
+   "2 Yr": 3.47,
+   "5 Yr": 3.73,
+   "10 Yr": 4.18,
+   "30 Yr": 4.84
+  }
+ },
+ "sofr": {
+  "now": {
+   "date": "2026-10-08",
+   "rate": 3.87
+  },
+  "month_ago": {
+   "date": "2026-09-11",
+   "rate": 3.62
+  },
+  "year_end": {
+   "date": "2025-12-31",
+   "rate": 3.87
+  }
+ },
+ "source": "U.S. Department of the Treasury, Daily Treasury Par Yield Curve Rates; SOFR from the Federal Reserve Bank of New York"
 }

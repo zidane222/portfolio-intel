@@ -205,6 +205,34 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 .track-form input{width:120px;min-height:40px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:rgba(7,18,40,.5);color:var(--ink);font-size:15px;padding:0 10px}
 .track-ok{font-size:13px;color:#6EE7A0}
 
+/* PORTFOLIO REVIEW */
+#review-sec .card-l{margin-bottom:16px}
+.pr-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:18px}
+.pr-k{font-size:12px;color:var(--dark-3)}
+.pr-v{font-size:28px;font-weight:600;letter-spacing:-.6px;font-variant-numeric:tabular-nums;margin-top:2px}
+.pr-s{font-size:13px;color:var(--dark-3);font-variant-numeric:tabular-nums;margin-top:2px}
+.pr-earn{margin-top:18px;padding-top:14px;border-top:1px solid #E3EAF3;display:flex;flex-wrap:wrap;gap:8px 28px;font-size:14px;color:var(--dark-2);font-variant-numeric:tabular-nums}
+.pr-earn:empty{display:none}
+.pr-earn b{color:var(--dark)}
+.pr-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.pr-h{font-size:17px;font-weight:600;margin-bottom:12px}
+.pr-alloc{display:flex;flex-wrap:wrap;gap:20px;align-items:center}
+.pr-alloc svg{width:150px;height:150px;transform:rotate(-90deg);flex:none}
+.pr-leg{display:grid;grid-template-columns:12px 1fr auto auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #E3EAF3;font-size:14px;font-variant-numeric:tabular-nums}
+.pr-leg:first-child{border-top:0}
+.pr-leg .sw{width:12px;height:12px;border-radius:4px}
+.pr-bars{display:flex;align-items:flex-end;gap:6px;height:120px;margin:6px 0 4px}
+.pr-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.pr-bar span{display:block;background:var(--accent)}
+.pr-bar span.cash{background:#9DBBE0}
+.pr-bar span.top{border-radius:4px 4px 0 0}
+.pr-ml{display:flex;gap:6px;font-size:10px;color:var(--dark-3)}
+.pr-ml span{flex:1;text-align:center}
+.pr-ind{font-size:14px}
+.pr-ind td:first-child{font-weight:600}
+.pr-top{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:10px 0;border-top:1px solid #E3EAF3;font-size:14px;font-variant-numeric:tabular-nums;align-items:center}
+.pr-top:first-child{border-top:0}
+
 /* SECTOR DONUT */
 .mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
 .donut{position:relative;width:260px;height:260px;flex:none}
@@ -382,6 +410,7 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <a href="#dividends">Dividends</a>
       <a href="#risk">Risk</a>
       <a href="#disclosures">Disclosures</a>
+      <a href="#review-sec">Review</a>
       <a href="#holdings">Holdings</a>
       <a href="#news">News</a>
       <a href="#ask">Ask</a>
@@ -524,6 +553,30 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
 
 </div>
 <div class="zone-light">
+<!-- PORTFOLIO REVIEW -->
+<section id="review-sec" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Your portfolio review.</h2>
+    <p class="lede reveal">Value, earnings, allocation and income, updated live.</p>
+    <div id="pr-empty" class="card-l reveal empty">Add your portfolio or upload a statement to see your review. <a href="#import">Add portfolio</a></div>
+    <div id="pr-body" class="reveal" style="display:none">
+      <div class="card-l">
+        <div class="pr-sum" id="pr-sum"></div>
+        <div class="pr-earn" id="pr-earn"></div>
+      </div>
+      <div class="pr-two">
+        <div class="card-l"><h3 class="pr-h">Asset allocation</h3><div class="pr-alloc"><svg viewBox="0 0 200 200" id="pr-donut" role="img" aria-label="Asset allocation"></svg><div id="pr-alloc-legend" style="flex:1;min-width:0"></div></div></div>
+        <div class="card-l"><h3 class="pr-h">Income</h3><div id="pr-income"></div></div>
+      </div>
+      <div class="card-l"><h3 class="pr-h">Value over the past year</h3><div id="pr-chart" style="height:220px;position:relative"><div class="chart-msg" id="pr-chart-msg" style="color:var(--dark-3)">Loading…</div></div><p class="fine" id="pr-chart-note" style="margin-top:8px"></p></div>
+      <div class="pr-two">
+        <div class="card-l"><h3 class="pr-h">Top five holdings</h3><div id="pr-top"></div></div>
+        <div class="card-l"><h3 class="pr-h">Market indicators</h3><div class="tbl-wrap"><table class="pr-ind"><thead><tr><th></th><th>Now</th><th>Month ago</th><th>Last year end</th></tr></thead><tbody id="pr-ind"></tbody></table></div><p class="fine" id="pr-ind-note"></p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- HOLDINGS -->
 <section id="holdings" class="dark-text">
   <div class="wrap">
@@ -532,7 +585,7 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
     <div class="card-l reveal">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Value</th><th>Return</th><th>Also traded by</th></tr></thead>
+          <thead><tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Value</th><th>Cost basis</th><th>Gain / loss</th><th>Est. income/yr</th><th>Yield</th><th>Also traded by</th></tr></thead>
           <tbody id="my-tbl"></tbody>
         </table>
       </div>
@@ -574,7 +627,7 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
         <div style="font-size:19px;font-weight:600;margin:6px 0 2px" id="review-title">Found holdings</div>
         <div class="fine" id="review-sub">Check the numbers. Nothing is saved until you confirm.</div>
         <div class="note-warn" id="review-warn" style="display:none"></div>
-        <div style="margin-top:12px" class="review-head"><span>Ticker</span><span>Shares</span><span>Avg cost ($)</span><span></span></div>
+        <div style="margin-top:12px" class="review-head"><span>Ticker</span><span>Shares / balance</span><span>Avg cost $ / APY %</span><span></span></div>
         <div id="review-rows"></div>
         <button class="btn ghost small" type="button" id="add-row" style="margin-top:10px">Add row</button>
         <div class="actions">
@@ -1201,7 +1254,7 @@ function renderHoldings() {
   const pel = new Set(REF.pelosi.map(h => h.ticker)), tr = new Set(REF.trump.map(h => h.ticker));
   const rows = [...myPortfolio].sort((a, b) => (a.isCash - b.isCash) || ((b.shares * priceOf(b.ticker, b.currentPrice || 0)) - (a.shares * priceOf(a.ticker, a.currentPrice || 0))));
   tb.innerHTML = rows.map(h => {
-    if (h.isCash) return `<tr><td><strong>${esc(h.ticker)}</strong><div class="co">${esc(h.company && h.company !== h.ticker ? h.company : 'Money market')}</div></td><td>–</td><td>$1.00</td><td>${usd(h.marketValue || 0)}</td><td class="muted-l">Money market</td><td></td></tr>`;
+    if (h.isCash) return `<tr><td><strong>${esc(h.ticker)}</strong><div class="co">${esc(h.company && h.company !== h.ticker ? h.company : 'Money market')}</div></td><td>–</td><td>$1.00</td><td>${usd(h.marketValue || 0)}</td><td>${usd(h.marketValue || 0)}</td><td class="muted-l">–</td><td>${h.apy ? usd(incomeOf(h), 0) : '<span class="muted-l">–</span>'}</td><td>${h.apy ? h.apy.toFixed(2) + '%' : '<span class="muted-l">Add APY</span>'}</td><td></td></tr>`;
     const p = priceOf(h.ticker, h.currentPrice || 0);
     const r = h.avgCost > 0 && p > 0 ? (p - h.avgCost) / h.avgCost * 100 : null;
     const n = tradersOf(h.ticker);
@@ -1211,7 +1264,10 @@ function renderHoldings() {
       <td>${h.shares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
       <td>${p ? usd(p) : '<span class="sk">$000</span>'}</td>
       <td>${p ? usd(h.shares * p) : '–'}</td>
-      <td class="${r === null ? 'muted-l' : r >= 0 ? 'up' : 'down'}">${r === null ? '–' : pct(r)}</td>
+      <td>${h.avgCost > 0 ? usd(h.shares * h.avgCost) : '<span class="muted-l">–</span>'}</td>
+      <td class="${r === null ? 'muted-l' : r >= 0 ? 'up' : 'down'}">${r === null ? '–' : `${(p - h.avgCost) * h.shares >= 0 ? '+' : '-'}${usd(Math.abs((p - h.avgCost) * h.shares))}<div class="co" style="color:inherit">${pct(r)}</div>`}</td>
+      <td>${divData[h.ticker] ? usd(incomeOf(h), 0) : '<span class="muted-l">–</span>'}</td>
+      <td>${divData[h.ticker] ? (divData[h.ticker].yield || 0).toFixed(2) + '%' : '<span class="muted-l">–</span>'}</td>
       <td>${badges || '<span class="muted-l">–</span>'}</td>
     </tr>`;
   }).join('');
@@ -1280,14 +1336,26 @@ function redact(text) {
 }
 async function aiExtract(text) {
   const system = 'You extract investment holdings from brokerage statements, screenshots and spreadsheets. ' +
-    'Return ONLY a JSON array, no prose. Each item: {"ticker": string, "shares": number, "avgCost": number|null, "name": string, "isCash": boolean, "marketValue": number|null}. ' +
-    'avgCost is the per-share cost basis if shown, else null. Include cash and money market funds with isCash true and their dollar value in marketValue. ' +
-    'Skip totals, account numbers, and anything that is not a position. If there are no holdings, return [].';
+    'Return ONLY JSON, no prose: {"statement_date": "YYYY-MM-DD"|null, "net_value": number|null, "holdings": [...]}. ' +
+    'statement_date is the as-of or period end date; net_value is the total account value on that date. ' +
+    'Each holding: {"ticker": string, "shares": number, "avgCost": number|null, "name": string, "isCash": boolean, "marketValue": number|null, "apy": number|null}. ' +
+    'avgCost is the per-share cost basis if shown, else null. Include cash, bank deposit sweeps and money market funds with isCash true, their dollar value in marketValue, ' +
+    'and their current or 7-day yield in apy (percent). For cash without a ticker use a short name like "PREFERRED DEPOSIT" as ticker. Merge duplicate rows. ' +
+    'Skip totals, account numbers, and anything that is not a position. If there are no holdings, return {"holdings": []}.';
   const d = await getJSON(BACKEND_URL + '/api/ai', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({system, question: 'Document text:\n' + redact(text), max_tokens: 3000})});
   if (d.error) throw new Error(d.error);
-  const a = String(d.answer || ''), s = a.indexOf('['), e = a.lastIndexOf(']');
-  if (s < 0 || e < s) return [];
-  let arr; try { arr = JSON.parse(a.slice(s, e + 1)); } catch (err) { return []; }
+  const a = String(d.answer || '');
+  let arr = [];
+  try {
+    const o = JSON.parse(a.slice(a.indexOf('{'), a.lastIndexOf('}') + 1));
+    if (Array.isArray(o)) throw new Error('array');
+    arr = Array.isArray(o.holdings) ? o.holdings : [];
+    stmtInfo = o.statement_date && o.net_value > 0 ? {d: String(o.statement_date).slice(0, 10), v: +o.net_value} : null;
+  } catch (err) {
+    const s = a.indexOf('['), e = a.lastIndexOf(']');
+    if (s < 0 || e < s) return [];
+    try { arr = JSON.parse(a.slice(s, e + 1)); } catch (err2) { return []; }
+  }
   return (Array.isArray(arr) ? arr : []).map(x => ({
     ticker: String(x.ticker || '').toUpperCase().trim(),
     shares: Number(x.shares) || 0,
@@ -1295,6 +1363,7 @@ async function aiExtract(text) {
     company: String(x.name || ''),
     isCash: !!x.isCash || CASH_TICKERS.has(String(x.ticker || '').toUpperCase()),
     marketValue: Number(x.marketValue) || 0,
+    apy: Number(x.apy) > 0 && Number(x.apy) < 20 ? Number(x.apy) : undefined,
   })).filter(x => x.ticker || x.isCash);
 }
 async function fileToText(file) {
@@ -1341,6 +1410,7 @@ async function handleFile(file) {
   try {
     const {kind, text} = await fileToText(file);
     let rows = kind === 'csv' ? parseCSV(text) : [];
+    stmtInfo = null;
     if (!rows.length) { importState('busy', 'Finding your holdings…'); rows = await aiExtract(text); }
     if (!rows.length) return importState('fail', 'We couldn\'t find holdings in this file. It may not be a statement, or the positions may be cut off. Try another file or add them by hand.');
     openReview(rows, file.name);
@@ -1349,6 +1419,7 @@ async function handleFile(file) {
   }
 }
 let draft = [];
+let stmtInfo = null;
 function openReview(rows, source) {
   draft = rows.map(r => ({...r}));
   importState('review');
@@ -1372,7 +1443,7 @@ function renderReview() {
       ${r.isCash
         ? `<input aria-label="Money market balance" data-k="marketValue" inputmode="decimal" value="${r.marketValue || ''}" placeholder="Balance $">`
         : `<input aria-label="Shares" class="${f.includes('shares') ? 'f' : ''}" data-k="shares" inputmode="decimal" value="${r.shares || ''}" placeholder="0">`}
-      ${r.isCash ? '<span class="fine">Money market</span>' : `<input aria-label="Average cost" data-k="avgCost" inputmode="decimal" value="${r.avgCost || ''}" placeholder="Optional">`}
+      ${r.isCash ? `<input aria-label="Yield (APY %)" data-k="apy" inputmode="decimal" value="${r.apy || ''}" placeholder="APY %">` : `<input aria-label="Average cost" data-k="avgCost" inputmode="decimal" value="${r.avgCost || ''}" placeholder="Optional">`}
       <button class="icon-btn" type="button" aria-label="Remove ${esc(r.ticker || 'row')}" data-del="${i}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
     </div>`;
   }).join('') || '<div class="empty" style="padding:16px">No rows yet.</div>';
@@ -1393,6 +1464,8 @@ function confirmReview() {
   if (bad.length) { $('review-warn').style.display = 'block'; $('review-warn').textContent = 'Fix or remove the highlighted rows before saving.'; return; }
   myPortfolio = draft.filter(r => r.isCash ? r.marketValue > 0 : r.shares > 0).map(r => ({...r, isCash: !!r.isCash}));
   savePortfolio();
+  if (stmtInfo) saveSnap(stmtInfo.d, stmtInfo.v, 'statement');
+  stmtInfo = null;
   importState('idle');
   $('file').value = '';
   refreshAll();
@@ -2059,7 +2132,9 @@ function cashInputs() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(cashKey)) || {}; } catch (e) {}
   const mm = myPortfolio.filter(h => h.isCash).reduce((s, h) => s + (h.marketValue || 0), 0);
-  return {bal: saved.bal !== undefined ? saved.bal : (mm || 10000), apy: saved.apy, fromPortfolio: !saved.bal && mm > 0};
+  const cashRows = myPortfolio.filter(h => h.isCash && h.apy);
+  const wApy = cashRows.length ? cashRows.reduce((s, h) => s + h.apy * (h.marketValue || 0), 0) / Math.max(1, cashRows.reduce((s, h) => s + (h.marketValue || 0), 0)) : undefined;
+  return {bal: saved.bal !== undefined ? saved.bal : (mm || 10000), apy: saved.apy !== undefined ? saved.apy : (wApy !== undefined ? +wApy.toFixed(2) : undefined), fromPortfolio: !saved.bal && mm > 0};
 }
 function mmEstimate(f) {
   const bill3 = yields && yields.curve && yields.curve['3 Mo'];
@@ -2152,7 +2227,7 @@ async function loadYieldData() {
   try {
     for (let i = 0; i < tks.length; i += 60) Object.assign(divData, (await getJSON(`${BACKEND_URL}/api/dividends/${tks.slice(i, i + 60).join(',')}`)).dividends || {});
   } catch (e) {}
-  renderCash(); renderDividends(); loadRisk();
+  renderCash(); renderDividends(); loadRisk(); renderReviewSec();
 }
 function renderDividends() {
   const tabs = [['stocks', 'Top dividend stocks'], ['etfs', 'Dividend ETFs'], ['models', 'All-in-one portfolios']];
@@ -2243,6 +2318,174 @@ async function loadRisk() {
 }
 
 // ─────────────────────────────────────────────
+//  PORTFOLIO REVIEW (what a brokerage statement shows, but live)
+// ─────────────────────────────────────────────
+const GOLD = new Set(['GLD', 'IAU', 'SLV', 'GLDM', 'SGOL', 'PPLT', 'BAR', 'AAAU', 'PHYS']);
+const BONDS = new Set(['BND', 'AGG', 'TLT', 'SHY', 'IEF', 'VGIT', 'VGSH', 'VCIT', 'VCSH', 'LQD', 'HYG', 'JNK', 'MUB', 'SGOV', 'BIL', 'TIP', 'SCHZ', 'BNDX', 'GOVT', 'USFR', 'TFLO', 'VTEB']);
+const CLASS_COLORS = {'Cash & money market': '#9DBBE0', 'Equities': '#0A84FF', 'Fixed income': '#30A46C', 'Alternatives': '#E8A33D'};
+const SNAP_KEY = 'pi.snapshots.v1';
+let snapshots = (() => { try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } })();
+function saveSnap(d, v, src) {
+  if (!(v > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+  // A statement value for a date beats a live reading for the same date
+  const old = snapshots.find(x => x.d === d);
+  if (old && old.src === 'statement' && src === 'live') return;
+  snapshots = snapshots.filter(x => x.d !== d);
+  snapshots.push({d, v: Math.round(v * 100) / 100, src});
+  snapshots.sort((a, b) => a.d.localeCompare(b.d));
+  snapshots = snapshots.slice(-400);
+  try { localStorage.setItem(SNAP_KEY, JSON.stringify(snapshots)); } catch (e) {}
+}
+function classOf(h) {
+  if (h.isCash) return 'Cash & money market';
+  if (GOLD.has(h.ticker)) return 'Alternatives';
+  if (BONDS.has(h.ticker) || (rates && rates.bond_etfs.some(b => b.ticker === h.ticker))) return 'Fixed income';
+  return 'Equities';
+}
+function valueOf(h) { return h.isCash ? (h.marketValue || 0) : h.shares * priceOf(h.ticker, h.currentPrice || h.avgCost || 0); }
+function incomeOf(h) {
+  if (h.isCash) return h.apy ? (h.marketValue || 0) * h.apy / 100 : 0;
+  const d = divData[h.ticker];
+  return d ? h.shares * (d.ttm_dividend || 0) : 0;
+}
+async function ensureDivs(tks) {
+  const need = tks.filter(t => !divData[t] || !divData[t].history);
+  if (!need.length) return;
+  try { Object.assign(divData, (await getJSON(`${BACKEND_URL}/api/dividends/${need.join(',')}`)).dividends || {}); } catch (e) {}
+}
+let prChart = null, prRun = 0;
+async function renderReviewSec() {
+  const run = ++prRun;
+  const has = myPortfolio.length > 0;
+  $('pr-empty').style.display = has ? 'none' : 'block';
+  $('pr-body').style.display = has ? 'block' : 'none';
+  if (!has) return;
+  const st = stocks();
+  await ensureDivs(st.map(h => h.ticker));
+  if (run !== prRun) return;
+  const rows = myPortfolio.map(h => ({h, v: valueOf(h), inc: incomeOf(h), cls: classOf(h)}));
+  const total = rows.reduce((s, r) => s + r.v, 0);
+  if (!total) return;
+  const income = rows.reduce((s, r) => s + r.inc, 0);
+  const withCost = st.filter(h => h.avgCost > 0);
+  const cost = withCost.reduce((s, h) => s + h.shares * h.avgCost, 0);
+  const gain = cost ? withCost.reduce((s, h) => s + valueOf(h), 0) - cost : null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (Object.keys(prices).length) saveSnap(today, total, 'live');
+
+  // Price history for "today's holdings over the past year"
+  let series = null;
+  try { await ensureHistory(['VOO', ...st.map(h => h.ticker)]); } catch (e) {}
+  if (run !== prRun) return;
+  const days = (hist1y.VOO || []).map(p => dayOf(p[0]));
+  const cashTotal = rows.filter(r => r.h.isCash).reduce((s, r) => s + r.v, 0);
+  if (days.length) {
+    const cl = st.map(h => closesOn(h.ticker, days));
+    series = days.map((d, i) => ({time: hist1y.VOO[i][0], d, value: cashTotal + st.reduce((s, h, j) => s + h.shares * (cl[j][i] || priceOf(h.ticker, h.avgCost || 0)), 0)}));
+  }
+
+  // Month comparison: a saved value from 20 to 45 days ago, else today's holdings priced a month ago
+  const iso = n => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+  const monthAgo = iso(30);
+  // Prefer your latest uploaded statement (at least a week old), then a saved value from 20 to 45 days ago
+  const snap = snapshots.filter(x => x.src === 'statement' && x.d <= iso(7) && x.d >= iso(70)).pop() || snapshots.filter(x => x.d <= iso(20) && x.d >= iso(45)).pop();
+  const ref = snap ? {d: snap.d, v: snap.v, est: false, stmt: snap.src === 'statement'}
+    : (series ? (() => { const p = series.filter(x => x.d <= monthAgo).pop() || series[0]; return {d: p.d, v: p.value, est: true}; })() : null);
+  // Income over the same period: dividends actually paid on today's shares, plus cash interest for those days
+  const since = ref ? ref.d : monthAgo;
+  const periodDays = Math.max(1, Math.round((Date.now() - new Date(since + 'T12:00:00')) / 864e5));
+  const cashAnnual = rows.filter(r => r.h.isCash).reduce((s, r) => s + r.inc, 0);
+  const cashMonth = cashAnnual / 12;
+  const divPeriod = st.reduce((s, h) => s + ((divData[h.ticker] || {}).history || []).filter(([d]) => d > since).reduce((a, [, amt]) => a + amt * h.shares, 0), 0);
+  const incMonth = divPeriod + cashAnnual * periodDays / 365;
+  const chg = ref ? total - ref.v : null;
+  // The estimate holds cash flat and ignores dividends, so its change is market movement only
+  const market = chg === null ? null : ref.est ? chg : chg - incMonth;
+  const earned = chg === null ? null : ref.est ? chg + incMonth : chg;
+  const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+  const sign = v => (v >= 0 ? '+' : '-') + usd(Math.abs(v));
+  $('pr-sum').innerHTML = `
+    <div><div class="pr-k">Net portfolio value</div><div class="pr-v">${usd(total)}</div><div class="pr-s">${rows.length} position${rows.length === 1 ? '' : 's'}</div></div>
+    <div><div class="pr-k">Change since ${ref ? fmtD(ref.d) : 'last month'}</div><div class="pr-v ${chg === null ? '' : chg >= 0 ? 'up' : 'down'}">${chg === null ? '–' : sign(chg)}</div><div class="pr-s">${ref ? pct(chg / ref.v * 100, 2) + (ref.est ? ' · estimated from today\'s holdings' : ref.stmt ? ' · vs your statement' : ' · vs your saved value') : ''}</div></div>
+    <div><div class="pr-k">Estimated annual income</div><div class="pr-v">${usd(income, 0)}</div><div class="pr-s">${(income / total * 100).toFixed(2)}% yield on the whole portfolio</div></div>
+    <div><div class="pr-k">Unrealized gain / loss</div><div class="pr-v ${gain === null ? '' : gain >= 0 ? 'up' : 'down'}">${gain === null ? '–' : sign(gain)}</div><div class="pr-s">${gain === null ? 'Add cost basis to see this' : pct(gain / cost * 100, 2) + ' on invested positions'}</div></div>`;
+  $('pr-earn').innerHTML = chg === null ? '' : `<span>Earnings since ${ref ? fmtD(ref.d) : 'last month'}</span><span>Income <b>${usd(incMonth)}</b></span><span>Market gains <b class="${market >= 0 ? 'up' : 'down'}">${sign(market)}</b></span><span>Total <b class="${earned >= 0 ? 'up' : 'down'}">${sign(earned)}</b></span>`;
+
+  // Allocation by asset class
+  const cls = {};
+  rows.forEach(r => { cls[r.cls] = (cls[r.cls] || 0) + r.v; });
+  const parts = Object.entries(cls).sort((a, b) => b[1] - a[1]);
+  const R = 70, C = 2 * Math.PI * R;
+  let off = 0;
+  $('pr-donut').innerHTML = parts.map(([k, v]) => {
+    const len = v / total * C;
+    const el = `<circle cx="100" cy="100" r="${R}" fill="none" stroke="${CLASS_COLORS[k]}" stroke-width="34" stroke-dasharray="${Math.max(0, len - (parts.length > 1 ? 1.2 : 0))} ${C}" stroke-dashoffset="${-off}"><title>${esc(k)} ${(v / total * 100).toFixed(1)}%</title></circle>`;
+    off += len;
+    return el;
+  }).join('');
+  $('pr-alloc-legend').innerHTML = parts.map(([k, v]) => `<div class="pr-leg"><span class="sw" style="background:${CLASS_COLORS[k]}"></span><span>${esc(k)}</span><span class="muted-l">${compact(v)}</span><b>${(v / total * 100).toFixed(2)}%</b></div>`).join('');
+
+  // Income by month over the last 12 months, if you had held today's positions
+  const months = [];
+  const now = new Date();
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 15); months.push(d.toISOString().slice(0, 7)); }
+  const divByM = Object.fromEntries(months.map(m => [m, 0]));
+  st.forEach(h => ((divData[h.ticker] || {}).history || []).forEach(([d, amt]) => { const m = d.slice(0, 7); if (m in divByM) divByM[m] += amt * h.shares; }));
+  const max = Math.max(1, ...months.map(m => divByM[m] + cashMonth));
+  const ytd = months.filter(m => m.startsWith(String(now.getFullYear()))).reduce((s, m) => s + divByM[m] + cashMonth, 0);
+  const missingApy = rows.filter(r => r.h.isCash && !r.h.apy).length;
+  $('pr-income').innerHTML = `<div class="pr-bars" role="img" aria-label="Estimated income by month">${months.map(m => { const dv = divByM[m]; return `<div class="pr-bar" title="${m}: ${usd(dv + cashMonth)}"><span class="top" style="height:${dv / max * 100}%"></span><span class="cash${dv ? '' : ' top'}" style="height:${cashMonth / max * 100}%"></span></div>`; }).join('')}</div>
+    <div class="pr-ml">${months.map(m => `<span>${new Date(m + '-15T12:00:00').toLocaleDateString('en-US', {month: 'narrow'})}</span>`).join('')}</div>
+    <div class="pr-earn" style="margin-top:12px"><span>This year <b>${usd(ytd)}</b></span><span>Est. annual <b>${usd(income)}</b></span><span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--accent)"></span> Dividends <span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:#9DBBE0;margin-left:8px"></span> Cash interest</span></div>
+    <p class="fine" style="margin-top:8px">Dividends actually paid per share over the past year, times the shares you hold today. Cash interest uses each cash position's yield${missingApy ? `. <b>${missingApy} cash position${missingApy > 1 ? 's have' : ' has'} no yield yet:</b> add it under Edit holdings` : ''}.</p>`;
+
+  // Value over the past year
+  const msg = $('pr-chart-msg');
+  if (series && window.LightweightCharts) {
+    msg.style.display = 'none';
+    if (!prChart) {
+      prChart = LightweightCharts.createChart($('pr-chart'), {autoSize: true, layout: {background: {type: 'solid', color: 'transparent'}, textColor: '#5A6B85', fontSize: 11},
+        grid: {vertLines: {visible: false}, horzLines: {color: '#E3EAF3'}}, rightPriceScale: {borderVisible: false}, timeScale: {borderVisible: false, fixLeftEdge: true, fixRightEdge: true},
+        crosshair: {mode: 0, horzLine: {visible: false, labelVisible: false}}, localization: {locale: 'en-US', priceFormatter: v => compact(v)}, handleScroll: false, handleScale: false});
+      prChart.line = prChart.addAreaSeries({lineColor: '#0A84FF', topColor: 'rgba(10,132,255,.22)', bottomColor: 'rgba(10,132,255,0)', lineWidth: 2, priceLineVisible: false, lastValueVisible: false});
+      prChart.snaps = prChart.addLineSeries({color: '#0B1A33', lineWidth: 1, lineStyle: 2, pointMarkersVisible: true, priceLineVisible: false, lastValueVisible: false});
+    }
+    prChart.line.setData(series.map(({time, value}) => ({time, value})));
+    const pts = snapshots.filter(x => x.src === 'statement').map(x => ({time: Math.floor(new Date(x.d + 'T20:00:00Z').getTime() / 1000), value: x.v})).filter(x => x.time >= series[0].time);
+    if (pts.length) pts.push({time: series[series.length - 1].time, value: total});
+    prChart.snaps.setData(pts.length > 1 ? pts : []);
+    prChart.timeScale().fitContent();
+    const n = snapshots.filter(x => x.src === 'statement').length;
+    $('pr-chart-note').textContent = `Blue: today's holdings priced over the past year, with cash held constant. ${n ? `Dashed: your actual values from ${n} uploaded statement${n > 1 ? 's' : ''}.` : 'Upload monthly statements to plot your actual values too.'}`;
+  } else msg.textContent = 'Price history is unavailable right now.';
+
+  // Top five holdings
+  $('pr-top').innerHTML = rows.slice().sort((a, b) => b.v - a.v).slice(0, 5).map(r => `<div class="pr-top"><div><b>${r.h.isCash ? esc(r.h.ticker) : `<button type="button" class="tk-link" data-tk="${esc(r.h.ticker)}">${esc(r.h.ticker)}</button>`}</b> <span class="muted-l">${esc((r.h.company || '').slice(0, 32))}</span></div><span>${usd(r.v, 0)}</span><b>${(r.v / total * 100).toFixed(2)}%</b></div>`).join('');
+  renderIndicators();
+}
+async function renderIndicators() {
+  const body = $('pr-ind');
+  const out = [];
+  try { await ensureHistory(['^GSPC', '^IXIC']); } catch (e) {}
+  const yEnd = `${new Date().getFullYear() - 1}-12-31`;
+  const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  [['S&P 500', '^GSPC'], ['Nasdaq', '^IXIC']].forEach(([n, t]) => {
+    const h = (hist1y[t] || []).map(p => [dayOf(p[0]), p[1]]);
+    if (!h.length) return;
+    const at = d => (h.filter(x => x[0] <= d).pop() || [])[1];
+    const f = v => v ? v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '–';
+    out.push([n, f(h[h.length - 1][1]), f(at(monthAgo)), f(at(yEnd))]);
+  });
+  if (yields && yields.curve) {
+    const y = k => [yields.curve[k], yields.month_ago && yields.month_ago.curve[k], yields.year_end && yields.year_end.curve[k]].map(v => v !== undefined && v !== null ? v.toFixed(2) + '%' : '–');
+    out.push(['3-month Treasury bills', ...y('3 Mo')], ['10-year Treasury', ...y('10 Yr')], ['30-year Treasury bonds', ...y('30 Yr')]);
+    if (yields.sofr && yields.sofr.now) out.push(['SOFR (overnight)', ...[yields.sofr.now, yields.sofr.month_ago, yields.sofr.year_end].map(x => x ? x.rate.toFixed(2) + '%' : '–')]);
+  }
+  body.innerHTML = out.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="4" class="muted-l">Loading…</td></tr>';
+  $('pr-ind-note').textContent = yields ? `Treasury yields as of ${yields.date}. Indexes at the latest close.` : '';
+}
+
+// ─────────────────────────────────────────────
 //  LEADERBOARD
 // ─────────────────────────────────────────────
 let lbTab = 'active', bestCache = null;
@@ -2328,6 +2571,7 @@ function wireReveal() {
 //  INIT
 // ─────────────────────────────────────────────
 function refreshAll() {
+  renderReviewSec();
   renderCash(); renderDividends(); loadRisk();
   renderAlerts();
   newsCache = {}; loadNews();
