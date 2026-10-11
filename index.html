@@ -2,1103 +2,1036 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Portfolio Intel">
+<meta name="theme-color" content="#071228">
 <title>Portfolio Intel</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#080c14;--surface:#0d1424;--card:#111827;--border:#1e293b;--border2:#334155;
-  --text:#e2e8f0;--muted:#94a3b8;--dim:#475569;--dimmer:#64748b;
-  --green:#4ade80;--red:#f87171;--blue:#60a5fa;--amber:#fbbf24;--purple:#a78bfa;
-  --trump:#dc2626;--pelosi:#2563eb;--me:#059669;
-  --radius:8px;--radius-sm:4px;
+  --navy-0:#071228;--navy-1:#0B1D42;
+  --accent:#0A84FF;--accent-press:#0062CC;
+  --up:#30D158;--down:#FF453A;--trump:#FF9F0A;--index:#8E9BB3;
+  --ink:#F5F5F7;--ink-2:#C7D2E3;--ink-3:#9FB1CE;
+  --dark:#0B1A33;--dark-2:#3A4A63;--dark-3:#5A6B85;
+  --glass-dark:rgba(7,18,40,0.42);--glass-dark-line:rgba(255,255,255,0.12);
+  --glass-light:rgba(255,255,255,0.78);--glass-light-line:rgba(255,255,255,0.95);
+  --radius-l:28px;--radius-m:20px;--radius-s:12px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',sans-serif;
 }
-html,body{height:100%;overflow-x:hidden}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',sans-serif;font-size:14px}
-button{font-family:inherit;cursor:pointer;border:none;outline:none}
-
-/* HEADER */
-#header{
-  background:rgba(13,20,36,0.95);
-  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-  border-bottom:1px solid var(--border);
-  padding:12px 16px;
-  display:flex;align-items:center;justify-content:space-between;
-  position:sticky;top:0;z-index:100;
+html{scroll-behavior:smooth;scroll-padding-top:64px}
+body{
+  font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;
+  background:#071228;min-height:100vh;
 }
-.logo{display:flex;align-items:center;gap:10px}
-.logo-icon{font-size:18px}
-.logo-text{font-size:16px;font-weight:700;color:#f1f5f9;letter-spacing:-0.3px}
-.logo-sub{font-size:9px;letter-spacing:2px;color:var(--dim);font-weight:600}
-.live-pill{display:flex;align-items:center;gap:5px;background:#052e16;border:1px solid #16a34a33;border-radius:20px;padding:4px 10px}
-.live-dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 1.5s infinite}
-.live-lbl{font-size:10px;color:#4ade80;font-weight:700;letter-spacing:1px}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* Aviator gradient: dark zone fades navy to steel blue, light zone continues steel blue to white */
+.zone-dark{background:linear-gradient(180deg,#071228 0%,#0B1D42 22%,#12306A 50%,#1F4E8F 80%,#3A6AAA 100%)}
+.zone-light{background:linear-gradient(180deg,#3A6AAA 0%,#7FA4D3 6%,#B9CFEA 14%,#DCE8F5 30%,#F4F8FC 50%,#FFFFFF 65%);padding-top:56px
+}
+button,input{font-family:inherit;font-size:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-/* ALERT BAR */
-#alert-bar{display:none;padding:10px 16px;align-items:center;gap:8px;border-bottom:2px solid;font-size:12px;flex-wrap:wrap}
-#alert-bar.buy{background:#052e16;border-color:#16a34a}
-#alert-bar.sell{background:#450a0a;border-color:#dc2626}
-#alert-bar.real{background:#1e1b4b;border-color:#6366f1}
+/* NAV */
+nav.top{position:sticky;top:0;z-index:50;background:rgba(7,18,40,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(255,255,255,0.08);padding-top:env(safe-area-inset-top)}
+nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:var(--ink);text-decoration:none}
+.navlinks{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.navlinks::-webkit-scrollbar{display:none}
+.navlinks a{color:var(--ink-2);text-decoration:none;font-size:13px;padding:10px 10px;white-space:nowrap;border-radius:8px}
+.navlinks a:hover{color:var(--ink)}
+@media(max-width:640px){.navlinks{display:none}}
 
-/* KPI STRIP */
-#kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
-@media(min-width:600px){#kpis{grid-template-columns:repeat(4,1fr)}}
-.kpi{background:var(--surface);padding:12px 14px}
-.kpi-label{font-size:8px;letter-spacing:2px;color:var(--dim);margin-bottom:4px;font-weight:600}
-.kpi-val{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:2px;line-height:1}
-.kpi-sub{font-size:10px;color:var(--muted)}
+/* SECTIONS */
+section{padding:0 0 96px}
+.dark-text{color:var(--dark)}
+h2.title{font-size:clamp(32px,5vw,44px);font-weight:600;letter-spacing:-1px;text-align:center;margin-bottom:8px}
+p.lede{font-size:clamp(16px,2.2vw,19px);text-align:center;margin-bottom:36px;color:var(--ink-2)}
+.dark-text p.lede{color:#1E3558}
+.card-d{background:var(--glass-dark);border:1px solid var(--glass-dark-line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:var(--radius-l);padding:24px}
+.card-l{background:var(--glass-light);border:1px solid var(--glass-light-line);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:var(--radius-l);padding:24px;box-shadow:0 20px 60px rgba(11,26,51,0.12);color:var(--dark)}
+.muted-d{color:var(--ink-3)}
+.muted-l{color:var(--dark-3)}
+.grid{display:grid;gap:16px}
+.g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
 
-/* REAL DATA BANNER */
-#data-banner{display:none;background:#1e1b4b;border-bottom:1px solid #6366f144;padding:8px 16px;font-size:10px;color:#a5b4fc;text-align:center}
-#data-banner.error{background:#450a0a;border-color:#dc262644;color:#fca5a5}
+/* HERO */
+#overview{padding:88px 0 48px;text-align:center}
+.hero-label{font-size:15px;color:var(--ink-3);margin-bottom:12px}
+.hero-value{font-size:clamp(48px,10vw,84px);font-weight:600;letter-spacing:-2.4px;line-height:1.02}
+.hero-change{font-size:clamp(16px,2.4vw,19px);margin-top:12px}
+.status{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-3);margin-top:16px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.dot.ok{background:var(--up);box-shadow:0 0 0 0 rgba(48,209,88,.6);animation:ping 2.4s infinite}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(48,209,88,.5)}70%{box-shadow:0 0 0 8px rgba(48,209,88,0)}100%{box-shadow:0 0 0 0 rgba(48,209,88,0)}}
+.btn{min-height:44px;border:0;border-radius:var(--radius-s);padding:0 20px;font-size:15px;font-weight:600;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;transition:transform .15s ease,background .15s ease}
+.btn:hover{background:var(--accent-press)}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:#fff;color:var(--dark);border:1px solid #C9D6E8;font-weight:500}
+.btn.ghost:hover{background:#F2F6FB}
+.btn.glass{background:rgba(255,255,255,0.12);color:var(--ink);font-weight:500}
+.btn.glass:hover{background:rgba(255,255,255,0.2)}
+.btn.small{min-height:36px;font-size:13px;padding:0 14px}
 
-/* TABS */
-#tabs-nav{display:flex;overflow-x:auto;padding:0 16px;background:var(--bg);border-bottom:1px solid var(--border);gap:2px;scrollbar-width:none}
-#tabs-nav::-webkit-scrollbar{display:none}
-.tab{padding:10px 14px;border-radius:var(--radius) var(--radius) 0 0;font-size:10px;letter-spacing:0.5px;cursor:pointer;border:1px solid transparent;border-bottom:none;color:var(--dimmer);background:transparent;white-space:nowrap;font-weight:600}
-.tab.active{background:var(--surface);color:var(--text);border-color:var(--border)}
-
-/* CONTENT */
-#content{padding:14px 16px;max-width:1200px;margin:0 auto}
-.pane{display:none}.pane.active{display:block}
-
-/* CARDS */
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
-.card-hdr{font-size:9px;letter-spacing:2px;color:var(--dimmer);margin-bottom:12px;font-weight:700}
-
-/* TRADE ROWS */
-.trade-row{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:6px;transition:all .3s}
-.trade-row.flash-buy{border-color:#16a34a;background:#052e16}
-.trade-row.flash-sell{border-color:#dc2626;background:#450a0a}
-.trade-row.real-trade{border-color:#6366f133;background:#1e1b4b22}
-.trade-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.trade-bottom{display:flex;justify-content:space-between;align-items:center}
-.pol-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
-.pol-info{flex:1;min-width:0}
-.pol-nm{font-size:10px;font-weight:700}
-.pol-tm{font-size:9px;color:var(--dim)}
-.act-badge{padding:3px 8px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;flex-shrink:0}
-.buy-badge{background:#14532d;color:var(--green)}
-.sell-badge{background:#7f1d1d;color:var(--red)}
-.ticker-nm{font-weight:700;font-size:15px;color:#f1f5f9}
-.co-nm{font-size:10px;color:var(--muted)}
-.trade-amt{font-weight:700;font-size:13px;text-align:right}
-.mine-tag{background:#1e3a5f;color:var(--blue);font-size:8px;padding:2px 5px;border-radius:var(--radius-sm);font-weight:700;margin-left:4px}
-.real-tag{background:#1e1b4b;color:#a5b4fc;font-size:8px;padding:2px 5px;border-radius:var(--radius-sm);font-weight:700;margin-left:4px}
-
-/* GRID LAYOUTS */
-.two-col{display:grid;grid-template-columns:1fr;gap:12px}
-@media(min-width:768px){.two-col{grid-template-columns:1fr 260px}}
-.three-col{display:grid;grid-template-columns:1fr;gap:12px}
-@media(min-width:600px){.three-col{grid-template-columns:repeat(3,1fr)}}
-
-/* HOLDINGS */
-.hold-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:12px}
-.hold-hdr{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-.hold-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.hold-lbl{font-size:9px;letter-spacing:2px;color:var(--dimmer);font-weight:700}
-.hold-total{margin-left:auto;font-size:13px;font-weight:700}
-table{width:100%;border-collapse:collapse}
-th{padding:6px 10px;font-size:9px;letter-spacing:1px;color:var(--dim);font-weight:600;background:var(--bg);text-align:right}
-th:first-child{text-align:left}
-td{padding:8px 10px;border-top:1px solid var(--border);text-align:right;font-size:11px}
-td:first-child{text-align:left}
-.t-tick{font-weight:700;font-size:12px;color:#f1f5f9}
-.t-sec{font-size:9px;color:var(--dim)}
-.pos{color:var(--green);font-weight:700}.neg{color:var(--red);font-weight:700}
-.t-num{color:var(--muted)}.t-cur{color:var(--text);font-weight:600}
-
-/* IMPORT */
-.import-strip{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px}
-.import-zone{border:2px dashed var(--border2);border-radius:var(--radius);padding:24px;text-align:center;margin-bottom:12px;cursor:pointer;transition:border-color .2s}
-.import-zone:hover{border-color:var(--pelosi)}
-.import-btn{background:var(--pelosi);color:#fff;border:none;padding:7px 16px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;font-family:inherit;cursor:pointer}
-.upload-btn{background:#1e3a5f;color:var(--blue);border:1px solid #1d4ed833;padding:5px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;font-family:inherit;cursor:pointer}
+/* CHART */
+.chart-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.legend{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:var(--ink-2);font-size:13px;transition:opacity .2s}
+.chip .sw{width:12px;height:3px;border-radius:2px}
+.chip .v{color:var(--ink);font-weight:600}
+.chip[aria-pressed="false"]{opacity:.45}
+.seg{display:flex;gap:2px;padding:3px;background:rgba(255,255,255,0.08);border-radius:10px}
+.seg button{min-width:44px;min-height:32px;border:0;border-radius:8px;background:transparent;color:var(--ink-3);font-size:13px;font-weight:500;transition:background .2s,color .2s}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,0.2);color:#fff}
+#chart{height:320px;position:relative}
+.chart-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ink-3);text-align:center;padding:20px}
+.chart-foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--ink-3);margin-top:10px}
 
 /* COMPARE */
-.stat-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px}
-.stat-row:last-child{border:none}
-.stat-k{color:var(--dim)}.stat-v{color:#f1f5f9;font-weight:700}
-.chart-wrap{position:relative;width:100%}
+.stat-name{font-size:15px;font-weight:600}
+.stat-big{font-size:34px;font-weight:600;letter-spacing:-.8px;margin:12px 0}
+.stat-sub{font-size:13px;color:var(--ink-2)}
+.up{color:var(--up)}.down{color:var(--down)}
+.dark-text .up{color:#1A7F37}.dark-text .down{color:#C62828}
 
-/* AI */
-.ai-input{width:100%;background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 12px;color:var(--text);font-family:inherit;font-size:13px;outline:none;margin-bottom:8px}
-.ai-go{background:var(--pelosi);color:#fff;padding:10px 20px;border-radius:var(--radius);font-size:11px;font-weight:700;letter-spacing:1px;width:100%}
-.ai-go:disabled{background:var(--border);cursor:wait}
-.qps{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
-.qp{background:var(--bg);border:1px solid var(--border);color:var(--dimmer);padding:5px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:10px;font-family:inherit}
-.insight-out{background:var(--card);border:1px solid var(--border2);border-radius:var(--radius);padding:14px;font-size:12px;color:#cbd5e1;line-height:1.7;white-space:pre-wrap;min-height:60px}
+/* FEED */
+.filters{display:flex;justify-content:center;margin-bottom:20px}
+.feed{display:flex;flex-direction:column}
+.trade{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:14px 0;border-top:1px solid rgba(255,255,255,0.08)}
+.trade:first-child{border-top:0}
+.trade .who{font-size:13px;color:var(--ink-3)}
+.trade .what{font-size:16px;font-weight:600}
+.trade .amt{font-size:14px;text-align:right}
+.trade .when{font-size:12px;color:var(--ink-3);text-align:right}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;margin-left:8px;vertical-align:2px}
+.pill.buy{background:rgba(48,209,88,.16);color:#6EE7A0}
+.pill.sell{background:rgba(255,69,58,.16);color:#FF8A80}
+.pill.mine{background:rgba(10,132,255,.2);color:#8EC5FF}
+.more{margin-top:16px;text-align:center}
+
+/* TABLE */
+.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+th{font-size:12px;font-weight:500;color:var(--dark-3);text-align:right;padding:8px 10px 8px 0;white-space:nowrap}
+td{padding:14px 10px 14px 0;text-align:right;border-top:1px solid #E3EAF3;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td .co{font-size:12px;color:var(--dark-3);font-weight:400;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.badge{display:inline-block;font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;margin-left:4px}
+.b-pelosi{background:rgba(0,98,204,.12);color:#0062CC}
+.b-trump{background:rgba(178,94,0,.12);color:#8A4B00}
+.b-cong{background:rgba(90,107,133,.12);color:#3A4A63}
+.empty{text-align:center;padding:32px 12px;color:var(--dark-3);font-size:15px}
+
+/* IMPORT */
+.drop{border:2px dashed #9DB3D1;border-radius:var(--radius-m);padding:36px 16px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;cursor:pointer;transition:background .2s,border-color .2s}
+.drop:hover,.drop.over{background:rgba(10,132,255,.06);border-color:var(--accent)}
+.drop strong{font-size:17px}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.fine{font-size:12px;color:var(--dark-3);line-height:1.5}
+.progress{display:none;align-items:center;gap:12px;font-size:15px;margin-top:4px}
+.spinner{width:18px;height:18px;border-radius:50%;border:2px solid #C9D6E8;border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.review-row{display:grid;grid-template-columns:minmax(70px,1fr) minmax(70px,1fr) minmax(80px,1fr) 36px;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #E3EAF3}
+.review-row input{width:100%;min-height:40px;border:1px solid #C9D6E8;border-radius:10px;padding:0 10px;font-size:15px;background:#fff;color:var(--dark);font-variant-numeric:tabular-nums}
+.review-row.flag input.f{border-color:#E8A33D;background:#FFF7E8}
+.review-head{display:grid;grid-template-columns:minmax(70px,1fr) minmax(70px,1fr) minmax(80px,1fr) 36px;gap:8px;font-size:12px;color:var(--dark-3);padding-bottom:6px}
+.icon-btn{width:36px;height:36px;border-radius:10px;border:0;background:transparent;color:var(--dark-3);display:flex;align-items:center;justify-content:center}
+.icon-btn:hover{background:#EEF3F9;color:var(--dark)}
+.note-warn{font-size:13px;color:#8A4B00;background:#FFF1D6;border-radius:10px;padding:10px 12px;margin:10px 0}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.actions .btn{flex:1 1 140px}
 
 /* NEWS */
-.news-item{padding:10px 0;border-bottom:1px solid var(--border)}
-.news-item:last-child{border:none}
-.news-title{font-size:12px;color:#f1f5f9;margin-bottom:4px;line-height:1.4}
-.news-meta{font-size:10px;color:var(--dim)}
-.news-link{color:var(--blue);text-decoration:none;font-size:10px}
+.news-item{display:block;padding:16px 0;border-top:1px solid #E3EAF3;text-decoration:none;color:var(--dark)}
+.news-item:first-child{border-top:0}
+.news-item .t{font-size:16px;font-weight:600;line-height:1.35}
+.news-item .m{font-size:13px;color:var(--dark-3);margin-top:4px}
+.news-item:hover .t{color:var(--accent-press)}
 
-/* PERF BARS */
-.perf-item{margin-bottom:10px}
-.perf-top{display:flex;justify-content:space-between;margin-bottom:4px;font-size:11px}
-.bar-track{background:var(--border);border-radius:2px;height:4px}
-.bar-fill{height:100%;border-radius:2px;transition:width .5s}
+/* ASK */
+.ask-row{display:flex;gap:10px;flex-wrap:wrap}
+.ask-row input{flex:1 1 240px;min-height:48px;border:1px solid #D2D2D7;border-radius:var(--radius-s);padding:0 16px;font-size:16px;color:#1D1D1F;background:#fff}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.preset{min-height:36px;padding:0 14px;border-radius:999px;border:1px solid #D2D2D7;background:#fff;color:#1D1D1F;font-size:13px}
+.preset:hover{border-color:var(--accent);color:var(--accent-press)}
+.answer{margin-top:20px;font-size:15px;line-height:1.6;color:#1D1D1F;white-space:pre-line}
 
-/* OVERLAP */
-.tag{display:inline-block;padding:3px 8px;border-radius:var(--radius-sm);font-size:10px;font-weight:700;margin:2px}
+/* SIGNALS */
+.signal{background:#fff;border-radius:24px;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,0.06);color:#1D1D1F}
+.signal h3{font-size:19px;font-weight:600;margin-bottom:8px}
+.signal p{font-size:15px;color:#515154;line-height:1.5}
+footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-height:1.6}
 
-/* STATUS BAR */
-#status-bar{background:var(--bg);border-top:1px solid var(--border);padding:6px 16px;display:flex;gap:16px;font-size:10px;color:var(--dim);flex-wrap:wrap}
-.s-dot{width:5px;height:5px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:4px;vertical-align:middle}
-.s-dot.ok{background:#22c55e}.s-dot.warn{background:var(--amber)}.s-dot.live{background:#6366f1}
-
-/* LOADING */
-.loading{display:flex;align-items:center;gap:8px;color:var(--dim);font-size:11px;padding:20px 0}
-.spin{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* PRICE BADGE */
-.price-badge{font-size:10px;padding:2px 6px;border-radius:var(--radius-sm);font-weight:700}
-.price-up{background:#14532d22;color:var(--green);border:1px solid #14532d44}
-.price-dn{background:#7f1d1d22;color:var(--red);border:1px solid #7f1d1d44}
-
-/* REAL DATA INDICATOR */
-.real-indicator{display:inline-flex;align-items:center;gap:4px;background:#1e1b4b;border:1px solid #6366f133;border-radius:20px;padding:2px 8px;font-size:9px;color:#a5b4fc;font-weight:700;letter-spacing:1px}
+/* SKELETON + MOTION */
+.sk{display:inline-block;min-width:4ch;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.08),rgba(255,255,255,.18),rgba(255,255,255,.08));background-size:200% 100%;animation:sh 1.4s ease infinite;color:transparent!important}
+.dark-text .sk{background:linear-gradient(90deg,#E3EAF3,#F2F6FB,#E3EAF3);background-size:200% 100%}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+.flash-up{animation:fu 1.2s ease}
+.flash-down{animation:fd 1.2s ease}
+@keyframes fu{0%{color:var(--up)}100%{}}
+@keyframes fd{0%{color:var(--down)}100%{}}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  .reveal{opacity:1;transform:none}
+}
 </style>
 </head>
 <body>
 
-<!-- ALERT BAR -->
-<div id="alert-bar">
-  <span id="a-icon">⚡</span>
-  <span id="a-pol" style="font-weight:700"></span>
-  <span id="a-act" style="font-weight:700"></span>
-  <span id="a-tick" style="font-weight:700;font-size:14px"></span>
-  <span id="a-detail" style="color:var(--muted)"></span>
-  <span id="a-real" style="margin-left:auto"></span>
-</div>
-
-<!-- HEADER -->
-<div id="header">
-  <div class="logo">
-    <span class="logo-icon">📊</span>
-    <div>
-      <div class="logo-text">Portfolio Intel</div>
-      <div class="logo-sub">POLITICAL TRADE TRACKER</div>
+<nav class="top" aria-label="Main">
+  <div class="wrap">
+    <a class="brand" href="#overview">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/></svg>
+      Portfolio Intel
+    </a>
+    <div class="navlinks">
+      <a href="#performance">Performance</a>
+      <a href="#compare">Compare</a>
+      <a href="#disclosures">Disclosures</a>
+      <a href="#holdings">Holdings</a>
+      <a href="#news">News</a>
+      <a href="#ask">Ask</a>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:8px">
-    <button class="upload-btn" onclick="document.getElementById('csv-in').click()">↑ CSV</button>
-    <div class="live-pill">
-      <div class="live-dot" id="live-dot"></div>
-      <span class="live-lbl" id="live-lbl">LIVE</span>
+</nav>
+
+<main>
+<div class="zone-dark">
+<!-- HERO -->
+<section id="overview">
+  <div class="wrap">
+    <p class="hero-label" id="hero-label">Total portfolio value</p>
+    <h1 class="hero-value num" id="hero-value"><span class="sk">$000,000</span></h1>
+    <p class="hero-change num" id="hero-change"></p>
+    <div id="hero-cta" style="display:none;margin-top:24px"><a class="btn" href="#import">Add your portfolio</a></div>
+    <div class="status"><span class="dot" id="live-dot"></span><span id="live-text">Connecting to market data…</span></div>
+  </div>
+</section>
+
+<!-- PERFORMANCE -->
+<section id="performance" aria-label="Performance">
+  <div class="wrap reveal">
+    <div class="card-d">
+      <div class="chart-head">
+        <div class="legend" id="legend" role="group" aria-label="Series"></div>
+        <div class="seg" id="ranges" role="group" aria-label="Time range"></div>
+      </div>
+      <div id="chart"><div class="chart-msg" id="chart-msg">Loading price history…</div></div>
+      <div class="chart-foot"><span id="chart-date">Return over period</span><span>Reference baskets use estimated disclosed positions.</span></div>
     </div>
   </div>
-</div>
+</section>
 
-<div id="data-banner" style="display:none"><span id="banner-text"></span></div>
-
-<!-- KPIs -->
-<div id="kpis">
-  <div class="kpi">
-    <div class="kpi-label">MY PORTFOLIO</div>
-    <div class="kpi-val" id="kpi-my">—</div>
-    <div class="kpi-sub" id="kpi-my-sub" style="color:var(--me)">Upload CSV</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">LIVE PRICES</div>
-    <div class="kpi-val" id="kpi-voo">—</div>
-    <div class="kpi-sub" id="kpi-voo-sub" style="color:var(--muted)">VOO</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">TRADE FEED</div>
-    <div class="kpi-val" id="kpi-trades">0</div>
-    <div class="kpi-sub" id="kpi-trades-sub" style="color:var(--muted)">Loading...</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">LAST UPDATE</div>
-    <div class="kpi-val" id="kpi-time" style="font-size:14px">—</div>
-    <div class="kpi-sub" id="kpi-time-sub" style="color:var(--muted)">Auto-refresh 5min</div>
-  </div>
-</div>
-
-<!-- TABS -->
-<div id="tabs-nav">
-  <button class="tab active" onclick="showTab('feed',this)">📡 FEED</button>
-  <button class="tab" onclick="showTab('holdings',this)">📊 HOLDINGS</button>
-  <button class="tab" onclick="showTab('news',this)">📰 NEWS</button>
-  <button class="tab" onclick="showTab('compare',this)">⚖️ COMPARE</button>
-  <button class="tab" onclick="showTab('insights',this)">🧠 AI</button>
-</div>
-
-<input type="file" id="csv-in" accept=".csv" style="display:none" onchange="loadCSV(this.files[0])">
-
-<div id="content">
-
-  <!-- FEED TAB -->
-  <div class="pane active" id="pane-feed">
-    <div class="two-col">
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span style="font-size:9px;letter-spacing:2px;color:var(--dimmer);font-weight:700">DISCLOSURE FEED — <span id="feed-count">0</span> TRADES</span>
-          <span id="feed-source" style="font-size:10px;color:var(--dim)">Loading...</span>
-        </div>
-        <div id="trade-feed"><div class="loading"><div class="spin"></div>Fetching real trades...</div></div>
-      </div>
-      <div>
-        <div class="card">
-          <div class="card-hdr">LIVE PRICES</div>
-          <div id="price-list"><div class="loading"><div class="spin"></div>Loading...</div></div>
-        </div>
-        <div class="card">
-          <div class="card-hdr">SECTOR SIGNALS</div>
-          <div id="sector-signals">
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Technology</span><span><span style="color:#93c5fd">P:8</span> · <span style="color:#fca5a5">T:2</span></span></div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Energy</span><span><span style="color:#93c5fd">P:1</span> · <span style="color:#fca5a5">T:6</span></span></div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><span>Automotive</span><span><span style="color:#93c5fd">P:0</span> · <span style="color:#fca5a5">T:4</span></span></div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:11px"><span>Cybersecurity</span><span><span style="color:#93c5fd">P:5</span> · <span style="color:#fca5a5">T:0</span></span></div>
-          </div>
-        </div>
-      </div>
+<!-- COMPARE -->
+<section id="compare">
+  <div class="wrap">
+    <h2 class="title reveal">You vs. Washington.</h2>
+    <p class="lede reveal">Returns over the selected period, using live prices.</p>
+    <div class="grid g4 reveal">
+      <article class="card-d"><div class="stat-name">You</div><div class="stat-big num" id="ret-me"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-me">Add your portfolio to compare</div></article>
+      <article class="card-d"><div class="stat-name">Pelosi</div><div class="stat-big num" id="ret-pelosi"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-pelosi"></div></article>
+      <article class="card-d"><div class="stat-name">Trump</div><div class="stat-big num" id="ret-trump"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-trump"></div></article>
+      <article class="card-d"><div class="stat-name">S&amp;P 500 (VOO)</div><div class="stat-big num" id="ret-voo"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-voo">The benchmark</div></article>
     </div>
   </div>
+</section>
 
-  <!-- HOLDINGS TAB -->
-  <div class="pane" id="pane-holdings">
-    <div class="import-strip" id="import-strip">
-      <div>
-        <div style="font-size:12px;font-weight:700;color:#f1f5f9" id="import-status">No portfolio loaded</div>
-        <div style="font-size:10px;color:var(--dim)">Upload your Merrill Edge CSV</div>
-      </div>
-      <button class="import-btn" onclick="document.getElementById('csv-in').click()">↑ UPLOAD CSV</button>
-    </div>
-    <div id="csv-status" style="font-size:11px;margin-bottom:10px"></div>
-
-    <div id="my-section" style="display:none">
-      <div class="hold-card">
-        <div class="hold-hdr">
-          <div class="hold-dot" style="background:var(--me)"></div>
-          <span class="hold-lbl">MY PORTFOLIO</span>
-          <span class="hold-total" id="my-total" style="color:var(--me)">—</span>
-        </div>
-        <table><thead><tr>
-          <th style="text-align:left">TICKER</th><th>SHARES</th><th>COST</th><th>NOW</th><th>P&L</th>
-        </tr></thead><tbody id="my-tbl"></tbody></table>
-      </div>
-      <div class="card">
-        <div class="card-hdr">OVERLAP WITH POLITICIANS</div>
-        <div style="margin-bottom:10px">
-          <div style="font-size:10px;color:#fca5a5;margin-bottom:6px">🦅 Trump overlap</div>
-          <div id="trump-overlap">—</div>
-        </div>
-        <div>
-          <div style="font-size:10px;color:#93c5fd;margin-bottom:6px">🔵 Pelosi overlap</div>
-          <div id="pelosi-overlap">—</div>
-        </div>
-      </div>
-    </div>
-
-    <div id="demo-holdings">
-      <div class="hold-card">
-        <div class="hold-hdr">
-          <div class="hold-dot" style="background:var(--trump)"></div>
-          <span class="hold-lbl">TRUMP HOLDINGS</span>
-          <span class="hold-total" style="color:var(--trump)">$3.08B est.</span>
-        </div>
-        <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>DAY</th><th>P&L</th></tr></thead>
-        <tbody id="trump-demo"></tbody></table>
-      </div>
-      <div class="hold-card">
-        <div class="hold-hdr">
-          <div class="hold-dot" style="background:var(--pelosi)"></div>
-          <span class="hold-lbl">PELOSI HOLDINGS</span>
-          <span class="hold-total" style="color:var(--pelosi)">$79.4M est.</span>
-        </div>
-        <table><thead><tr><th style="text-align:left">TICKER</th><th>PRICE</th><th>DAY</th><th>P&L</th></tr></thead>
-        <tbody id="pelosi-demo"></tbody></table>
-      </div>
+<!-- DISCLOSURES -->
+<section id="disclosures">
+  <div class="wrap">
+    <h2 class="title reveal">Latest disclosures.</h2>
+    <p class="lede reveal" id="feed-lede">Congressional trades, as filed.</p>
+    <div class="filters reveal"><div class="seg" id="feed-filter" role="group" aria-label="Filter trades"></div></div>
+    <div class="card-d reveal">
+      <div class="feed" id="feed"></div>
+      <div class="more"><button class="btn glass small" id="feed-more" type="button">Show more</button></div>
     </div>
   </div>
-
-  <!-- NEWS TAB -->
-  <div class="pane" id="pane-news">
-    <div class="card">
-      <div class="card-hdr" style="display:flex;justify-content:space-between">
-        <span>LIVE MARKET NEWS</span>
-        <span id="news-source" style="color:var(--dim)">Loading...</span>
-      </div>
-      <div id="news-list"><div class="loading"><div class="spin"></div>Fetching news...</div></div>
-    </div>
-  </div>
-
-  <!-- COMPARE TAB -->
-  <div class="pane" id="pane-compare">
-    <div class="three-col" style="margin-bottom:12px">
-      <div class="card" style="border-color:#05996933">
-        <div style="font-size:9px;letter-spacing:2px;color:var(--me);margin-bottom:12px;font-weight:700">👤 MY PORTFOLIO</div>
-        <div class="stat-row"><span class="stat-k">Total Value</span><span class="stat-v" id="cmp-val">Import CSV</span></div>
-        <div class="stat-row"><span class="stat-k">Gain/Loss</span><span class="stat-v" id="cmp-gain">—</span></div>
-        <div class="stat-row"><span class="stat-k">Return</span><span class="stat-v" id="cmp-ret">—</span></div>
-        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v" id="cmp-pos">—</span></div>
-        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v" id="cmp-top">—</span></div>
-      </div>
-      <div class="card" style="border-color:#dc262633">
-        <div style="font-size:9px;letter-spacing:2px;color:var(--trump);margin-bottom:12px;font-weight:700">🦅 TRUMP</div>
-        <div class="stat-row"><span class="stat-k">Est. Value</span><span class="stat-v">$3.08B</span></div>
-        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">TSLA +21.7%</span></div>
-        <div class="stat-row"><span class="stat-k">Top Loss</span><span class="stat-v" style="color:var(--red)">DJT -19.6%</span></div>
-        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">6</span></div>
-        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v">DJT</span></div>
-      </div>
-      <div class="card" style="border-color:#2563eb33">
-        <div style="font-size:9px;letter-spacing:2px;color:var(--pelosi);margin-bottom:12px;font-weight:700">🔵 PELOSI</div>
-        <div class="stat-row"><span class="stat-k">Est. Value</span><span class="stat-v">$79.4M</span></div>
-        <div class="stat-row"><span class="stat-k">Top Gain</span><span class="stat-v" style="color:var(--green)">NVDA +171%</span></div>
-        <div class="stat-row"><span class="stat-k">Avg Return</span><span class="stat-v" style="color:var(--green)">+41.8%</span></div>
-        <div class="stat-row"><span class="stat-k">Positions</span><span class="stat-v">7</span></div>
-        <div class="stat-row"><span class="stat-k">Top Holding</span><span class="stat-v">NVDA</span></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-hdr" style="margin-bottom:12px">6-MONTH PERFORMANCE</div>
-      <div class="chart-wrap" style="height:200px"><canvas id="perfChart"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-hdr" style="margin-bottom:12px">SECTOR EXPOSURE (%)</div>
-      <div class="chart-wrap" style="height:180px"><canvas id="sectorChart"></canvas></div>
-    </div>
-  </div>
-
-  <!-- AI TAB -->
-  <div class="pane" id="pane-insights">
-
-    <div class="card">
-      <div class="card-hdr">ASK THE INTELLIGENCE ENGINE</div>
-      <input class="ai-input" id="ai-q" placeholder="Ask anything about the portfolios..." onkeydown="if(event.key==='Enter')askAI()">
-      <button class="ai-go" id="ai-go" onclick="askAI()">ANALYZE →</button>
-      <div class="qps" style="margin-top:10px">
-        <button class="qp" onclick="askAI('Should I follow Pelosi tech trades given my holdings?')">Follow Pelosi?</button>
-        <button class="qp" onclick="askAI('What sectors are both Trump and Pelosi buying?')">Both buying?</button>
-        <button class="qp" onclick="askAI('Compare my portfolio risk to theirs')">Risk compare</button>
-        <button class="qp" onclick="askAI('What is Pelosi trading pattern recently?')">Pelosi pattern</button>
-      </div>
-    </div>
-    <div id="ai-out"></div>
-    <div class="card" style="margin-top:8px">
-      <div class="card-hdr">KEY INTELLIGENCE</div>
-      <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
-        <div style="font-size:10px;font-weight:700;color:var(--pelosi);margin-bottom:4px">🔍 Pelosi Tech Concentration</div>
-        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">78% of her portfolio is technology. NVDA alone up 171%. Consistently buying chips and AI.</div>
-      </div>
-      <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">
-        <div style="font-size:10px;font-weight:700;color:var(--trump);margin-bottom:4px">⚡ Trump Energy Bet</div>
-        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">25% energy via XOM and GEO. Fossil fuel bias benefiting from deregulation.</div>
-      </div>
-      <div>
-        <div style="font-size:10px;font-weight:700;color:var(--amber);margin-bottom:4px">🚨 DJT Risk Flag</div>
-        <div style="font-size:10px;color:var(--dimmer);line-height:1.5">Trump's DJT down 19.6% — conflict-of-interest stock. Avoid entirely.</div>
-      </div>
-    </div>
-  </div>
+</section>
 
 </div>
+<div class="zone-light">
+<!-- HOLDINGS -->
+<section id="holdings" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Your holdings.</h2>
+    <p class="lede reveal">See who in Congress trades what you own.</p>
+    <div class="card-l reveal">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Ticker</th><th>Shares</th><th>Price</th><th>Value</th><th>Return</th><th>Also traded by</th></tr></thead>
+          <tbody id="my-tbl"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="my-empty">No holdings yet. <a href="#import">Add your portfolio</a> to see them here.</div>
+      <div class="actions" id="my-actions" style="display:none">
+        <button class="btn ghost small" type="button" id="edit-holdings">Edit holdings</button>
+        <button class="btn ghost small" type="button" id="clear-holdings">Remove portfolio</button>
+      </div>
+    </div>
+  </div>
+</section>
 
-<div id="status-bar">
-  <div><span class="s-dot" id="dot-data"></span>Data: <span id="st-data">Connecting...</span></div>
-  <div><span class="s-dot" id="dot-merrill"></span>Portfolio: <span id="st-merrill">No CSV</span></div>
-  <div><span class="s-dot" id="dot-ai"></span>AI: Ready</div>
-  <div style="margin-left:auto;color:var(--dimmer)">Portfolio Intel v2.0</div>
+<!-- IMPORT -->
+<section id="import" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Bring any statement.</h2>
+    <p class="lede reveal">PDF, screenshot, spreadsheet, or CSV. From any broker.</p>
+    <div class="grid g3 reveal" style="max-width:820px;margin:0 auto">
+      <div class="card-l" id="import-card">
+        <label class="drop" id="drop">
+          <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0A84FF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><polyline points="7 9 12 4 17 9"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <strong>Drop a file or browse</strong>
+          <span class="fine">PDF · PNG · JPG · HEIC screenshot · XLSX · CSV</span>
+          <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.txt,.xlsx,.xls,image/*">
+        </label>
+        <div class="progress" id="progress"><span class="spinner" aria-hidden="true"></span><span id="progress-text">Reading your file…</span></div>
+        <p class="fine" style="margin-top:14px">Your file is read in this browser. Only its text goes to the AI to find holdings, with long numbers like account numbers removed first. Nothing is stored except tickers and share counts, on this device.</p>
+        <div style="margin-top:12px"><button class="btn ghost small" type="button" id="manual">Enter holdings manually</button></div>
+      </div>
+
+      <div class="card-l" id="review" style="display:none">
+        <div style="font-size:12px;font-weight:600;color:var(--dark-3)">Review</div>
+        <div style="font-size:19px;font-weight:600;margin:6px 0 2px" id="review-title">Found holdings</div>
+        <div class="fine" id="review-sub">Check the numbers. Nothing is saved until you confirm.</div>
+        <div class="note-warn" id="review-warn" style="display:none"></div>
+        <div style="margin-top:12px" class="review-head"><span>Ticker</span><span>Shares</span><span>Avg cost ($)</span><span></span></div>
+        <div id="review-rows"></div>
+        <button class="btn ghost small" type="button" id="add-row" style="margin-top:10px">Add row</button>
+        <div class="actions">
+          <button class="btn" type="button" id="confirm">Looks right</button>
+          <button class="btn ghost" type="button" id="cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="card-l" id="fail" style="display:none">
+        <div style="font-size:12px;font-weight:600;color:var(--dark-3)">Couldn&#39;t read it</div>
+        <div style="font-size:19px;font-weight:600;margin:6px 0 8px">We couldn&#39;t find holdings in this file.</div>
+        <p style="font-size:15px;color:var(--dark-2);line-height:1.5" id="fail-text">It may be blurry, password protected, or not a statement. Try a clearer screenshot of your positions page, or add them by hand.</p>
+        <div class="actions" style="flex-direction:column">
+          <button class="btn" type="button" id="retry">Try another file</button>
+          <button class="btn ghost" type="button" id="fail-manual">Enter holdings manually</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NEWS -->
+<section id="news" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">In the news.</h2>
+    <p class="lede reveal">Market and disclosure headlines.</p>
+    <div class="card-l reveal" style="max-width:820px;margin:0 auto"><div id="news-list"></div></div>
+  </div>
+</section>
+
+<!-- ASK -->
+<section id="ask" class="dark-text">
+  <div class="wrap" style="max-width:820px">
+    <h2 class="title reveal" style="color:#1D1D1F">Ask anything.</h2>
+    <p class="lede reveal" style="color:#515154">Answers use the live prices and disclosures on this page.</p>
+    <div class="card-l reveal">
+      <form class="ask-row" id="ask-form">
+        <label class="sr" for="ask-q">Question</label>
+        <input id="ask-q" type="text" placeholder="Is Pelosi still buying chips?" autocomplete="off">
+        <button class="btn" type="submit" id="ask-go">Ask</button>
+      </form>
+      <div class="presets" id="presets"></div>
+      <div class="answer" id="answer" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<!-- SIGNALS -->
+<section id="signals" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal" style="color:#1D1D1F">Signals.</h2>
+    <p class="lede reveal" style="color:#515154">Patterns computed from today&#39;s data.</p>
+    <div class="grid g3 reveal" id="signal-list"></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">Congressional disclosures are filed up to 45 days after a trade. Reference positions for Pelosi and Trump are estimates.<br>Prices may be delayed. Not investment advice.</div>
+</footer>
 </div>
+</main>
 
 <script>
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────
 //  CONFIG
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────
+const BACKEND_URL = 'https://portfolio-intel-escf.onrender.com';
+const STORE_KEY = 'pi.portfolio.v2';
 
-// YOUR RAILWAY BACKEND URL — update after deploying Railway
-// Leave as empty string to use demo mode
-const BACKEND_URL = 'https://portfolio-intel-escf.onrender.com';  // e.g. 'https://portfolio-intel-production.up.railway.app'
-
-const TRUMP_H = [
-  {ticker:'DJT',company:'Trump Media',shares:114750000,cost:25,price:20.1,sector:'Media'},
-  {ticker:'TSLA',company:'Tesla',shares:45000,cost:198,price:241,sector:'Automotive'},
-  {ticker:'META',company:'Meta',shares:12000,cost:420,price:543,sector:'Technology'},
-  {ticker:'XOM',company:'ExxonMobil',shares:80000,cost:98,price:113,sector:'Energy'},
-  {ticker:'GEO',company:'Geo Group',shares:120000,cost:12,price:16.2,sector:'Prisons'},
-  {ticker:'WMT',company:'Walmart',shares:30000,cost:55,price:98,sector:'Retail'},
-];
-const PELOSI_H = [
-  {ticker:'NVDA',company:'NVIDIA',shares:175000,cost:48,price:130,sector:'Technology'},
-  {ticker:'AAPL',company:'Apple',shares:95000,cost:145,price:209,sector:'Technology'},
-  {ticker:'GOOGL',company:'Alphabet',shares:55000,cost:112,price:155,sector:'Technology'},
-  {ticker:'MSFT',company:'Microsoft',shares:40000,cost:285,price:433,sector:'Technology'},
-  {ticker:'AMZN',company:'Amazon',shares:70000,cost:130,price:183,sector:'E-Commerce'},
-  {ticker:'AMD',company:'AMD',shares:48000,cost:85,price:150,sector:'Technology'},
-  {ticker:'CRWD',company:'CrowdStrike',shares:15000,cost:180,price:274,sector:'Cybersecurity'},
-];
-const DEMO_TRADES = [
-  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'NVDA',company:'NVIDIA Corp',type:'Purchase',amount:'$1M-$5M',minsAgo:60,isReal:false},
-  {pol:'trump',rep:'Donald Trump',ticker:'DJT',company:'Trump Media',type:'Sale',amount:'$1M-$5M',minsAgo:120,isReal:false},
-  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'GOOGL',company:'Alphabet',type:'Purchase',amount:'$1M-$5M',minsAgo:180,isReal:false},
-  {pol:'trump',rep:'Donald Trump',ticker:'TSLA',company:'Tesla',type:'Purchase',amount:'$1M-$5M',minsAgo:240,isReal:false},
-  {pol:'pelosi',rep:'Nancy Pelosi',ticker:'MSFT',company:'Microsoft',type:'Sale',amount:'$5M-$25M',minsAgo:300,isReal:false},
-];
-const PERF_DATA = [
-  {month:'Jan',me:100,trump:100,pelosi:100},
-  {month:'Feb',me:103.2,trump:105.4,pelosi:106},
-  {month:'Mar',me:108.4,trump:99.3,pelosi:114.3},
-  {month:'Apr',me:112.1,trump:107.9,pelosi:121.4},
-  {month:'May',me:119.6,trump:112.5,pelosi:127.4},
-  {month:'Jun',me:126.8,trump:106.4,pelosi:133.8},
+// Reference positions, estimated from public disclosures. Prices are always live.
+const REF = {
+  pelosi: [
+    {ticker:'NVDA',shares:175000,cost:48,sector:'Technology'},
+    {ticker:'AAPL',shares:95000,cost:145,sector:'Technology'},
+    {ticker:'GOOGL',shares:55000,cost:112,sector:'Technology'},
+    {ticker:'MSFT',shares:40000,cost:285,sector:'Technology'},
+    {ticker:'AMZN',shares:70000,cost:130,sector:'E-Commerce'},
+    {ticker:'AMD',shares:48000,cost:85,sector:'Technology'},
+    {ticker:'CRWD',shares:15000,cost:180,sector:'Technology'},
+  ],
+  trump: [
+    {ticker:'DJT',shares:114750000,cost:25,sector:'Media'},
+    {ticker:'TSLA',shares:45000,cost:198,sector:'Automotive'},
+    {ticker:'META',shares:12000,cost:420,sector:'Technology'},
+    {ticker:'XOM',shares:80000,cost:98,sector:'Energy'},
+    {ticker:'GEO',shares:120000,cost:12,sector:'Real Estate'},
+    {ticker:'WMT',shares:30000,cost:55,sector:'Retail'},
+  ],
+};
+const CASH_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX','CASH','MMDA','QACDS']);
+const RANGES = [['1D','1d'],['1W','5d'],['1M','1mo'],['6M','6mo'],['YTD','ytd'],['1Y','1y'],['5Y','5y']];
+const SERIES = [
+  {key:'me',label:'You',color:'#F5F5F7',width:3},
+  {key:'pelosi',label:'Pelosi',color:'#0A84FF',width:2,area:true},
+  {key:'trump',label:'Trump',color:'#FF9F0A',width:2},
+  {key:'voo',label:'VOO',color:'#8E9BB3',width:2,dashed:true},
 ];
 
-// ═══════════════════════════════════════
+// ─────────────────────────────────────────────
 //  STATE
-// ═══════════════════════════════════════
-let trades = [...DEMO_TRADES];
-let myPortfolio = [];
-let livePrices = {};
-let isUsingRealData = false;
-let demoTimer = null;
+// ─────────────────────────────────────────────
+let myPortfolio = loadPortfolio();
+let prices = {};
+let trades = [];
+let tradesUpdated = null;
+let range = '6mo';
+let feedFilter = 'all';
+let feedLimit = 12;
+let chart = null;
+const lines = {};
+let lastReturns = {};
+const shown = {};
 
-// ═══════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════
-async function init() {
-  renderDemoHoldings();
-  buildCharts();
-  updateClock();
-  setInterval(updateClock, 60000);
-
-  // Load real data directly — no backend needed
-  await loadRealTrades();
-  await loadYahooPricesDirect();
-  await loadNews();
-
-  // Refresh every 5 minutes
-  setInterval(loadRealTrades, 5 * 60 * 1000);
-  setInterval(loadYahooPricesDirect, 5 * 60 * 1000);
-  setInterval(loadNews, 10 * 60 * 1000);
+// ─────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const usd = (v, d=2) => (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+const compact = v => v >= 1e9 ? '$' + (v/1e9).toFixed(2) + 'B' : v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + (v/1e3).toFixed(1) + 'K' : usd(v);
+const pct = (v, d=1) => (v >= 0 ? '+' : '') + v.toFixed(d) + '%';
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function store(get, val) { try { return get ? localStorage.getItem(STORE_KEY) : localStorage.setItem(STORE_KEY, val); } catch (e) { return null; } }
+function loadPortfolio() { try { return JSON.parse(store(true)) || []; } catch (e) { return []; } }
+function savePortfolio() { store(false, JSON.stringify(myPortfolio)); }
+function stocks() { return myPortfolio.filter(h => !h.isCash); }
+function priceOf(t, fallback=0) { return prices[t] ? prices[t].price : fallback; }
+function ago(date) {
+  const m = Math.max(0, Math.round((Date.now() - date) / 60000));
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  if (m < 1440) return Math.round(m/60) + ' hr ago';
+  return Math.round(m/1440) + ' days ago';
+}
+async function getJSON(url, opts) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 45000); // Render free tier can take a while to wake
+  try { const r = await fetch(url, {...opts, signal: ctl.signal}); if (!r.ok) throw new Error('HTTP ' + r.status); return await r.json(); }
+  finally { clearTimeout(t); }
+}
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) return res();
+    const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s);
+  });
 }
 
-// Load real politician trades through Render backend
-async function loadRealTrades() {
-  try {
-    document.getElementById('feed-source').innerHTML = '<span style="color:var(--dim)">Loading real trades...</span>';
-    const res = await fetch(BACKEND_URL + '/api/all-trades');
-    if (res.ok) {
-      const data = await res.json();
-      if (data.trades && data.trades.length > 0) {
-        trades = data.trades.map(t => ({
-          pol: guessPol(t.representative),
-          rep: t.representative || '',
-          ticker: (t.ticker || '').toUpperCase().replace('--',''),
-          company: t.description || t.ticker || '',
-          type: t.type || '',
-          amount: t.amount || '',
-          isReal: true,
-          minsAgo: getMinutesAgo(t.date),
-        })).filter(t => t.ticker && t.ticker.length > 0 && t.ticker.length <= 6);
-        document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
-        document.getElementById('kpi-trades').textContent = trades.length;
-        document.getElementById('kpi-trades-sub').textContent = data.house_count + 'H · ' + data.senate_count + 'S';
-        document.getElementById('dot-data').classList.add('ok');
-        document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
-      }
-    }
-  } catch(e) {
-    document.getElementById('feed-source').textContent = 'Backend offline — demo mode';
-  }
-  renderFeed();
-}
-
-// ═══════════════════════════════════════
-//  REAL DATA LOADING
-// ═══════════════════════════════════════
-async function loadRealData() {
-  try {
-    showBanner('🔄 Fetching real politician trades...');
-
-    // Load trades and prices in parallel
-    const [tradesRes, pricesRes, newsRes] = await Promise.allSettled([
-      fetch(BACKEND_URL + '/api/all-trades'),
-      fetch(BACKEND_URL + '/api/prices'),
-      fetch(BACKEND_URL + '/api/news'),
-    ]);
-
-    if (tradesRes.status === 'fulfilled' && tradesRes.value.ok) {
-      const data = await tradesRes.value.json();
-      if (data.trades && data.trades.length > 0) {
-        trades = data.trades.map(t => ({
-          ...t,
-          pol: guessPol(t.representative),
-          rep: t.representative,
-          ticker: t.ticker,
-          company: t.description || t.ticker,
-          isReal: true,
-          minsAgo: getMinutesAgo(t.date),
-        }));
-        isUsingRealData = true;
-        document.getElementById('feed-source').innerHTML = '<span class="real-indicator">🟢 LIVE DATA</span>';
-        document.getElementById('kpi-trades').textContent = trades.length;
-        document.getElementById('kpi-trades-sub').textContent = `${data.house_count || 0}H · ${data.senate_count || 0}S`;
-      }
-    }
-
-    if (pricesRes.status === 'fulfilled' && pricesRes.value.ok) {
-      const data = await pricesRes.value.json();
-      livePrices = data.prices || {};
-      updatePriceDisplays();
-    }
-
-    if (newsRes.status === 'fulfilled' && newsRes.value.ok) {
-      const data = await newsRes.value.json();
-      renderNews(data.articles || []);
-    }
-
-    renderFeed();
-    showBanner(`✅ Live data loaded — ${trades.length} trades · Prices updated`);
-    document.getElementById('dot-data').classList.add('ok');
-    document.getElementById('st-data').textContent = 'Live — ' + new Date().toLocaleTimeString();
-    setTimeout(() => document.getElementById('data-banner').style.display = 'none', 3000);
-
-  } catch(e) {
-    showBanner('⚠️ Backend offline — showing demo data. Set up Railway to get real trades.', true);
-    renderFeed();
-    loadYahooPricesDirect();
-  }
-}
-
-// Get prices through Render backend (avoids CORS)
-async function loadYahooPricesDirect() {
-  try {
-    // Build dynamic ticker list from portfolio + recent trades
-    const portfolioTickers = myPortfolio.filter(h => !h.isCash).map(h => h.ticker);
-    const tradeTickers = [...new Set(trades.slice(0,30).map(t => t.ticker).filter(t => t && t.length <= 5))];
-    const allTickers = [...new Set([...portfolioTickers, ...tradeTickers, 'VOO','QQQM','GLD'])].slice(0, 30);
-    const tickerParam = allTickers.join(',');
-    const res = await fetch(BACKEND_URL + '/api/prices/' + tickerParam);
-    if (res.ok) {
-      const data = await res.json();
-      livePrices = data.prices || {};
-      updatePriceDisplays();
-      return;
-    }
-  } catch(e) {
-    console.log('Backend price fetch failed:', e);
-  }
-  // If backend fails show static prices
-  livePrices = {
-    'VOO':  {price: 680.79, change_pct: 0},
-    'QQQM': {price: 294.75, change_pct: 0},
-    'GLD':  {price: 377.32, change_pct: 0},
-    'NVDA': {price: 130.00, change_pct: 0},
-    'AAPL': {price: 209.00, change_pct: 0},
-    'TSLA': {price: 241.00, change_pct: 0},
-    'META': {price: 543.00, change_pct: 0},
-    'MSFT': {price: 433.00, change_pct: 0},
-    'XOM':  {price: 113.00, change_pct: 0},
-    'DJT':  {price: 20.10,  change_pct: 0},
+// Animated number: counts from the last shown value to the new one
+function animateTo(el, key, value, fmt, flash=true) {
+  const from = shown[key];
+  shown[key] = value;
+  if (reduced || from === undefined || !isFinite(from)) { el.textContent = fmt(value); return; }
+  if (flash && from !== value) { el.classList.remove('flash-up','flash-down'); void el.offsetWidth; el.classList.add(value > from ? 'flash-up' : 'flash-down'); }
+  const t0 = performance.now(), dur = 900;
+  const step = now => {
+    const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = fmt(from + (value - from) * e);
+    if (p < 1) requestAnimationFrame(step);
   };
-  updatePriceDisplays();
+  requestAnimationFrame(step);
+}
+function setRet(el, key, v) {
+  el.classList.remove('up','down');
+  if (v === null || v === undefined || !isFinite(v)) { el.textContent = 'No data'; return; }
+  el.classList.add(v >= 0 ? 'up' : 'down');
+  animateTo(el, key, v, x => pct(x), false);
 }
 
-
-// ── NEWS LOADER ──
-async function loadNews() {
+// ─────────────────────────────────────────────
+//  DATA: PRICES
+// ─────────────────────────────────────────────
+function allTickers() {
+  const set = new Set(['VOO']);
+  stocks().forEach(h => set.add(h.ticker));
+  REF.pelosi.forEach(h => set.add(h.ticker));
+  REF.trump.forEach(h => set.add(h.ticker));
+  return [...set].slice(0, 40);
+}
+async function loadPrices() {
   try {
-    const res = await fetch(BACKEND_URL + '/api/news');
-    if (res.ok) {
-      const data = await res.json();
-      renderNews(data.articles || []);
-    }
-  } catch(e) {
-    document.getElementById('news-list').innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">News unavailable</div>';
-    document.getElementById('news-source').textContent = 'Offline';
+    const d = await getJSON(BACKEND_URL + '/api/prices/' + allTickers().join(','));
+    prices = {...prices, ...(d.prices || {})};
+    $('live-dot').classList.add('ok');
+    $('live-text').textContent = 'Live prices · updated ' + new Date().toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+  } catch (e) {
+    $('live-dot').classList.remove('ok');
+    $('live-text').textContent = Object.keys(prices).length ? 'Prices may be stale. Retrying…' : 'Market data is waking up. Retrying…';
   }
+  renderHero(); renderHoldings(); renderCompareSubs(); renderSignals();
 }
 
-function updatePriceDisplays() {
-  // Update VOO KPI
-  if (livePrices['VOO']) {
-    const v = livePrices['VOO'];
-    document.getElementById('kpi-voo').textContent = '$' + v.price.toFixed(2);
-    const chg = v.change_pct;
-    document.getElementById('kpi-voo-sub').innerHTML = `VOO <span style="color:${chg>=0?'var(--green)':'var(--red)'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`;
+// ─────────────────────────────────────────────
+//  HERO
+// ─────────────────────────────────────────────
+function portfolioTotals() {
+  let total = 0, prev = 0, cost = 0, stockVal = 0;
+  for (const h of myPortfolio) {
+    if (h.isCash) { total += h.marketValue || 0; prev += h.marketValue || 0; continue; }
+    const p = prices[h.ticker];
+    const now = p ? p.price : (h.currentPrice || h.avgCost || 0);
+    const pc = p ? (p.prev_close || p.price) : now;
+    total += h.shares * now; prev += h.shares * pc; stockVal += h.shares * now;
+    cost += h.shares * (h.avgCost || now);
   }
-
-  // Render price list
-  const priceListEl = document.getElementById('price-list');
-  // Build watchlist dynamically from portfolio + recent trades
-  const portfolioTickers = myPortfolio.filter(h => !h.isCash).map(h => h.ticker);
-  const tradeTickers = [...new Set(trades.slice(0,20).map(t => t.ticker).filter(t => t && t.length <= 5))];
-  const watchlist = [...new Set([...portfolioTickers, ...tradeTickers, 'VOO'])].slice(0, 12);
-  if (Object.keys(livePrices).length > 0) {
-    priceListEl.innerHTML = watchlist.map(t => {
-      const p = livePrices[t];
-      if (!p) return '';
-      const chg = p.change_pct;
-      return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px;align-items:center">
-        <span style="font-weight:700">${t}</span>
-        <span>$${p.price.toFixed(2)} <span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(2)}%</span></span>
-      </div>`;
-    }).join('');
-
-    // Update politician holdings with live prices
-    updateHoldingPrices();
-  }
+  return {total, day: total - prev, dayPct: prev ? (total - prev) / prev * 100 : 0, gain: stockVal - cost, gainPct: cost ? (stockVal - cost) / cost * 100 : 0};
 }
-
-function updateHoldingPrices() {
-  // Update trump demo table
-  const trumpEl = document.getElementById('trump-demo');
-  if (trumpEl) {
-    trumpEl.innerHTML = TRUMP_H.map(h => {
-      const lp = livePrices[h.ticker];
-      const price = lp ? lp.price : h.price;
-      const chg = lp ? lp.change_pct : 0;
-      const gl = ((price - h.cost) / h.cost * 100).toFixed(1);
-      return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
-        <td class="t-cur">$${price.toFixed(2)}</td>
-        <td><span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(1)}%</span></td>
-        <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
-    }).join('');
-  }
-  const pelosiEl = document.getElementById('pelosi-demo');
-  if (pelosiEl) {
-    pelosiEl.innerHTML = PELOSI_H.map(h => {
-      const lp = livePrices[h.ticker];
-      const price = lp ? lp.price : h.price;
-      const chg = lp ? lp.change_pct : 0;
-      const gl = ((price - h.cost) / h.cost * 100).toFixed(1);
-      return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
-        <td class="t-cur">$${price.toFixed(2)}</td>
-        <td><span class="${chg>=0?'price-up':'price-dn'}">${chg>=0?'+':''}${chg.toFixed(1)}%</span></td>
-        <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
-    }).join('');
-  }
-}
-
-// ═══════════════════════════════════════
-//  TRADE FEED
-// ═══════════════════════════════════════
-function renderFeed(newT=null) {
-  const myTickers = new Set(myPortfolio.map(h => h.ticker));
-  const feed = document.getElementById('trade-feed');
-  document.getElementById('feed-count').textContent = trades.length;
-
-  feed.innerHTML = trades.slice(0, 30).map((t, i) => {
-    const isNew = newT && i === 0;
-    const isBuy = (t.type||'').toLowerCase().includes('purchase') || t.action === 'BUY';
-    const cls = 'trade-row' + (isNew ? (isBuy?' flash-buy':' flash-sell') : '') + (t.isReal?' real-trade':'');
-    const mine = myTickers.has(t.ticker);
-    const pol = t.pol || 'other';
-    const polColor = pol === 'trump' ? 'var(--trump)' : pol === 'pelosi' ? 'var(--pelosi)' : 'var(--muted)';
-    const polEmoji = pol === 'trump' ? '🦅' : pol === 'pelosi' ? '🔵' : '🏛';
-    const repName = (t.rep||t.representative||'');
-    const lastName = repName.includes(',') ? repName.split(',')[0].trim() : repName.split(' ').slice(-1)[0];
-    const polName = pol === 'trump' ? 'TRUMP' : pol === 'pelosi' ? 'PELOSI' : lastName.toUpperCase();
-    const lp = livePrices[t.ticker];
-    const priceStr = lp ? `$${lp.price.toFixed(2)}` : '';
-
-    return `<div class="${cls}">
-      <div class="trade-top">
-        <div class="pol-av" style="background:${polColor}22;border:1px solid ${polColor}44">${polEmoji}</div>
-        <div class="pol-info">
-          <div class="pol-nm" style="color:${polColor}">${polName}${t.isReal?'<span class="real-tag">LIVE</span>':''}</div>
-          <div class="pol-tm">${t.rep||''} · ${timeAgo(t.minsAgo||0)}</div>
-        </div>
-        <div class="act-badge ${isBuy?'buy-badge':'sell-badge'}">${isBuy?'BUY':'SELL'}</div>
-      </div>
-      <div class="trade-bottom">
-        <div>
-          <div class="ticker-nm">${t.ticker}${mine?'<span class="mine-tag">MINE</span>':''}</div>
-          <div class="co-nm">${t.company||t.description||''}</div>
-        </div>
-        <div style="text-align:right">
-          <div class="trade-amt" style="color:${isBuy?'var(--green)':'var(--red)'}">${t.amount||''}</div>
-          ${priceStr?`<div style="font-size:10px;color:var(--muted)">${priceStr}</div>`:''}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function demoAutoTrade() {
-  const pool = [
-    {pol:'trump',rep:'Donald Trump',ticker:'TSLA',company:'Tesla',type:'Purchase',amount:'$1M-$5M'},
-    {pol:'trump',rep:'Donald Trump',ticker:'XOM',company:'ExxonMobil',type:'Purchase',amount:'$500K-$1M'},
-    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'NVDA',company:'NVIDIA',type:'Purchase',amount:'$1M-$5M'},
-    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'AMD',company:'AMD',type:'Purchase',amount:'$500K-$1M'},
-    {pol:'pelosi',rep:'Nancy Pelosi',ticker:'AAPL',company:'Apple',type:'Sale',amount:'$1M-$5M'},
-  ];
-  const base = pool[Math.floor(Math.random() * pool.length)];
-  const t = {...base, minsAgo: 0, isReal: false};
-  trades.forEach(tr => tr.minsAgo = (tr.minsAgo||0) + 10);
-  trades.unshift(t);
-  if (trades.length > 20) trades.pop();
-  renderFeed(t);
-  showFlashAlert(t);
-  updateClock();
-}
-
-// ═══════════════════════════════════════
-//  NEWS
-// ═══════════════════════════════════════
-function renderNews(articles) {
-  const el = document.getElementById('news-list');
-  if (!articles || articles.length === 0) {
-    el.innerHTML = '<div style="color:var(--dim);font-size:11px;padding:10px 0">No news loaded — deploy Railway backend for live news</div>';
-    document.getElementById('news-source').textContent = 'Demo mode';
+function renderHero() {
+  const v = $('hero-value'), c = $('hero-change');
+  if (!myPortfolio.length) {
+    $('hero-label').textContent = 'Portfolio Intel';
+    v.textContent = 'Track the trades.';
+    c.innerHTML = '<span style="color:var(--ink-2)">Compare your portfolio with what Congress is buying.</span>';
+    $('hero-cta').style.display = 'block';
     return;
   }
-  document.getElementById('news-source').innerHTML = '<span class="real-indicator">🟢 LIVE</span>';
-  // Sort by published date, newest first
-  articles.sort((a, b) => {
-    try { return new Date(b.published) - new Date(a.published); } catch(e) { return 0; }
+  $('hero-label').textContent = 'Total portfolio value';
+  $('hero-cta').style.display = 'none';
+  if (!Object.keys(prices).length && !myPortfolio.some(h => h.currentPrice || h.isCash)) { v.innerHTML = '<span class="sk">$000,000</span>'; return; }
+  const t = portfolioTotals();
+  animateTo(v, 'hero', t.total, x => usd(x));
+  c.className = 'hero-change num ' + (t.day >= 0 ? 'up' : 'down');
+  c.textContent = `${t.day >= 0 ? '+' : '-'}${usd(Math.abs(t.day))} · ${pct(t.dayPct, 2)} today`;
+}
+
+// ─────────────────────────────────────────────
+//  CHART (TradingView Lightweight Charts)
+// ─────────────────────────────────────────────
+function buildChart() {
+  const legend = $('legend');
+  legend.innerHTML = SERIES.map(s => `<button class="chip" type="button" aria-pressed="true" data-k="${s.key}"><span class="sw" style="background:${s.color}"></span>${s.label} <span class="v num" id="lv-${s.key}"></span></button>`).join('');
+  legend.querySelectorAll('.chip').forEach(b => b.onclick = () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', on);
+    lines[b.dataset.k] && lines[b.dataset.k].applyOptions({visible: on});
   });
-  el.innerHTML = articles.map(a => `
-    <div class="news-item">
-      <div class="news-title">${a.title}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="news-meta">${a.source} · ${formatDate(a.published)}</div>
-        <a href="${a.link}" target="_blank" class="news-link">Read →</a>
-      </div>
-    </div>
-  `).join('');
-}
+  $('ranges').innerHTML = RANGES.map(([l, r]) => `<button type="button" aria-pressed="${r === range}" data-r="${r}">${l}</button>`).join('');
+  $('ranges').querySelectorAll('button').forEach(b => b.onclick = () => {
+    range = b.dataset.r;
+    $('ranges').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    loadHistory();
+  });
 
-// ═══════════════════════════════════════
-//  HOLDINGS
-// ═══════════════════════════════════════
-function renderDemoHoldings() {
-  const trumpEl = document.getElementById('trump-demo');
-  const pelosiEl = document.getElementById('pelosi-demo');
-  if (trumpEl) trumpEl.innerHTML = TRUMP_H.map(h => {
-    const gl = ((h.price - h.cost) / h.cost * 100).toFixed(1);
-    return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
-      <td class="t-cur">$${h.price.toFixed(2)}</td><td class="t-num">—</td>
-      <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
-  }).join('');
-  if (pelosiEl) pelosiEl.innerHTML = PELOSI_H.map(h => {
-    const gl = ((h.price - h.cost) / h.cost * 100).toFixed(1);
-    return `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.sector}</div></td>
-      <td class="t-cur">$${h.price.toFixed(2)}</td><td class="t-num">—</td>
-      <td class="${gl>=0?'pos':'neg'}">${gl>=0?'+':''}${gl}%</td></tr>`;
-  }).join('');
-}
-
-// ═══════════════════════════════════════
-//  CSV IMPORT
-// ═══════════════════════════════════════
-function loadCSV(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const parsed = parseCSV(e.target.result);
-      if (parsed.length === 0) {
-        document.getElementById('csv-status').innerHTML = '<span style="color:var(--red)">✗ No valid positions found</span>';
-        return;
-      }
-      myPortfolio = parsed;
-      updateMyUI();
-      document.getElementById('csv-status').innerHTML = `<span style="color:var(--green)">✓ Loaded ${parsed.length} positions from ${file.name}</span>`;
-      document.getElementById('import-status').textContent = parsed.length + ' positions loaded';
-      document.getElementById('dot-merrill').classList.add('ok');
-      document.getElementById('st-merrill').textContent = parsed.length + ' positions';
-    } catch(err) {
-      document.getElementById('csv-status').innerHTML = `<span style="color:var(--red)">✗ ${err.message}</span>`;
-    }
-  };
-  reader.readAsText(file);
-}
-
-function parseCSV(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  if (lines.length < 2) return [];
-  let hIdx = 0;
-  for (let i = 0; i < Math.min(10, lines.length); i++) {
-    const l = lines[i].toLowerCase();
-    if (l.includes('symbol') || l.includes('ticker') || l.includes('quantity') || l.includes('shares')) { hIdx = i; break; }
+  if (!window.LightweightCharts) { $('chart-msg').textContent = 'Chart library failed to load.'; return; }
+  chart = LightweightCharts.createChart($('chart'), {
+    autoSize: true,
+    layout: {background: {type: 'solid', color: 'transparent'}, textColor: '#9FB1CE', fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 12},
+    grid: {vertLines: {visible: false}, horzLines: {color: 'rgba(255,255,255,0.06)'}},
+    rightPriceScale: {borderVisible: false, scaleMargins: {top: 0.1, bottom: 0.08}},
+    timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true},
+    crosshair: {mode: 0, vertLine: {color: 'rgba(255,255,255,0.35)', width: 1, style: 0, labelBackgroundColor: '#12306A'}, horzLine: {visible: false, labelVisible: false}},
+    localization: {locale: 'en-US', priceFormatter: v => pct(v)},
+    handleScroll: false, handleScale: false,
+  });
+  for (const s of SERIES) {
+    const opts = {color: s.color, lineColor: s.color, lineWidth: s.width, lineStyle: s.dashed ? 2 : 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerRadius: 4};
+    lines[s.key] = s.area
+      ? chart.addAreaSeries({...opts, topColor: 'rgba(10,132,255,0.28)', bottomColor: 'rgba(10,132,255,0)'})
+      : chart.addLineSeries(opts);
   }
-  const hdrs = lines[hIdx].split(',').map(h => h.replace(/"/g,'').trim().toLowerCase());
-  const find = keys => { for (const k of keys) { const i = hdrs.findIndex(h => h.includes(k)); if (i >= 0) return i; } return -1; };
-  const tickerCol = find(['symbol','ticker','stock']);
-  const sharesCol = find(['quantity','shares','qty']);
-  const costCol   = find(['cost basis','avg cost','average cost','unit cost','purchase price','avg price']);
-  const priceCol  = find(['price','current price','last price','market price','close']);
-  const nameCol   = find(['description','name','company','security']);
-  const valueCol  = find(['market value','total value','current value']);
-  if (tickerCol < 0) throw new Error('Could not find ticker column');
-  // Known cash/money market tickers
-  const CASH_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX']);
+  chart.subscribeCrosshairMove(p => {
+    if (!p || !p.time) { showLegendValues(lastReturns); $('chart-date').textContent = 'Return over period'; return; }
+    const vals = {};
+    for (const s of SERIES) { const d = p.seriesData.get(lines[s.key]); if (d) vals[s.key] = d.value; }
+    showLegendValues(vals);
+    const dt = new Date(p.time * 1000);
+    $('chart-date').textContent = dt.toLocaleString('en-US', range === '1d' || range === '5d' ? {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'} : {month:'short', day:'numeric', year:'numeric'});
+  });
+}
+function showLegendValues(vals) {
+  for (const s of SERIES) { const el = $('lv-' + s.key); if (el) el.textContent = vals[s.key] !== undefined ? pct(vals[s.key]) : ''; }
+}
+
+// Value of a basket over time, normalized to % return from the first point where every ticker has a price
+function basketSeries(holdings, hist) {
+  const ok = holdings.filter(h => hist[h.ticker] && hist[h.ticker].length);
+  if (!ok.length) return [];
+  const times = [...new Set(ok.flatMap(h => hist[h.ticker].map(p => p[0])))].sort((a, b) => a - b);
+  const idx = ok.map(() => 0), last = ok.map(() => null), out = [];
+  for (const t of times) {
+    let total = 0, complete = true;
+    ok.forEach((h, i) => {
+      const s = hist[h.ticker];
+      while (idx[i] < s.length && s[idx[i]][0] <= t) { last[i] = s[idx[i]][1]; idx[i]++; }
+      if (last[i] === null) complete = false; else total += h.shares * last[i];
+    });
+    if (complete) out.push({time: t, value: total});
+  }
+  if (!out.length) return [];
+  const base = out[0].value;
+  return out.map(p => ({time: p.time, value: (p.value / base - 1) * 100}));
+}
+
+let historyReq = 0;
+async function loadHistory() {
+  const req = ++historyReq;
+  const msg = $('chart-msg');
+  msg.style.display = 'flex'; msg.textContent = 'Loading price history…';
+  try {
+    const d = await getJSON(`${BACKEND_URL}/api/history/${allTickers().join(',')}?range=${range}`);
+    if (req !== historyReq) return;
+    const hist = d.series || {};
+    const data = {
+      me: basketSeries(stocks().map(h => ({ticker: h.ticker, shares: h.shares})), hist),
+      pelosi: basketSeries(REF.pelosi, hist),
+      trump: basketSeries(REF.trump, hist),
+      voo: basketSeries([{ticker: 'VOO', shares: 1}], hist),
+    };
+    lastReturns = {};
+    for (const s of SERIES) {
+      lines[s.key] && lines[s.key].setData(data[s.key]);
+      if (data[s.key].length) lastReturns[s.key] = data[s.key][data[s.key].length - 1].value;
+    }
+    if (!Object.keys(lastReturns).length) throw new Error('empty');
+    msg.style.display = 'none';
+    chart && chart.timeScale().fitContent();
+    showLegendValues(lastReturns);
+    setRet($('ret-me'), 'rme', myPortfolio.length ? lastReturns.me : null);
+    if (!stocks().length) { $('ret-me').classList.remove('up','down'); $('ret-me').textContent = 'Not added'; }
+    setRet($('ret-pelosi'), 'rpel', lastReturns.pelosi);
+    setRet($('ret-trump'), 'rtr', lastReturns.trump);
+    setRet($('ret-voo'), 'rvoo', lastReturns.voo);
+    renderSignals();
+  } catch (e) {
+    if (req !== historyReq) return;
+    msg.style.display = 'flex';
+    msg.textContent = 'Price history is unavailable right now. It will retry shortly.';
+    setTimeout(() => { if (req === historyReq) loadHistory(); }, 60000);
+  }
+}
+function renderCompareSubs() {
+  const val = list => list.reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0);
+  $('sub-pelosi').textContent = `${REF.pelosi.length} positions · ${compact(val(REF.pelosi))} est.`;
+  $('sub-trump').textContent = `${REF.trump.length} positions · ${compact(val(REF.trump))} est.`;
+  if (myPortfolio.length) {
+    const t = portfolioTotals();
+    $('sub-me').textContent = `${stocks().length} positions · ${compact(t.total)}`;
+  }
+  if (prices.VOO) $('sub-voo').textContent = `VOO ${usd(prices.VOO.price)} · ${pct(prices.VOO.change_pct, 2)} today`;
+}
+
+// ─────────────────────────────────────────────
+//  DISCLOSURES FEED
+// ─────────────────────────────────────────────
+async function loadTrades() {
+  let d = null;
+  try { d = await getJSON('./trades.json?v=' + Math.floor(Date.now() / 3.6e6)); }
+  catch (e) { try { d = await getJSON(BACKEND_URL + '/api/all-trades'); } catch (e2) {} }
+  if (d && Array.isArray(d.trades)) {
+    trades = d.trades.filter(t => t.ticker && t.ticker.length <= 6).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    tradesUpdated = d.updated ? new Date(d.updated) : null;
+  }
+  renderFeed(); renderHoldings(); renderSignals();
+}
+function renderFeed() {
+  const filters = [['all','All'],['pelosi','Pelosi'],['mine','My stocks']];
+  $('feed-filter').innerHTML = filters.map(([k, l]) => `<button type="button" aria-pressed="${k === feedFilter}" data-f="${k}">${l}</button>`).join('');
+  $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; renderFeed(); });
+
+  const mine = new Set(stocks().map(h => h.ticker));
+  let list = trades;
+  if (feedFilter === 'pelosi') list = trades.filter(t => /pelosi/i.test(t.representative || ''));
+  if (feedFilter === 'mine') list = trades.filter(t => mine.has(t.ticker));
+  $('feed-lede').textContent = tradesUpdated ? `${trades.length} recent trades · filings checked ${ago(tradesUpdated)}` : 'Congressional trades, as filed.';
+
+  const feed = $('feed');
+  if (!trades.length) { feed.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Loading disclosures…</div>'; $('feed-more').style.display = 'none'; return; }
+  if (!list.length) {
+    const why = feedFilter === 'mine' ? (mine.size ? 'No recent filings touch your stocks.' : 'Add your portfolio to see trades in your stocks.') : 'No recent filings for this filter.';
+    feed.innerHTML = `<div class="chart-msg" style="position:static;padding:28px">${why}</div>`; $('feed-more').style.display = 'none'; return;
+  }
+  feed.innerHTML = list.slice(0, feedLimit).map(t => {
+    const buy = /purchase|buy/i.test(t.type || '');
+    const name = (t.representative || '').includes(',') ? t.representative.split(',').reverse().join(' ').trim() : (t.representative || 'Unknown');
+    const when = t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    return `<div class="trade">
+      <div><div class="who">${esc(name)}</div><div class="what">${esc(t.ticker)}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
+      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">${esc(when)}</div></div>
+    </div>`;
+  }).join('');
+  $('feed-more').style.display = list.length > feedLimit ? 'inline-flex' : 'none';
+}
+
+// ─────────────────────────────────────────────
+//  HOLDINGS TABLE
+// ─────────────────────────────────────────────
+function tradersOf(ticker) {
+  const names = new Set();
+  trades.forEach(t => { if (t.ticker === ticker) names.add(t.representative); });
+  return names.size;
+}
+function renderHoldings() {
+  const tb = $('my-tbl');
+  if (!myPortfolio.length) { tb.innerHTML = ''; $('my-empty').style.display = 'block'; $('my-actions').style.display = 'none'; return; }
+  $('my-empty').style.display = 'none'; $('my-actions').style.display = 'flex';
+  const pel = new Set(REF.pelosi.map(h => h.ticker)), tr = new Set(REF.trump.map(h => h.ticker));
+  const rows = [...myPortfolio].sort((a, b) => (a.isCash - b.isCash) || ((b.shares * priceOf(b.ticker, b.currentPrice || 0)) - (a.shares * priceOf(a.ticker, a.currentPrice || 0))));
+  tb.innerHTML = rows.map(h => {
+    if (h.isCash) return `<tr><td><strong>${esc(h.ticker)}</strong><div class="co">Cash</div></td><td>–</td><td>–</td><td>${usd(h.marketValue || 0)}</td><td class="muted-l">Cash</td><td></td></tr>`;
+    const p = priceOf(h.ticker, h.currentPrice || 0);
+    const r = h.avgCost > 0 && p > 0 ? (p - h.avgCost) / h.avgCost * 100 : null;
+    const n = tradersOf(h.ticker);
+    const badges = (pel.has(h.ticker) ? '<span class="badge b-pelosi">Pelosi</span>' : '') + (tr.has(h.ticker) ? '<span class="badge b-trump">Trump</span>' : '') + (n ? `<span class="badge b-cong">${n} in Congress</span>` : '');
+    return `<tr>
+      <td><strong>${esc(h.ticker)}</strong>${h.company && h.company !== h.ticker ? `<div class="co">${esc(h.company)}</div>` : ''}</td>
+      <td>${h.shares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
+      <td>${p ? usd(p) : '<span class="sk">$000</span>'}</td>
+      <td>${p ? usd(h.shares * p) : '–'}</td>
+      <td class="${r === null ? 'muted-l' : r >= 0 ? 'up' : 'down'}">${r === null ? '–' : pct(r)}</td>
+      <td>${badges || '<span class="muted-l">–</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+//  IMPORT: any document → holdings
+// ─────────────────────────────────────────────
+const LIBS = {
+  xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  ocr: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+};
+function importState(s, text) {
+  $('import-card').style.display = s === 'review' ? 'none' : 'block';
+  $('review').style.display = s === 'review' ? 'block' : 'none';
+  $('fail').style.display = s === 'fail' ? 'block' : 'none';
+  $('progress').style.display = s === 'busy' ? 'flex' : 'none';
+  $('drop').style.display = s === 'busy' ? 'none' : 'flex';
+  if (s === 'fail' && text) $('fail-text').textContent = text;
+  if (s === 'busy' && text) $('progress-text').textContent = text;
+  if (s === 'fail') $('import-card').style.display = 'none';
+}
+function splitCSVLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if (c === ',' && !q) { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur); return out;
+}
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  let h = -1;
+  for (let i = 0; i < Math.min(15, lines.length); i++) { const l = lines[i].toLowerCase(); if ((l.includes('symbol') || l.includes('ticker')) && (l.includes('quantity') || l.includes('shares') || l.includes('qty'))) { h = i; break; } }
+  if (h < 0) return [];
+  const hdr = splitCSVLine(lines[h]).map(x => x.replace(/"/g, '').trim().toLowerCase());
+  const find = keys => { for (const k of keys) { const i = hdr.findIndex(x => x.includes(k)); if (i >= 0) return i; } return -1; };
+  const cT = find(['symbol', 'ticker']), cS = find(['quantity', 'shares', 'qty']);
+  const cC = find(['avg cost', 'average cost', 'unit cost', 'cost/share', 'cost per share', 'avg price', 'cost basis']);
+  const cP = find(['last price', 'current price', 'market price', 'price']), cV = find(['market value', 'current value', 'total value', 'value']);
+  const cN = find(['description', 'security', 'name', 'company']);
+  const num = s => parseFloat(String(s || '').replace(/[$,%\s"]/g, '').replace(/^\((.*)\)$/, '-$1'));
   const rows = [];
-  for (let i = hIdx + 1; i < lines.length; i++) {
-    const cells = lines[i].split(',');
-    const clean = cells.map(c => (c||'').replace(/"/g,'').replace(/[$,%]/g,'').trim());
-    const ticker = (clean[tickerCol] || '').toUpperCase();
-    // Skip blank, numeric-only account numbers, header repeats
-    if (!ticker || /^\d+$/.test(ticker) || ticker === 'SYMBOL') continue;
-    const shares = parseFloat(clean[sharesCol]) || 0;
-    if (shares <= 0) continue;
-    const price   = parseFloat(clean[priceCol]) || 0;
-    const mktVal  = parseFloat(clean[valueCol]) || (shares * price);
-    // Cost Basis in Merrill Edge CSV is already per-share
-    const avgCost = parseFloat(clean[costCol]) || price;
-    const name = nameCol >= 0 ? (clean[nameCol] || ticker) : ticker;
-    const isCash = CASH_TICKERS.has(ticker) || ticker.length > 6;
-    rows.push({ ticker, company: name, shares, avgCost, currentPrice: price, marketValue: mktVal, isCash });
+  for (let i = h + 1; i < lines.length; i++) {
+    const c = splitCSVLine(lines[i]);
+    const ticker = String(c[cT] || '').replace(/"/g, '').trim().toUpperCase();
+    if (!ticker || /^\d+$/.test(ticker) || /symbol|total|account/i.test(ticker)) continue;
+    const shares = num(c[cS]);
+    const price = num(c[cP]) || 0, value = num(c[cV]) || 0;
+    const isCash = CASH_TICKERS.has(ticker) || /money market|cash/i.test(c[cN] || '') && !(shares > 0 && price > 1.01);
+    if (!(shares > 0) && !(isCash && value > 0)) continue;
+    let cost = num(c[cC]) || 0;
+    // Some brokers export total cost basis; convert to per-share when it is clearly a total
+    if (cost && price && shares > 1 && cost > price * 5) cost = cost / shares;
+    rows.push({ticker, shares: shares || 0, avgCost: cost || 0, currentPrice: price, marketValue: value || shares * price, company: cN >= 0 ? String(c[cN] || '').replace(/"/g, '').trim() : '', isCash});
   }
   return rows;
 }
-
-function updateMyUI() {
-  const myTickers = new Set(myPortfolio.map(h => h.ticker));
-  const stocks = myPortfolio.filter(h => !h.isCash);
-  const cash   = myPortfolio.filter(h => h.isCash);
-
-  const totalVal   = myPortfolio.reduce((s,h) => s + (h.marketValue || 0), 0);
-  const stockVal   = stocks.reduce((s,h) => s + (h.marketValue || 0), 0);
-  const cashVal    = cash.reduce((s,h) => s + (h.marketValue || 0), 0);
-  const totalCost  = stocks.reduce((s,h) => s + h.shares * h.avgCost, 0);
-  const gain       = stockVal - totalCost;
-  const gainPct    = totalCost > 0 ? ((gain/totalCost)*100).toFixed(1) : '0.0';
-
-  // KPI shows total portfolio
-  document.getElementById('kpi-my').textContent = fmtV(totalVal);
-  document.getElementById('kpi-my-sub').textContent = 'Stocks: ' + fmtV(stockVal) + ' · Cash: ' + fmtV(cashVal);
-  document.getElementById('kpi-my-sub').style.color = 'var(--me)';
-
-  // Compare tab
-  document.getElementById('cmp-val').textContent = fmtV(totalVal);
-  document.getElementById('cmp-gain').textContent = (gain>=0?'+':'') + fmtV(gain);
-  document.getElementById('cmp-gain').style.color = gain>=0?'var(--green)':'var(--red)';
-  document.getElementById('cmp-ret').textContent = (parseFloat(gainPct)>=0?'+':'') + gainPct + '% (stocks)';
-  document.getElementById('cmp-ret').style.color = parseFloat(gainPct)>=0?'var(--green)':'var(--red)';
-  document.getElementById('cmp-pos').textContent = stocks.length + ' stocks · ' + cash.length + ' cash';
-  const top = [...stocks].sort((a,b) => (b.marketValue||0)-(a.marketValue||0))[0];
-  document.getElementById('cmp-top').textContent = top ? top.ticker : '—';
-  document.getElementById('my-total').textContent = fmtV(totalVal);
-
-  // Holdings table — stocks first, then cash section
-  const stockRows = stocks.map(h => {
-    const lp = livePrices[h.ticker];
-    const currentPrice = lp ? lp.price : h.currentPrice;
-    const g = h.avgCost > 0 ? ((currentPrice - h.avgCost) / h.avgCost * 100).toFixed(1) : null;
-    const tOver = TRUMP_H.find(t => t.ticker === h.ticker);
-    const pOver = PELOSI_H.find(t => t.ticker === h.ticker);
-    const badges = (tOver?'<span class="mine-tag" style="background:#dc262622;color:#fca5a5">T</span>':'') +
-                   (pOver?'<span class="mine-tag" style="background:#2563eb22;color:#93c5fd">P</span>':'');
-    return `<tr><td><div class="t-tick">${h.ticker}${badges}</div><div class="t-sec">${h.company}</div></td>
-      <td class="t-num">${h.shares.toLocaleString()}</td>
-      <td class="t-num">${h.avgCost>0?'$'+h.avgCost.toFixed(2):'—'}</td>
-      <td class="t-cur">${currentPrice>0?'$'+currentPrice.toFixed(2):'—'}</td>
-      <td class="${g!==null&&g>=0?'pos':'neg'}">${g!==null?(g>=0?'+':'')+g+'%':'—'}</td></tr>`;
-  }).join('');
-
-  const cashRows = cash.length > 0
-    ? `<tr><td colspan="5" style="padding:8px 10px;font-size:9px;letter-spacing:2px;color:var(--dim);background:var(--bg);font-weight:700">CASH & MONEY MARKET</td></tr>` +
-      cash.map(h => `<tr><td><div class="t-tick">${h.ticker}</div><div class="t-sec">${h.company}</div></td>
-        <td class="t-num">—</td><td class="t-num">—</td>
-        <td class="t-cur">${fmtV(h.marketValue)}</td>
-        <td class="t-num">Cash</td></tr>`).join('')
-    : '';
-
-  document.getElementById('my-tbl').innerHTML = stockRows + cashRows;
-
-  // Overlap
-  const trumpOverlap = TRUMP_H.filter(h => myTickers.has(h.ticker));
-  const pelosiOverlap = PELOSI_H.filter(h => myTickers.has(h.ticker));
-  document.getElementById('trump-overlap').innerHTML = trumpOverlap.length > 0
-    ? trumpOverlap.map(h => `<span class="tag" style="background:#dc262622;color:#fca5a5;border:1px solid #dc262633">${h.ticker}</span>`).join('')
-    : '<span style="color:var(--dim);font-size:10px">No overlap</span>';
-  document.getElementById('pelosi-overlap').innerHTML = pelosiOverlap.length > 0
-    ? pelosiOverlap.map(h => `<span class="tag" style="background:#2563eb22;color:#93c5fd;border:1px solid #2563eb33">${h.ticker}</span>`).join('')
-    : '<span style="color:var(--dim);font-size:10px">No overlap</span>';
-
-  document.getElementById('my-section').style.display = 'block';
-  renderFeed();
+function redact(text) {
+  return text.replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[redacted]').replace(/\b[A-Z0-9]{0,4}\d{6,}[A-Z0-9-]*\b/g, '[redacted]').slice(0, 16000);
 }
-
-// ═══════════════════════════════════════
-//  CHARTS
-// ═══════════════════════════════════════
-function buildCharts() {
-  Chart.defaults.color = '#64748b';
-  Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,sans-serif';
-  Chart.defaults.font.size = 10;
-
-  new Chart(document.getElementById('perfChart'), {
-    type: 'line',
-    data: {
-      labels: PERF_DATA.map(d => d.month),
-      datasets: [
-        {label:'Me',data:PERF_DATA.map(d=>d.me),borderColor:'#059669',borderWidth:2,pointRadius:0,tension:.4,fill:false},
-        {label:'Trump',data:PERF_DATA.map(d=>d.trump),borderColor:'#dc2626',borderWidth:2,pointRadius:0,tension:.4,fill:false,borderDash:[5,3]},
-        {label:'Pelosi',data:PERF_DATA.map(d=>d.pelosi),borderColor:'#2563eb',borderWidth:2,pointRadius:0,tension:.4,fill:false},
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',boxWidth:20,padding:10}}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'}}}}
-  });
-
-  new Chart(document.getElementById('sectorChart'), {
-    type: 'bar',
-    data: {
-      labels: ['Tech','Energy','Auto','E-Commerce','Media','Cybersec'],
-      datasets: [
-        {label:'Me',data:[68,12,9,11,0,0],backgroundColor:'#059669aa'},
-        {label:'Trump',data:[12,25,18,0,45,0],backgroundColor:'#dc2626aa'},
-        {label:'Pelosi',data:[78,0,0,10,0,5],backgroundColor:'#2563ebaa'},
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',boxWidth:14,padding:10}}},scales:{x:{grid:{color:'#1e293b'}},y:{grid:{color:'#1e293b'}}}}
-  });
+async function aiExtract(text) {
+  const system = 'You extract investment holdings from brokerage statements, screenshots and spreadsheets. ' +
+    'Return ONLY a JSON array, no prose. Each item: {"ticker": string, "shares": number, "avgCost": number|null, "name": string, "isCash": boolean, "marketValue": number|null}. ' +
+    'avgCost is the per-share cost basis if shown, else null. Include cash and money market funds with isCash true and their dollar value in marketValue. ' +
+    'Skip totals, account numbers, and anything that is not a position. If there are no holdings, return [].';
+  const d = await getJSON(BACKEND_URL + '/api/ai', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({system, question: 'Document text:\n' + redact(text), max_tokens: 3000})});
+  if (d.error) throw new Error(d.error);
+  const a = String(d.answer || ''), s = a.indexOf('['), e = a.lastIndexOf(']');
+  if (s < 0 || e < s) return [];
+  let arr; try { arr = JSON.parse(a.slice(s, e + 1)); } catch (err) { return []; }
+  return (Array.isArray(arr) ? arr : []).map(x => ({
+    ticker: String(x.ticker || '').toUpperCase().trim(),
+    shares: Number(x.shares) || 0,
+    avgCost: Number(x.avgCost) || 0,
+    company: String(x.name || ''),
+    isCash: !!x.isCash || CASH_TICKERS.has(String(x.ticker || '').toUpperCase()),
+    marketValue: Number(x.marketValue) || 0,
+  })).filter(x => x.ticker || x.isCash);
 }
-
-// ═══════════════════════════════════════
-//  AI INSIGHTS
-// ═══════════════════════════════════════
-async function askAI(preset) {
-  const input = document.getElementById('ai-q');
-  const q = preset || input.value.trim();
-  if (!q) return;
-  input.value = '';
-  const btn = document.getElementById('ai-go');
-  btn.disabled = true; btn.textContent = 'Analyzing...';
-  const out = document.getElementById('ai-out');
-  out.innerHTML = '<div class="insight-out" style="color:var(--dim)">Thinking...</div>';
-
-  const myCtx = myPortfolio.length > 0
-    ? 'My actual holdings: ' + myPortfolio.map(h => h.ticker+'('+h.shares+'sh @ $'+h.avgCost.toFixed(2)+')').join(', ') + '.'
-    : 'No holdings imported yet. Using reference: VOO(15sh), QQQM(34sh), GLD(55sh).';
-
-  // Build rich context from real live trades
-  const allRecentTrades = trades.slice(0, 50).map(t => {
-    const name = t.representative||t.rep||t.pol||'';
-    const action = (t.type||'').toLowerCase().includes('purchase') ? 'BUY' : 'SELL';
-    const date = t.date ? t.date : (t.minsAgo ? timeAgo(t.minsAgo) : 'recent');
-    return `${name} ${action} ${t.ticker} ${t.amount} on ${date}`;
-  }).join('\n');
-
-  // Pelosi-specific trades from live feed
-  const pelosiTrades = trades.filter(t => (t.representative||t.rep||'').toLowerCase().includes('pelosi'))
-    .map(t => `${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount} on ${t.date}`).join(', ');
-
-  // Other notable traders
-  const notableTrades = trades.filter(t => {
-    const name = (t.representative||t.rep||'').toLowerCase();
-    return name.includes('pelosi') || name.includes('gottheimer') || name.includes('mcguire') || name.includes('donalds');
-  }).slice(0,20).map(t => `${t.representative||t.rep} ${(t.type||'').includes('Purchase')?'BUY':'SELL'} ${t.ticker} ${t.amount} on ${t.date}`).join('\n');
-
-  // Build live prices context
-  const livePriceCtx = Object.entries(livePrices).map(([ticker, p]) =>
-    `${ticker}: $${p.price.toFixed(2)} (${p.change_pct >= 0 ? '+' : ''}${p.change_pct.toFixed(2)}% today)`
-  ).join(', ');
-
-  const sys = `You are a financial intelligence analyst specializing in congressional trading patterns.
-You have access to REAL recent congressional stock disclosures and LIVE market prices.
-
-LIVE STOCK PRICES RIGHT NOW:
-${livePriceCtx}
-
-RECENT CONGRESSIONAL TRADES (last 50 disclosures, newest first):
-${allRecentTrades}
-
-PELOSI RECENT TRADES: ${pelosiTrades || 'No recent Pelosi trades in current dataset'}
-NOTABLE TRADER ACTIVITY:
-${notableTrades}
-
-${myCtx}
-Use the actual trade data and live prices above. Calculate gains/losses when possible (e.g. "Pelosi bought UBER at $X range on DATE, current price is $Y"). Be direct, data-driven, and actionable. Answer in 3-4 concise paragraphs.`;
-
-  try {
-    const res = await fetch(BACKEND_URL + '/api/ai', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({system: sys, question: q})
-    });
-    const d = await res.json();
-    if (d.error) throw new Error(d.error);
-    const text = d.answer || 'Unable to generate analysis.';
-    out.innerHTML = '<div class="insight-out">' + text.replace(/\n/g,'<br>') + '</div>';
-    document.getElementById('dot-ai').classList.add('ok');
-  } catch(e) {
-    out.innerHTML = '<div class="insight-out" style="color:var(--amber)">⚠️ AI unavailable.<br><small style="color:var(--dim)">' + e.message + '</small></div>';
+async function fileToText(file) {
+  const name = file.name.toLowerCase(), type = file.type || '';
+  if (/\.(csv|txt)$/.test(name) || type === 'text/csv') return {kind: 'csv', text: await file.text()};
+  if (/\.(xlsx|xls)$/.test(name)) {
+    importState('busy', 'Opening spreadsheet…');
+    await loadScript(LIBS.xlsx);
+    const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'});
+    const text = wb.SheetNames.map(n => XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n');
+    return {kind: 'csv', text};
   }
-  btn.disabled = false; btn.textContent = 'ANALYZE →';
+  if (/\.pdf$/.test(name) || type === 'application/pdf') {
+    importState('busy', 'Reading PDF…');
+    await loadScript(LIBS.pdf);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
+    let pdf;
+    try { pdf = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise; }
+    catch (e) { throw new Error(/password/i.test(e.message) ? 'This PDF is password protected. Remove the password or upload a screenshot instead.' : 'This PDF could not be opened.'); }
+    let text = '';
+    for (let i = 1; i <= Math.min(pdf.numPages, 25); i++) {
+      const c = await (await pdf.getPage(i)).getTextContent();
+      let lastY = null;
+      for (const it of c.items) { if (lastY !== null && Math.abs(it.transform[5] - lastY) > 2) text += '\n'; else text += ' '; text += it.str; lastY = it.transform[5]; }
+      text += '\n';
+    }
+    if (text.replace(/\s/g, '').length < 40) throw new Error('This PDF looks like a scanned image. Upload a screenshot of it instead.');
+    return {kind: 'text', text};
+  }
+  if (type.startsWith('image/') || /\.(png|jpe?g|webp|heic)$/.test(name)) {
+    importState('busy', 'Reading screenshot…');
+    await loadScript(LIBS.ocr);
+    const r = await Tesseract.recognize(file, 'eng');
+    const text = (r && r.data && r.data.text) || '';
+    if (text.replace(/\s/g, '').length < 20) throw new Error('We couldn\'t read text in this image. Try a sharper screenshot of your positions page.');
+    return {kind: 'text', text};
+  }
+  throw new Error('That file type isn\'t supported. Use a PDF, screenshot, spreadsheet, or CSV.');
+}
+async function handleFile(file) {
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) return importState('fail', 'That file is over 20 MB. Try a smaller export or a screenshot.');
+  importState('busy', 'Reading your file…');
+  try {
+    const {kind, text} = await fileToText(file);
+    let rows = kind === 'csv' ? parseCSV(text) : [];
+    if (!rows.length) { importState('busy', 'Finding your holdings…'); rows = await aiExtract(text); }
+    if (!rows.length) return importState('fail', 'We couldn\'t find holdings in this file. It may not be a statement, or the positions may be cut off. Try another file or add them by hand.');
+    openReview(rows, file.name);
+  } catch (e) {
+    importState('fail', /HTTP|abort|fetch/i.test(e.message) ? 'The reader is temporarily unavailable. Try again in a minute, or add holdings by hand.' : e.message);
+  }
+}
+let draft = [];
+function openReview(rows, source) {
+  draft = rows.map(r => ({...r}));
+  importState('review');
+  $('review-title').textContent = source ? `Found ${draft.filter(r => !r.isCash).length} holdings` : 'Your holdings';
+  $('review-sub').textContent = source ? `From ${source}. Check the numbers. Nothing is saved until you confirm.` : 'Add a row for each stock or fund you own.';
+  renderReview();
+  $('review').scrollIntoView({behavior: reduced ? 'auto' : 'smooth', block: 'center'});
+}
+function rowFlags(r) {
+  const f = [];
+  if (!r.isCash && !/^[A-Z][A-Z0-9.\-]{0,6}$/.test(r.ticker)) f.push('ticker');
+  if (!r.isCash && !(r.shares > 0)) f.push('shares');
+  return f;
+}
+function renderReview() {
+  const box = $('review-rows');
+  box.innerHTML = draft.map((r, i) => {
+    const f = rowFlags(r);
+    return `<div class="review-row ${f.length ? 'flag' : ''}" data-i="${i}">
+      <input aria-label="Ticker" class="${f.includes('ticker') ? 'f' : ''}" data-k="ticker" value="${esc(r.ticker)}" autocapitalize="characters">
+      ${r.isCash
+        ? `<input aria-label="Cash value" data-k="marketValue" inputmode="decimal" value="${r.marketValue || ''}" placeholder="Cash $">`
+        : `<input aria-label="Shares" class="${f.includes('shares') ? 'f' : ''}" data-k="shares" inputmode="decimal" value="${r.shares || ''}" placeholder="0">`}
+      ${r.isCash ? '<span class="fine">Cash</span>' : `<input aria-label="Average cost" data-k="avgCost" inputmode="decimal" value="${r.avgCost || ''}" placeholder="Optional">`}
+      <button class="icon-btn" type="button" aria-label="Remove ${esc(r.ticker || 'row')}" data-del="${i}"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+    </div>`;
+  }).join('') || '<div class="empty" style="padding:16px">No rows yet.</div>';
+  const flagged = draft.filter(r => rowFlags(r).length).length;
+  $('review-warn').style.display = flagged ? 'block' : 'none';
+  $('review-warn').textContent = flagged ? `${flagged} ${flagged === 1 ? 'row needs' : 'rows need'} a look. Fix or remove the highlighted fields.` : '';
+  box.querySelectorAll('input').forEach(inp => inp.oninput = () => {
+    const i = +inp.closest('.review-row').dataset.i, k = inp.dataset.k;
+    draft[i][k] = k === 'ticker' ? inp.value.toUpperCase().trim() : parseFloat(inp.value.replace(/[$,]/g, '')) || 0;
+    const row = inp.closest('.review-row'), f = rowFlags(draft[i]);
+    row.classList.toggle('flag', f.length > 0);
+    row.querySelectorAll('input').forEach(x => x.classList.toggle('f', f.includes(x.dataset.k)));
+  });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { draft.splice(+b.dataset.del, 1); renderReview(); });
+}
+function confirmReview() {
+  const bad = draft.filter(r => rowFlags(r).length);
+  if (bad.length) { $('review-warn').style.display = 'block'; $('review-warn').textContent = 'Fix or remove the highlighted rows before saving.'; return; }
+  myPortfolio = draft.filter(r => r.isCash ? r.marketValue > 0 : r.shares > 0).map(r => ({...r, isCash: !!r.isCash}));
+  savePortfolio();
+  importState('idle');
+  $('file').value = '';
+  refreshAll();
+  $('overview').scrollIntoView({behavior: reduced ? 'auto' : 'smooth'});
+}
+function wireImport() {
+  const drop = $('drop'), inp = $('file');
+  inp.onchange = () => handleFile(inp.files[0]);
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
+  const manual = () => openReview(myPortfolio.length ? myPortfolio : [{ticker: '', shares: 0, avgCost: 0}], null);
+  $('manual').onclick = manual; $('fail-manual').onclick = manual; $('edit-holdings').onclick = manual;
+  $('retry').onclick = () => { importState('idle'); inp.value = ''; inp.click(); };
+  $('add-row').onclick = () => { draft.push({ticker: '', shares: 0, avgCost: 0}); renderReview(); };
+  $('confirm').onclick = confirmReview;
+  $('cancel').onclick = () => { importState('idle'); inp.value = ''; };
+  $('clear-holdings').onclick = () => { if (confirm('Remove your saved portfolio from this device?')) { myPortfolio = []; savePortfolio(); delete shown.hero; refreshAll(); } };
 }
 
-// ═══════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════
-function showTab(id, el) {
-  document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('pane-'+id).classList.add('active');
-  el.classList.add('active');
+// ─────────────────────────────────────────────
+//  NEWS
+// ─────────────────────────────────────────────
+async function loadNews() {
+  const el = $('news-list');
+  try {
+    const d = await getJSON(BACKEND_URL + '/api/news');
+    const items = (d.articles || []).sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 8);
+    if (!items.length) throw new Error('none');
+    el.innerHTML = items.map(a => {
+      const href = /^https?:\/\//.test(a.link || '') ? a.link : '#';
+      const when = a.published ? ago(new Date(a.published)) : '';
+      return `<a class="news-item" href="${esc(href)}" target="_blank" rel="noopener"><div class="t">${esc(a.title)}</div><div class="m">${esc(a.source)}${a.source && when ? ' · ' : ''}${esc(when)}</div></a>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<div class="empty">Headlines are unavailable right now.</div>';
+  }
 }
 
-function showBanner(msg, isError=false) {
-  const b = document.getElementById('data-banner');
-  b.style.display = 'block';
-  b.className = isError ? 'error' : '';
-  document.getElementById('banner-text').textContent = msg;
+// ─────────────────────────────────────────────
+//  ASK
+// ─────────────────────────────────────────────
+const PRESETS = ['Should I follow Pelosi\'s trades?', 'Which of my stocks is Congress buying?', 'Compare my risk to Trump\'s portfolio', 'What sectors is Congress buying this month?'];
+async function ask(q) {
+  q = (q || '').trim(); if (!q) return;
+  const btn = $('ask-go'), out = $('answer');
+  btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = '';
+  const priceCtx = Object.entries(prices).map(([t, p]) => `${t} $${p.price} (${pct(p.change_pct, 2)} today)`).join(', ');
+  const tradeCtx = trades.slice(0, 60).map(t => `${t.date} ${t.representative} ${/purchase/i.test(t.type) ? 'BUY' : 'SELL'} ${t.ticker} ${t.amount}`).join('\n');
+  const mine = stocks().length ? 'User holdings: ' + stocks().map(h => `${h.ticker} ${h.shares} sh${h.avgCost ? ' @ $' + h.avgCost.toFixed(2) : ''}`).join(', ') : 'User has not added holdings.';
+  const perf = Object.keys(lastReturns).length ? `Returns over selected period (${range}): ` + Object.entries(lastReturns).map(([k, v]) => `${k} ${pct(v)}`).join(', ') : '';
+  const system = `You analyze congressional stock trading for a retail investor. Use only the data below. Be direct and specific, 2 to 4 short paragraphs, plain text with no markdown. Remind briefly that this is not investment advice only if the user asks what to buy or sell.
+Live prices: ${priceCtx}
+${perf}
+Pelosi reference positions (estimated): ${REF.pelosi.map(h => h.ticker).join(', ')}
+Trump reference positions (estimated): ${REF.trump.map(h => h.ticker).join(', ')}
+Recent congressional filings (newest first):
+${tradeCtx}
+${mine}`;
+  try {
+    const d = await getJSON(BACKEND_URL + '/api/ai', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({system, question: q})});
+    if (d.error) throw new Error(d.error);
+    out.textContent = (d.answer || 'No answer came back. Try rephrasing.').replace(/\*\*|__|#+\s/g, '');
+  } catch (e) {
+    out.textContent = 'The assistant is unavailable right now. Try again in a minute.';
+  }
+  btn.disabled = false; btn.textContent = 'Ask';
+}
+function wireAsk() {
+  $('presets').innerHTML = PRESETS.map(p => `<button class="preset" type="button">${esc(p)}</button>`).join('');
+  $('presets').querySelectorAll('.preset').forEach(b => b.onclick = () => { $('ask-q').value = b.textContent; ask(b.textContent); });
+  $('ask-form').onsubmit = e => { e.preventDefault(); ask($('ask-q').value); };
 }
 
-function showFlashAlert(t) {
-  const bar = document.getElementById('alert-bar');
-  const isBuy = (t.type||'').toLowerCase().includes('purchase') || t.action === 'BUY';
-  bar.className = isBuy ? 'buy' : 'sell';
-  bar.style.display = 'flex';
-  document.getElementById('a-pol').textContent = (t.rep||t.pol||'').split(' ').pop().toUpperCase();
-  document.getElementById('a-act').textContent = isBuy ? 'BUY' : 'SELL';
-  document.getElementById('a-act').style.color = isBuy ? 'var(--green)' : 'var(--red)';
-  document.getElementById('a-tick').textContent = t.ticker;
-  document.getElementById('a-detail').textContent = t.amount || '';
-  document.getElementById('a-real').innerHTML = t.isReal ? '<span class="real-indicator">LIVE</span>' : '';
-  setTimeout(() => bar.style.display = 'none', 5000);
+// ─────────────────────────────────────────────
+//  SIGNALS (computed, not hardcoded)
+// ─────────────────────────────────────────────
+function renderSignals() {
+  const out = [];
+  const share = (list, sector) => {
+    const tot = list.reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0);
+    const part = list.filter(h => h.sector === sector).reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0);
+    return tot ? part / tot * 100 : 0;
+  };
+  if (Object.keys(prices).length) {
+    out.push({h: `Pelosi is ${share(REF.pelosi, 'Technology').toFixed(0)}% tech`, p: `Her estimated positions lean on ${REF.pelosi.filter(h => h.sector === 'Technology').map(h => h.ticker).slice(0, 4).join(', ')}.`});
+    const djt = share(REF.trump, 'Media');
+    out.push({h: `Trump is ${djt.toFixed(0)}% one stock`, p: `DJT dominates his estimated positions${prices.DJT ? `, ${pct(prices.DJT.change_pct, 2)} today` : ''}. Concentration like this swings hard.`});
+  }
+  if (trades.length) {
+    const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const counts = {};
+    trades.filter(t => t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (top) out.push({h: `Most bought: ${top[0]}`, p: `${top[1]} congressional purchase filings in the last 30 days of trade dates.`});
+  }
+  const mine = stocks();
+  if (mine.length && trades.length) {
+    const hit = mine.filter(h => tradersOf(h.ticker) > 0);
+    out.push({h: `${hit.length} of your ${mine.length} stocks`, p: hit.length ? `Members of Congress filed trades in ${hit.slice(0, 5).map(h => h.ticker).join(', ')}.` : 'None of your stocks appear in recent filings.'});
+  }
+  if (lastReturns.me !== undefined && lastReturns.voo !== undefined && mine.length) {
+    const d = lastReturns.me - lastReturns.voo;
+    out.push({h: d >= 0 ? `Beating the S&P by ${d.toFixed(1)} pts` : `Trailing the S&P by ${Math.abs(d).toFixed(1)} pts`, p: `Over the selected period, compared with VOO.`});
+  }
+  $('signal-list').innerHTML = out.length
+    ? out.slice(0, 6).map(s => `<article class="signal"><h3>${esc(s.h)}</h3><p>${esc(s.p)}</p></article>`).join('')
+    : '<article class="signal"><h3>Gathering data</h3><p>Signals appear once prices and filings load.</p></article>';
 }
 
-function guessPol(name) {
-  if (!name) return 'other';
-  const n = name.toLowerCase();
-  if (n.includes('pelosi')) return 'pelosi';
-  if (n.includes('trump')) return 'trump';
-  return 'other';
+// ─────────────────────────────────────────────
+//  MOTION: reveal on scroll
+// ─────────────────────────────────────────────
+function wireReveal() {
+  const els = document.querySelectorAll('.reveal');
+  if (reduced || !('IntersectionObserver' in window)) { els.forEach(e => e.classList.add('in')); return; }
+  const io = new IntersectionObserver(entries => entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } }), {rootMargin: '0px 0px -8% 0px'});
+  els.forEach(e => io.observe(e));
 }
 
-function getMinutesAgo(dateStr) {
-  if (!dateStr) return 0;
-  try { return Math.round((Date.now() - new Date(dateStr)) / 60000); } catch(e) { return 0; }
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+function refreshAll() {
+  renderHero(); renderHoldings(); renderFeed(); renderCompareSubs(); renderSignals();
+  loadPrices(); loadHistory();
 }
-
-function timeAgo(m) {
-  if (m < 60) return m + 'm ago';
-  if (m < 1440) return Math.round(m/60) + 'h ago';
-  return Math.round(m/1440) + 'd ago';
+function init() {
+  wireReveal(); wireImport(); wireAsk(); buildChart();
+  $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
+  renderHero(); renderHoldings(); renderFeed(); renderSignals();
+  loadPrices(); loadHistory(); loadTrades(); loadNews();
+  setInterval(loadPrices, 2 * 60 * 1000);
+  setInterval(loadHistory, 10 * 60 * 1000);
+  setInterval(loadNews, 15 * 60 * 1000);
+  setInterval(loadTrades, 60 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPrices(); });
 }
-
-function formatDate(str) {
-  if (!str) return '';
-  try { return new Date(str).toLocaleDateString(); } catch(e) { return str; }
-}
-
-function fmtV(v) {
-  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
-  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
-  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
-  return '$' + v.toFixed(2);
-}
-
-function updateClock() {
-  const now = new Date();
-  document.getElementById('kpi-time').textContent = now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-
 init();
 </script>
 </body>
