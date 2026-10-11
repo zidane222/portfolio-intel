@@ -11,7 +11,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -388,6 +388,10 @@ jobs:
           print(f'Committee overlaps flagged: {matched}')
           PYEOF
 
+      - name: Famous investors and insider buys (SEC)
+        continue-on-error: true
+        run: python3 scripts/smart_money.py
+
       - name: Send alerts for new filings
         continue-on-error: true
         env:
@@ -427,6 +431,6 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add trades.json
-          git add trump_filings.json sectors.json 2>/dev/null || true
+          git add trump_filings.json sectors.json smart_money.json insiders.json data_cache 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push

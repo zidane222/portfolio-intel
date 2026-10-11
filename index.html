@@ -138,6 +138,24 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 .copy-row code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;background:#EEF3F9;border-radius:8px;padding:8px 10px;color:var(--dark);word-break:break-all}
 .new-dot{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--accent);color:#fff;margin-left:8px;vertical-align:2px}
 
+/* SMART MONEY */
+.sm-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:flex-end;margin-bottom:6px}
+.sm-big{font-size:22px;font-weight:600}
+.hold{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:12px 0;border-top:1px solid rgba(255,255,255,0.08)}
+.hold:first-child{border-top:0}
+.hold .bar{grid-column:1 / -1;height:4px;border-radius:2px;background:rgba(255,255,255,0.08);overflow:hidden}
+.hold .bar span{display:block;height:100%;background:var(--accent);border-radius:2px}
+.chg{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:2px}
+.chg.new{background:rgba(48,209,88,.16);color:#6EE7A0}
+.chg.add{background:rgba(10,132,255,.2);color:#8EC5FF}
+.chg.cut{background:rgba(255,159,10,.18);color:#FFC46B}
+.soldout{font-size:13px;color:var(--ink-3);margin-top:12px;line-height:1.5}
+.news-more{margin-top:6px}
+.news-more summary{font-size:12px;color:var(--accent-press);cursor:pointer;min-height:32px;display:inline-flex;align-items:center}
+.news-more a{display:block;font-size:13px;color:var(--dark-2);padding:4px 0;text-decoration:none}
+.news-more a:hover{color:var(--accent-press)}
+.src-count{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(11,26,51,.08);color:var(--dark-2);margin-left:6px}
+
 /* SECTOR DONUT */
 .mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
 .donut{position:relative;width:260px;height:260px;flex:none}
@@ -310,6 +328,7 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <a href="#mix">Industries</a>
       <a href="#copy">Copy test</a>
       <a href="#leaders">Leaderboard</a>
+      <a href="#smart">Smart money</a>
       <a href="#disclosures">Disclosures</a>
       <a href="#holdings">Holdings</a>
       <a href="#news">News</a>
@@ -388,6 +407,16 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
         <p>Starts with $10,000 on the member&#39;s first filing date in the past year. On each filing date, stocks they bought are added and stocks they sold are dropped, then the holdings are split equally. Trades are acted on the day they were filed, not the day she traded, since that is when the public could see them. Bonds and private assets are skipped. Options are treated as the underlying stock. No fees, taxes, or dividends. Past results don&#39;t predict future ones; not investment advice.</p>
       </details>
     </div>
+  </div>
+</section>
+
+<!-- SMART MONEY -->
+<section id="smart">
+  <div class="wrap">
+    <h2 class="title reveal">Smart money.</h2>
+    <p class="lede reveal">Executives buying their own stock, and what famous investors hold.</p>
+    <div class="filters reveal"><div class="seg" id="sm-tabs" role="group" aria-label="Smart money"></div></div>
+    <div class="card-d reveal"><div id="sm-body"></div></div>
   </div>
 </section>
 
@@ -640,6 +669,7 @@ let prices = {};
 let trades = [];
 let tradesUpdated = null;
 let trumpFilings = [];
+let smart = {investors: []}, insiderBuys = [];
 let trumpLimit = 6;
 // Remember the last visit so new filings can be called out
 let lastVisit = null;
@@ -897,6 +927,9 @@ async function loadTrades() {
     tradesUpdated = d.updated ? new Date(d.updated) : null;
   }
   try { const t = await getJSON('./trump_filings.json?v=' + Math.floor(Date.now() / 3.6e6)); trumpFilings = t.filings || []; } catch (e) {}
+  try { smart = await getJSON('./smart_money.json?v=' + Math.floor(Date.now() / 3.6e6)); smart.investors = smart.investors || []; } catch (e) {}
+  try { insiderBuys = (await getJSON('./insiders.json?v=' + Math.floor(Date.now() / 3.6e6))).buys || []; } catch (e) {}
+  renderSmart();
   renderFeed(); renderHoldings(); renderSignals();
   bestCache = null;
   runCopyTest(); renderLeaderboard();
@@ -1204,11 +1237,34 @@ function wireImport() {
 //  NEWS
 // ─────────────────────────────────────────────
 let newsTab = null, newsCache = {};
+// Group headlines about the same story so each story shows once
+const STOP = new Set('the a an and or of to in on for with at by from as is are was were be its it this that after over into amid says said new will could may than more how why what who stock stocks shares market markets s'.split(' '));
+function words(t) { return new Set(String(t).toLowerCase().replace(/[^a-z0-9$% ]+/g, ' ').split(/\s+/).filter(w => w.length > 2 && !STOP.has(w))); }
+function clusterNews(items) {
+  const sorted = items.slice().sort((a, b) => new Date(b.published || 0) - new Date(a.published || 0));
+  const groups = [];
+  for (const a of sorted) {
+    const w = words(a.title);
+    let best = null, bestScore = 0;
+    for (const g of groups) {
+      let shared = 0; w.forEach(x => { if (g.words.has(x)) shared++; });
+      const score = shared / Math.max(1, Math.min(w.size, g.words.size));
+      if (score > bestScore) { bestScore = score; best = g; }
+    }
+    if (best && bestScore >= 0.6 && w.size >= 3) { best.more.push(a); w.forEach(x => best.words.add(x)); }
+    else groups.push({...a, words: w, more: []});
+  }
+  // Stories covered by more sources rank a little higher
+  return groups.sort((a, b) => (b.more.length - a.more.length) * 6 * 3600e3 + (new Date(b.published || 0) - new Date(a.published || 0)));
+}
 function newsItem(a) {
   const href = /^https?:\/\//.test(a.link || '') ? a.link : '#';
   const when = a.published ? ago(new Date(a.published)) : '';
   const tag = a.ticker ? `<button type="button" class="news-tag tk-link" data-tk="${esc(a.ticker)}" style="text-decoration:none">${esc(a.ticker)}</button>${a.why ? `<span class="news-tag" style="background:rgba(90,107,133,.12);color:#3A4A63">${esc(a.why)}</span>` : ''}` : '';
-  return `<div class="news-item"><a href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><div class="t">${esc(a.title)}</div></a><div class="m">${tag}${esc(a.source)}${a.source && when ? ' · ' : ''}${esc(when)}</div></div>`;
+  const others = (a.more || []).filter(o => o.source !== a.source || o.link !== a.link);
+  const srcs = new Set([a.source, ...others.map(o => o.source)]);
+  const more = others.length ? `<details class="news-more"><summary>Also covered by ${esc([...srcs].filter(x => x !== a.source).slice(0, 3).join(', ') || others.length + ' more')}</summary>${others.slice(0, 6).map(o => `<a href="${esc(/^https?:\/\//.test(o.link || '') ? o.link : '#')}" target="_blank" rel="noopener">${esc(o.source)}: ${esc(o.title)}</a>`).join('')}</details>` : '';
+  return `<div class="news-item"><a href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none"><div class="t">${esc(a.title)}</div></a><div class="m">${tag}${esc(a.source)}${a.source && when ? ' · ' : ''}${esc(when)}${srcs.size > 1 ? `<span class="src-count">${srcs.size} sources</span>` : ''}</div>${more}</div>`;
 }
 function newsTabs() {
   const f = [...followed()];
@@ -1218,7 +1274,8 @@ function newsTabs() {
   const hot = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
   return [
     ['mine', 'Your stocks', f.slice(0, 12)],
-    ['market', 'Market', null],
+    ['market', 'Top stories', null],
+    ['social', 'Reddit', null],
     ['pelosi', 'Pelosi', pel],
     ['trump', 'Trump', REF.trump.map(h => h.ticker)],
     ['congress', 'Most traded', hot],
@@ -1245,8 +1302,14 @@ async function loadNews() {
   el.innerHTML = '<div class="empty">Loading headlines…</div>';
   const tab = newsTab;
   try {
-    const d = tickers ? await getJSON(`${BACKEND_URL}/api/news/tickers/${tickers.join(',')}?per=3`) : await getJSON(BACKEND_URL + '/api/news');
-    const items = (d.articles || []).map(a => ({...a, why: a.ticker ? whyTag(a.ticker) : ''})).sort((a, b) => new Date(b.published) - new Date(a.published)).slice(0, 12);
+    let raw;
+    if (tickers) raw = (await getJSON(`${BACKEND_URL}/api/news/tickers/${tickers.join(',')}?per=4`)).articles || [];
+    else {
+      try { raw = (await getJSON(BACKEND_URL + '/api/feeds')).articles || []; }
+      catch (e) { raw = (await getJSON(BACKEND_URL + '/api/news')).articles || []; }
+      raw = raw.filter(a => tab === 'social' ? a.social : !a.social);
+    }
+    const items = clusterNews(raw.map(a => ({...a, why: a.ticker ? whyTag(a.ticker) : ''}))).slice(0, 14);
     if (!items.length) throw new Error('none');
     newsCache[tab] = items.map(newsItem).join('');
   } catch (e) {
@@ -1309,6 +1372,8 @@ async function openTicker(tk) {
       ${pel ? `<div class="fact">Pelosi<b>Holds (est.)</b></div>` : ''}
       ${trm ? `<div class="fact">Trump<b>Holds (est.)</b></div>` : ''}
       <div class="fact">In Congress<b class="num">${members.length} member${members.length === 1 ? '' : 's'} · ${tr.length} trade${tr.length === 1 ? '' : 's'}</b></div>
+      ${(() => { const ib = insiderBuys.filter(b => b.ticker === tk); return ib.length ? `<div class="fact">Insiders bought (90d)<b class="num">${compact(ib.reduce((s, b) => s + b.value, 0))} · ${ib.length} buy${ib.length === 1 ? '' : 's'}</b></div>` : ''; })()}
+      ${(() => { const who = smart.investors.filter(x => x.quarters && x.quarters[0] && x.quarters[0].holdings.some(h => h.ticker === tk)).map(x => x.name.split(' ').slice(-1)[0]); return who.length ? `<div class="fact">Held by<b>${esc(who.join(', '))}</b></div>` : ''; })()}
       ${lags.length ? `<div class="fact">Avg filing delay<b class="num">${Math.round(lags.reduce((a, b) => a + b, 0) / lags.length)} days</b></div>` : ''}
     </div>
     <h3>Congress trades</h3>
@@ -1461,9 +1526,12 @@ function renderSignals() {
   if (trades.length) {
     const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
     const counts = {};
-    trades.filter(t => t.ticker && t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
+    const who = {};
+    trades.filter(t => t.ticker && (t.filed || t.date) >= cut && /purchase/i.test(t.type || '')).forEach(t => { counts[t.ticker] = (counts[t.ticker] || 0) + 1; (who[t.ticker] = who[t.ticker] || new Set()).add(t.representative); });
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-    if (top) out.push({h: `Most bought: ${top[0]}`, p: `${top[1]} congressional purchase filings in the last 30 days of trade dates.`});
+    if (top) out.push({h: `Most bought this month: ${top[0]}`, p: `${top[1]} purchases filed in the last 30 days by ${who[top[0]].size} member${who[top[0]].size === 1 ? '' : 's'} of Congress.`});
+    const ib = insiderBuys.filter(b => b.filed >= cut).sort((a, b) => b.value - a.value)[0];
+    if (ib) out.push({h: `Biggest insider buy: ${ib.ticker}`, p: `${ib.owner} (${ib.role}) bought ${compact(ib.value)} of ${ib.company} stock, filed ${ib.filed}.`});
   }
   const mine = stocks();
   if (mine.length && trades.length) {
@@ -1607,11 +1675,24 @@ function memberTrades(rep) {
   return trades.filter(t => t.representative === rep && t.ticker && t.filed && t.filed >= yearAgo && /purchase|sale/i.test(t.type || ''));
 }
 // Follow one member's filings with $10,000, acting on each filing date
-function simulate(rep) {
-  const mine = memberTrades(rep);
+// A copy plan: which tickers, and what to do on each filing date
+function planFor(key) {
+  if (key.startsWith('inv:')) {
+    const inv = smart.investors.find(x => 'inv:' + x.id === key);
+    if (!inv) return null;
+    const yearAgo = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+    const qs = inv.quarters.filter(q => q.filed >= yearAgo).slice().reverse();
+    const steps = qs.map(q => ({date: q.filed, weights: Object.fromEntries(q.holdings.filter(h => h.ticker).slice(0, 25).map(h => [h.ticker, h.pct]))}));
+    return {steps, tickers: [...new Set(steps.flatMap(s => Object.keys(s.weights)))]};
+  }
+  const mine = memberTrades(key);
+  return {steps: mine.map(t => ({date: t.filed, buy: /purchase/i.test(t.type) ? t.ticker : null, sell: /purchase/i.test(t.type) ? null : t.ticker})), tickers: [...new Set(mine.map(t => t.ticker))]};
+}
+function simulate(key) {
+  const plan = planFor(key);
   const voo = hist1y.VOO || [];
-  if (!mine.length || !voo.length) return null;
-  const tickers = [...new Set(mine.map(t => t.ticker))];
+  if (!plan || !plan.steps.length || !voo.length) return null;
+  const tickers = plan.tickers;
   const days = voo.map(p => dayOf(p[0]));
   const close = {};
   for (const t of ['VOO', ...tickers]) {
@@ -1620,11 +1701,13 @@ function simulate(rep) {
     close[t] = days.map(d => (m.has(d) ? (last = m.get(d)) : last));
   }
   const events = new Map();
-  for (const t of mine) {
-    const i = days.findIndex(d => d >= t.filed);
+  for (const st of plan.steps) {
+    const i = days.findIndex(d => d >= st.date);
     if (i < 0) continue;
-    const e = events.get(i) || {buy: new Set(), sell: new Set()};
-    (/purchase/i.test(t.type) ? e.buy : e.sell).add(t.ticker);
+    const e = events.get(i) || {buy: new Set(), sell: new Set(), weights: null};
+    if (st.weights) e.weights = st.weights;
+    if (st.buy) e.buy.add(st.buy);
+    if (st.sell) e.sell.add(st.sell);
     events.set(i, e);
   }
   if (!events.size) return null;
@@ -1635,7 +1718,14 @@ function simulate(rep) {
   for (let i = startIdx; i < days.length; i++) {
     const value = () => cash + Object.entries(held).reduce((s, [t, sh]) => s + sh * (close[t][i] || 0), 0);
     const e = events.get(i);
-    if (e) {
+    if (e && e.weights) {
+      // Investor filing: match their portfolio weights
+      const total = value();
+      const avail = Object.entries(e.weights).filter(([t]) => { const ok = close[t] && close[t][i]; if (!ok) skipped.add(t); return ok; });
+      const sum = avail.reduce((s, [, w]) => s + w, 0);
+      held = {}; cash = total; followed += avail.length;
+      if (sum > 0) { avail.forEach(([t, w]) => { held[t] = total * (w / sum) / close[t][i]; }); cash = 0; }
+    } else if (e) {
       const keep = new Set(Object.keys(held));
       e.sell.forEach(t => keep.delete(t));
       e.buy.forEach(t => { if (close[t] && close[t][i]) keep.add(t); else skipped.add(t); });
@@ -1653,6 +1743,8 @@ function simulate(rep) {
 }
 
 let copyChart = null, copyLines = [], copyMember = null, lastCopy = null;
+const keyName = k => k.startsWith('inv:') ? ((smart.investors.find(x => 'inv:' + x.id === k) || {}).name || 'Investor') : nameOf(k);
+const keyShort = k => k.startsWith('inv:') ? keyName(k).split(' ').slice(-1)[0] : k.split(',')[0].trim();
 function copyCandidates() {
   const counts = {};
   trades.forEach(t => { if (t.ticker && t.filed) counts[t.representative] = (counts[t.representative] || 0) + 1; });
@@ -1664,13 +1756,15 @@ async function runCopyTest(rep) {
   if (!cands.length) { msg.textContent = trades.length ? 'No stock filings in the past year.' : 'Waiting for disclosures…'; return; }
   copyMember = rep || copyMember || cands.find(r => /pelosi/i.test(r)) || cands[0];
   const sel = $('copy-member');
-  const list = [...new Set([copyMember, ...cands.slice(0, 40)])].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-  sel.innerHTML = list.map(r => `<option value="${esc(r)}"${r === copyMember ? ' selected' : ''}>${esc(nameOf(r))}</option>`).join('');
-  const who = nameOf(copyMember);
-  $('copy-title').textContent = `What if you copied ${copyMember.split(',')[0].trim()}?`;
+  const list = [...new Set([...(copyMember.startsWith('inv:') ? [] : [copyMember]), ...cands.slice(0, 40)])].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  const invs = smart.investors.filter(x => x.quarters && x.quarters.length);
+  sel.innerHTML = (invs.length ? `<optgroup label="Famous investors">${invs.map(x => `<option value="inv:${esc(x.id)}"${'inv:' + x.id === copyMember ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>` : '')
+    + `<optgroup label="Congress">${list.map(r => `<option value="${esc(r)}"${r === copyMember ? ' selected' : ''}>${esc(nameOf(r))}</option>`).join('')}</optgroup>`;
+  const who = keyName(copyMember);
+  $('copy-title').textContent = `What if you copied ${keyShort(copyMember)}?`;
   $('copy-name').textContent = `Copying ${who}`;
   msg.style.display = 'flex'; msg.textContent = 'Running the numbers…';
-  try { await ensureHistory(['VOO', ...memberTrades(copyMember).map(t => t.ticker)]); }
+  try { await ensureHistory(['VOO', ...((planFor(copyMember) || {}).tickers || [])]); }
   catch (e) { msg.textContent = 'Price history is unavailable right now. It will retry shortly.'; setTimeout(() => runCopyTest(), 60000); return; }
   const res = simulate(copyMember);
   if (!res) { msg.textContent = 'No filings fall inside the price history yet.'; return; }
@@ -1680,7 +1774,7 @@ async function runCopyTest(rep) {
   $('copy-ret').innerHTML = `<span class="${res.r >= 0 ? 'up' : 'down'}">${pct(res.r)}</span> <span class="muted-d">${res.r - res.vr >= 0 ? 'ahead of' : 'behind'} VOO by ${Math.abs(res.r - res.vr).toFixed(1)} pts</span>`;
   $('copy-voo-ret').innerHTML = `<span class="${res.vr >= 0 ? 'up' : 'down'}">${pct(res.vr)}</span>`;
   const startDay = new Date(res.start + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-  $('copy-foot').textContent = `Since ${startDay} · ${res.followed} trades followed across ${res.filings} filings · now holding ${res.held.join(', ') || 'cash'}${res.skipped.length ? ` · skipped ${res.skipped.join(', ')} (no price data)` : ''}`;
+  $('copy-foot').textContent = `Since ${startDay} · ${copyMember.startsWith('inv:') ? `rebalanced to their 13F weights at ${res.filings} quarterly filings` : `${res.followed} trades followed across ${res.filings} filings`} · now holding ${res.held.length ? res.held.slice(0, 8).join(', ') + (res.held.length > 8 ? ` and ${res.held.length - 8} more` : '') : 'cash'}${res.skipped.length ? ` · skipped ${res.skipped.join(', ')} (no price data)` : ''}`;
   if (!window.LightweightCharts) { msg.textContent = 'Chart library failed to load.'; return; }
   msg.style.display = 'none';
   if (!copyChart) {
@@ -1699,6 +1793,61 @@ async function runCopyTest(rep) {
   }
   copyLines[0].setData(res.copySeries); copyLines[1].setData(res.vooSeries);
   copyChart.timeScale().fitContent();
+}
+
+// ─────────────────────────────────────────────
+//  SMART MONEY: insider buys + famous investors (SEC filings)
+// ─────────────────────────────────────────────
+let smTab = 'insiders', smInv = null, smFilter = 'all';
+function renderSmart() {
+  const tabs = [['insiders', 'Insider buys'], ['investors', 'Famous investors']];
+  $('sm-tabs').innerHTML = tabs.map(([k, l]) => `<button type="button" aria-pressed="${k === smTab}" data-k="${k}">${l}</button>`).join('');
+  $('sm-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { smTab = b.dataset.k; renderSmart(); });
+  const box = $('sm-body');
+  const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+  if (smTab === 'insiders') {
+    if (!insiderBuys.length) { box.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Insider filings appear after the next daily update.</div>'; return; }
+    const f = followed();
+    const filters = [['all', 'All'], ['big', '$1M+'], ['ceo', 'CEOs & CFOs'], ['mine', 'My stocks']];
+    let list = insiderBuys;
+    if (smFilter === 'big') list = list.filter(b => b.value >= 1e6);
+    if (smFilter === 'ceo') list = list.filter(b => /chief executive|ceo|chief financial|cfo|president/i.test(b.role));
+    if (smFilter === 'mine') list = list.filter(b => f.has(b.ticker));
+    const month = insiderBuys.filter(b => b.filed >= new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10));
+    const total = month.reduce((s, b) => s + b.value, 0);
+    box.innerHTML = `<div class="sm-head"><div><div class="muted-d" style="font-size:13px">Open-market purchases, last 30 days</div><div class="sm-big num">${compact(total)} by ${new Set(month.map(b => b.owner)).size} insiders</div></div>
+      <div class="seg seg-scroll" id="sm-filter">${filters.map(([k, l]) => `<button type="button" aria-pressed="${k === smFilter}" data-f="${k}">${l}</button>`).join('')}</div></div>
+      <div class="lb-note muted-d">Executives and directors buying their own company's stock with their own money. Filed within 2 business days.</div>`
+      + (list.slice(0, 25).map(b => `<div class="trade">
+          <div><div class="who">${esc(b.owner)} · ${esc(b.role)}</div><div class="what"><button type="button" class="tk-link" data-tk="${esc(b.ticker)}">${esc(b.ticker)}</button><span class="pill buy">Bought</span>${f.has(b.ticker) ? '<span class="pill mine">You own</span>' : ''}</div><div class="who" style="margin-top:2px">${esc(b.company)}</div></div>
+          <div><div class="amt num">${compact(b.value)}</div><div class="when">${b.shares.toLocaleString('en-US')} sh @ ${usd(b.price)}</div><div class="when">Traded ${esc(fmtD(b.date))} · filed ${esc(fmtD(b.filed))}</div></div>
+        </div>`).join('') || '<div class="chart-msg" style="position:static;padding:28px">No purchases match this filter.</div>');
+    box.querySelectorAll('#sm-filter button').forEach(b => b.onclick = () => { smFilter = b.dataset.f; renderSmart(); });
+    return;
+  }
+  const invs = smart.investors.filter(x => x.quarters && x.quarters.length);
+  if (!invs.length) { box.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Investor holdings appear after the next daily update.</div>'; return; }
+  smInv = smInv || invs[0].id;
+  const inv = invs.find(x => x.id === smInv) || invs[0];
+  const [q, prev] = inv.quarters;
+  const prevMap = new Map((prev ? prev.holdings : []).map(h => [h.cusip, h]));
+  const curSet = new Set(q.holdings.map(h => h.cusip));
+  const sold = prev ? prev.holdings.filter(h => !curSet.has(h.cusip) && h.pct >= 0.5) : [];
+  box.innerHTML = `<div class="sm-head" style="margin-bottom:12px"><label class="sr" for="sm-inv">Investor</label><select id="sm-inv" class="picker">${invs.map(x => `<option value="${esc(x.id)}"${x.id === inv.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+      <button class="btn glass small" type="button" id="sm-copy">Copy test</button></div>
+    <div class="muted-d" style="font-size:13px">${esc(inv.firm)} · holdings as of ${esc(new Date(q.period + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}))} · filed ${esc(fmtD(q.filed))}</div>
+    <div class="sm-big num" style="margin:4px 0 10px">${compact(q.total)} across ${q.positions} positions</div>`
+    + q.holdings.slice(0, 15).map(h => {
+      const p = prevMap.get(h.cusip);
+      const chg = !prev ? '' : !p ? '<span class="chg new">New</span>' : h.shares > p.shares * 1.05 ? `<span class="chg add">Added ${Math.round((h.shares / p.shares - 1) * 100)}%</span>` : h.shares < p.shares * 0.95 ? `<span class="chg cut">Trimmed ${Math.round((1 - h.shares / p.shares) * 100)}%</span>` : '';
+      return `<div class="hold"><div><div class="what" style="font-size:15px">${h.ticker ? `<button type="button" class="tk-link" data-tk="${esc(h.ticker)}">${esc(h.ticker)}</button>` : ''} <span class="who" style="font-weight:400">${esc(h.name)}</span>${chg}</div></div>
+        <div class="num" style="text-align:right;font-weight:600">${h.pct.toFixed(1)}%<div class="when">${compact(h.value)}</div></div>
+        <div class="bar"><span style="width:${Math.min(100, h.pct / q.holdings[0].pct * 100)}%"></span></div></div>`;
+    }).join('')
+    + (sold.length ? `<div class="soldout">Sold out since last quarter: ${sold.slice(0, 10).map(h => esc(h.ticker || h.name)).join(', ')}</div>` : '')
+    + '<div class="lb-note muted-d" style="margin-top:12px">13F filings are due 45 days after each quarter ends, so these holdings can be up to 4.5 months old. Long US stock positions only.</div>';
+  $('sm-inv').onchange = e => { smInv = e.target.value; renderSmart(); };
+  $('sm-copy').onclick = () => { runCopyTest('inv:' + inv.id); $('copy').scrollIntoView({behavior: reduced ? 'auto' : 'smooth'}); };
 }
 
 // ─────────────────────────────────────────────
@@ -1747,17 +1896,17 @@ async function renderLeaderboard() {
         return lbRow(i, rep, nameOf(rep), esc(cs) + ' · ' + esc(tk), ts.length, 'overlaps', true); }).join('')
       || '<div class="chart-msg" style="position:static;padding:28px">Committee data appears after the next daily update.</div>';
   } else if (lbTab === 'best') {
-    note.textContent = '$10,000 following each of the 12 most active members, from their first filing in the past year. Return vs buying VOO on the same day.';
+    note.textContent = '$10,000 following the 12 most active members and 6 famous investors, from their first filing in the past year. Return vs buying VOO on the same day.';
     if (!bestCache) {
       box.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Testing the 12 most active members…</div>';
       try {
-        const cands = copyCandidates().slice(0, 12);
-        await ensureHistory(['VOO', ...cands.flatMap(r => memberTrades(r).map(t => t.ticker))]);
+        const cands = [...copyCandidates().slice(0, 12), ...smart.investors.map(x => 'inv:' + x.id)];
+        await ensureHistory(['VOO', ...cands.flatMap(r => (planFor(r) || {}).tickers || [])]);
         bestCache = cands.map(r => [r, simulate(r)]).filter(x => x[1]).sort((a, b) => (b[1].r - b[1].vr) - (a[1].r - a[1].vr));
       } catch (e) { box.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Price history is unavailable right now. Try again in a minute.</div>'; return; }
       if (lbTab !== 'best') return;
     }
-    html = bestCache.map(([rep, res], i) => lbRow(i, rep, nameOf(rep), `${res.filings} filings · vs VOO <span class="${res.r - res.vr >= 0 ? 'up' : 'down'}">${res.r - res.vr >= 0 ? '+' : ''}${(res.r - res.vr).toFixed(1)} pts</span>`, `<span class="${res.r >= 0 ? 'up' : 'down'}">${pct(res.r)}</span>`, usd(res.end, 0), true)).join('');
+    html = bestCache.map(([rep, res], i) => lbRow(i, rep, keyName(rep) + (rep.startsWith('inv:') ? ' · investor' : ''), `${res.filings} filings · vs VOO <span class="${res.r - res.vr >= 0 ? 'up' : 'down'}">${res.r - res.vr >= 0 ? '+' : ''}${(res.r - res.vr).toFixed(1)} pts</span>`, `<span class="${res.r >= 0 ? 'up' : 'down'}">${pct(res.r)}</span>`, usd(res.end, 0), true)).join('');
   }
   box.innerHTML = html || '<div class="chart-msg" style="position:static;padding:28px">Nothing to show yet.</div>';
   box.querySelectorAll('.lb-row:not([data-noclick])').forEach(b => b.onclick = () => { runCopyTest(b.dataset.rep); $('copy').scrollIntoView({behavior: reduced ? 'auto' : 'smooth'}); });

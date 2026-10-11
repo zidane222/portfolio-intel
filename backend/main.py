@@ -6,6 +6,7 @@ from flask import Flask, jsonify, request as flask_request
 from flask_cors import CORS
 import requests
 import json
+import re
 from datetime import datetime
 import os
 
@@ -241,6 +242,78 @@ def sectors(tickers):
     return jsonify({'sectors': out})
 
 # ── NEWS ──
+# ── PUBLISHER FEEDS (Morning Brew, CNBC, Bloomberg, Reddit, ...) ──
+# Social platforms like Instagram and X don't allow free access, so we use the same
+# publishers' own RSS feeds. The front end groups duplicate stories across sources.
+FEEDS = [
+    ('Morning Brew', 'https://www.morningbrew.com/feed.xml'),
+    ('CNBC', 'https://www.cnbc.com/id/20910258/device/rss/rss.html'),
+    ('MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories'),
+    ('Bloomberg', 'https://feeds.bloomberg.com/markets/news.rss'),
+    ('Financial Times', 'https://www.ft.com/markets?format=rss'),
+    ('Seeking Alpha', 'https://seekingalpha.com/market_currents.xml'),
+    ('Nasdaq', 'https://www.nasdaq.com/feed/rssoutbound?category=Markets'),
+    ('Axios', 'https://api.axios.com/feed/'),
+    ('r/stocks', 'https://www.reddit.com/r/stocks/top/.rss?t=day'),
+    ('r/wallstreetbets', 'https://www.reddit.com/r/wallstreetbets/top/.rss?t=day'),
+]
+feeds_cache = {'data': [], 'updated': None, 'sources': {}}
+FEEDS_MINUTES = 15
+
+def _parse_feed(source, text):
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+    import html as htmllib
+    root = ET.fromstring(text.encode('utf-8') if isinstance(text, str) else text)
+    for el in root.iter():
+        if '}' in el.tag:
+            el.tag = el.tag.split('}', 1)[1]
+    out = []
+    for it in list(root.iter('item')) + list(root.iter('entry')):
+        title = htmllib.unescape(re.sub(r'<[^>]+>', '', (it.findtext('title') or '')).strip())
+        link = (it.findtext('link') or '').strip()
+        if not link:
+            l = it.find('link')
+            link = l.get('href', '') if l is not None else ''
+        raw = it.findtext('pubDate') or it.findtext('published') or it.findtext('updated') or ''
+        try:
+            pub = parsedate_to_datetime(raw).isoformat() if ',' in raw else datetime.fromisoformat(raw.replace('Z', '+00:00')).isoformat()
+        except Exception:
+            pub = ''
+        if title and link.startswith('http'):
+            out.append({'title': title, 'link': link, 'published': pub, 'source': source,
+                        'social': source.startswith('r/')})
+    return out[:25]
+
+@app.route('/api/feeds')
+def feeds():
+    import re as _re  # noqa: F401  (re is imported inside helpers too)
+    from concurrent.futures import ThreadPoolExecutor
+    if not feeds_cache['updated'] or (datetime.now() - feeds_cache['updated']).total_seconds() / 60 > FEEDS_MINUTES:
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36'}
+        def grab(src):
+            name, url = src
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code != 200:
+                    return name, None, f'HTTP {r.status_code}'
+                return name, _parse_feed(name, r.content), None
+            except Exception as e:
+                return name, None, str(e)[:120]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(grab, FEEDS))
+        articles, status = [], {}
+        for name, items, err in results:
+            status[name] = err or len(items)
+            if items:
+                articles.extend(items)
+            elif err:
+                # keep the last good copy of a feed that failed this time
+                articles.extend(a for a in feeds_cache['data'] if a['source'] == name)
+        articles.sort(key=lambda a: a['published'] or '', reverse=True)
+        feeds_cache.update({'data': articles, 'updated': datetime.now(), 'sources': status})
+    return jsonify({'articles': feeds_cache['data'], 'sources': feeds_cache['sources'], 'updated': str(feeds_cache['updated'])})
+
 # ── NEWS FOR SPECIFIC TICKERS (Google News RSS, last 7 days) ──
 ticker_news_cache = {}
 TICKER_NEWS_MINUTES = 20
@@ -388,6 +461,7 @@ def health():
             '/api/sectors/<tickers>',
             '/api/news',
             '/api/news/tickers/<tickers>',
+            '/api/feeds',
             '/api/ai'
         ],
         'updated': str(datetime.now())
