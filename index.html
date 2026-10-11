@@ -1774,7 +1774,7 @@ async function runCopyTest(rep) {
   $('copy-ret').innerHTML = `<span class="${res.r >= 0 ? 'up' : 'down'}">${pct(res.r)}</span> <span class="muted-d">${res.r - res.vr >= 0 ? 'ahead of' : 'behind'} VOO by ${Math.abs(res.r - res.vr).toFixed(1)} pts</span>`;
   $('copy-voo-ret').innerHTML = `<span class="${res.vr >= 0 ? 'up' : 'down'}">${pct(res.vr)}</span>`;
   const startDay = new Date(res.start + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-  $('copy-foot').textContent = `Since ${startDay} · ${copyMember.startsWith('inv:') ? `rebalanced to their 13F weights at ${res.filings} quarterly filings` : `${res.followed} trades followed across ${res.filings} filings`} · now holding ${res.held.join(', ') || 'cash'}${res.skipped.length ? ` · skipped ${res.skipped.join(', ')} (no price data)` : ''}`;
+  $('copy-foot').textContent = `Since ${startDay} · ${copyMember.startsWith('inv:') ? `rebalanced to their 13F weights at ${res.filings} quarterly filings` : `${res.followed} trades followed across ${res.filings} filings`} · now holding ${res.held.length ? res.held.slice(0, 8).join(', ') + (res.held.length > 8 ? ` and ${res.held.length - 8} more` : '') : 'cash'}${res.skipped.length ? ` · skipped ${res.skipped.join(', ')} (no price data)` : ''}`;
   if (!window.LightweightCharts) { msg.textContent = 'Chart library failed to load.'; return; }
   msg.style.display = 'none';
   if (!copyChart) {
