@@ -142,6 +142,8 @@ p.lede{font-size:clamp(16px,2.2vw,19px);text-align:center;margin-bottom:36px;col
 .pill.buy{background:rgba(48,209,88,.16);color:#6EE7A0}
 .pill.sell{background:rgba(255,69,58,.16);color:#FF8A80}
 .pill.mine{background:rgba(10,132,255,.2);color:#8EC5FF}
+.pill.priv-pill{background:rgba(191,90,242,.18);color:#D9A6F7}
+.trade .priv{font-weight:600;font-size:15px}
 .more{margin-top:16px;text-align:center}
 
 /* TABLE */
@@ -722,7 +724,7 @@ async function loadTrades() {
   try { d = await getJSON('./trades.json?v=' + Math.floor(Date.now() / 3.6e6)); }
   catch (e) { try { d = await getJSON(BACKEND_URL + '/api/all-trades'); } catch (e2) {} }
   if (d && Array.isArray(d.trades)) {
-    trades = d.trades.filter(t => t.ticker && t.ticker.length <= 6).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    trades = d.trades.filter(t => (t.ticker && t.ticker.length <= 6) || (t.private && t.description)).map(t => ({...t, amount: String(t.amount || '').replace(/\s+/g, ' ').replace(/\s*-\s*/, ' - ')})).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tradesUpdated = d.updated ? new Date(d.updated) : null;
   }
   renderFeed(); renderHoldings(); renderSignals();
@@ -747,10 +749,13 @@ function renderFeed() {
   feed.innerHTML = list.slice(0, feedLimit).map(t => {
     const buy = /purchase|buy/i.test(t.type || '');
     const name = (t.representative || '').includes(',') ? t.representative.split(',').reverse().join(' ').trim() : (t.representative || 'Unknown');
-    const when = t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    const traded = fmtD(t.date), filed = fmtD(t.filed);
+    const lag = t.date && t.filed ? Math.round((new Date(t.filed) - new Date(t.date)) / 864e5) : null;
+    const label = t.private ? `<span class="priv">${esc(t.description)}</span>` : esc(t.ticker);
     return `<div class="trade">
-      <div><div class="who">${esc(name)}</div><div class="what">${esc(t.ticker)}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
-      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">${esc(when)}</div></div>
+      <div><div class="who">${esc(name)}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${t.private ? '<span class="pill priv-pill">Private investment</span>' : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
+      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">Traded ${esc(traded)}</div>${filed ? `<div class="when">Filed ${esc(filed)}${lag !== null && lag >= 0 ? ` · ${lag}d later` : ''}</div>` : ''}</div>
     </div>`;
   }).join('');
   $('feed-more').style.display = list.length > feedLimit ? 'inline-flex' : 'none';
@@ -1011,7 +1016,7 @@ async function ask(q) {
   const btn = $('ask-go'), out = $('answer');
   btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = '';
   const priceCtx = Object.entries(prices).map(([t, p]) => `${t} $${p.price} (${pct(p.change_pct, 2)} today)`).join(', ');
-  const tradeCtx = trades.slice(0, 60).map(t => `${t.date} ${t.representative} ${/purchase/i.test(t.type) ? 'BUY' : 'SELL'} ${t.ticker} ${t.amount}`).join('\n');
+  const tradeCtx = trades.slice(0, 60).map(t => `${t.date} ${t.representative} ${/purchase/i.test(t.type) ? 'BUY' : 'SELL'} ${t.ticker || t.description + ' (private)'} ${t.amount}${t.filed ? ' filed ' + t.filed : ''}`).join('\n');
   const mine = stocks().length ? 'User holdings: ' + stocks().map(h => `${h.ticker} ${h.shares} sh${h.avgCost ? ' @ $' + h.avgCost.toFixed(2) : ''}`).join(', ') : 'User has not added holdings.';
   const perf = Object.keys(lastReturns).length ? `Returns over selected period (${range}): ` + Object.entries(lastReturns).map(([k, v]) => `${k} ${pct(v)}`).join(', ') : '';
   const system = `You analyze congressional stock trading for a retail investor. Use only the data below. Be direct and specific, 2 to 4 short paragraphs, plain text with no markdown. Remind briefly that this is not investment advice only if the user asks what to buy or sell.
@@ -1056,7 +1061,7 @@ function renderSignals() {
   if (trades.length) {
     const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
     const counts = {};
-    trades.filter(t => t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
+    trades.filter(t => t.ticker && t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (top) out.push({h: `Most bought: ${top[0]}`, p: `${top[1]} congressional purchase filings in the last 30 days of trade dates.`});
   }

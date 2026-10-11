@@ -112,16 +112,24 @@ jobs:
                                   asset_cell = str(row[2] or '')
                                   type_cell = str(row[3] or '')
                                   date_cell = str(row[4] or '')
+                                  notified_cell = str(row[5] or '') if len(row) > 5 else ''
                                   amount_cell = str(row[6] or '') if len(row) > 6 else ''
 
                                   if not type_cell or type_cell.strip() in ('', 'None', 'Transaction\nType'):
                                       continue
 
-                                  ticker = extract_ticker(asset_cell)
-                                  if not ticker:
+                                  tx = type_cell.strip()
+                                  dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
+                                  if not dm or not tx[:1] in ('P', 'S', 'E'):
                                       continue
 
-                                  tx = type_cell.strip()
+                                  ticker = extract_ticker(asset_cell)
+                                  # Assets without a ticker (LLCs, real estate funds, private placements)
+                                  # are kept and labeled instead of being dropped
+                                  private = not ticker
+                                  if private:
+                                      ticker = ''
+
                                   if tx.startswith('P'):
                                       tx_type = 'Purchase'
                                   elif tx.startswith('S'):
@@ -129,14 +137,19 @@ jobs:
                                   else:
                                       tx_type = tx
 
-                                  dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
-                                  trade_date = parse_date(dm.group(1)) if dm else ''
+                                  trade_date = parse_date(dm.group(1))
+                                  nm = re.search(r'(\d{2}/\d{2}/\d{4})', notified_cell)
+                                  filed_date = parse_date(nm.group(1)) if nm else ''
 
-                                  company = re.split(r'\(', asset_cell)[0].strip()
+                                  company = re.split(r'\(|\[', asset_cell)[0].strip()
                                   company = re.sub(r'\s+', ' ', company)[:60]
+                                  if private and not company:
+                                      continue
 
-                                  am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_cell)
-                                  amount = am.group(0) if am else amount_cell.strip()
+                                  # PDF cells wrap onto two lines; collapse to "$1,001 - $15,000"
+                                  amount_clean = re.sub(r'\s+', ' ', amount_cell).strip()
+                                  am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_clean)
+                                  amount = re.sub(r'\s*-\s*', ' - ', am.group(0)) if am else amount_clean
 
                                   trades.append({
                                       'date': trade_date,
@@ -145,6 +158,8 @@ jobs:
                                       'type': tx_type,
                                       'amount': amount,
                                       'description': company,
+                                      'filed': filed_date,
+                                      'private': private,
                                       'source': 'house'
                                   })
               except Exception as e:
@@ -162,7 +177,7 @@ jobs:
           seen = set()
           unique = []
           for t in all_trades:
-              key = f"{t['representative']}-{t['ticker']}-{t['date']}-{t['type']}"
+              key = f"{t['representative']}-{t['ticker'] or t['description']}-{t['date']}-{t['type']}"
               if key not in seen:
                   seen.add(key)
                   unique.append(t)
@@ -171,7 +186,7 @@ jobs:
           unique.sort(key=lambda x: x.get('date', ''), reverse=True)
           print(f"\nTotal unique trades: {len(unique)}")
           for t in unique[:10]:
-              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']}")
+              print(f"  {t['representative']} | {t['ticker'] or 'PRIVATE ' + t['description']} | {t['type']} | {t['date']} | filed {t['filed']}")
 
           output = {
               'trades': unique[:500],
