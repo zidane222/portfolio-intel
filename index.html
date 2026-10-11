@@ -66,6 +66,15 @@ nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-
 .tk svg{flex:none}
 @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
+/* COPY TEST */
+.copy-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:20px;align-items:flex-end}
+.copy-big{font-size:clamp(40px,7vw,56px);font-weight:600;letter-spacing:-1.4px;line-height:1.05;margin:4px 0}
+.copy-mid{font-size:28px;font-weight:600;letter-spacing:-.6px;margin:4px 0;color:var(--ink-2)}
+.copy-foot{font-size:13px;margin-top:10px;line-height:1.5}
+.copy-how{margin-top:14px;font-size:13px;color:var(--ink-3)}
+.copy-how summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--ink-2)}
+.copy-how p{line-height:1.55;padding-bottom:4px}
+
 /* SECTOR DONUT */
 .mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
 .donut{position:relative;width:260px;height:260px;flex:none}
@@ -236,6 +245,7 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <a href="#performance">Performance</a>
       <a href="#compare">Compare</a>
       <a href="#mix">Industries</a>
+      <a href="#copy">Copy test</a>
       <a href="#disclosures">Disclosures</a>
       <a href="#holdings">Holdings</a>
       <a href="#news">News</a>
@@ -282,6 +292,34 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <article class="card-d"><div class="stat-name">Pelosi</div><div class="stat-big num" id="ret-pelosi"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-pelosi"></div></article>
       <article class="card-d"><div class="stat-name">Trump</div><div class="stat-big num" id="ret-trump"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-trump"></div></article>
       <article class="card-d"><div class="stat-name">S&amp;P 500 (VOO)</div><div class="stat-big num" id="ret-voo"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-voo">The benchmark</div></article>
+    </div>
+  </div>
+</section>
+
+<!-- COPY TEST -->
+<section id="copy">
+  <div class="wrap">
+    <h2 class="title reveal">What if you copied Pelosi?</h2>
+    <p class="lede reveal">$10,000 following her filings, the day each one became public.</p>
+    <div class="card-d reveal">
+      <div class="copy-top">
+        <div>
+          <div class="muted-d" style="font-size:13px;display:flex;align-items:center;gap:8px"><span style="width:14px;height:3px;border-radius:2px;background:#0A84FF"></span>Copying Pelosi</div>
+          <div class="copy-big num" id="copy-val"><span class="sk">$00,000</span></div>
+          <div class="num" id="copy-ret" style="font-size:15px"></div>
+        </div>
+        <div style="text-align:right">
+          <div class="muted-d" style="font-size:13px;display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="width:14px;border-top:2px dashed #8E9BB3"></span>Just buying VOO</div>
+          <div class="copy-mid num" id="copy-voo"><span class="sk">$00,000</span></div>
+          <div class="num" id="copy-voo-ret" style="font-size:15px"></div>
+        </div>
+      </div>
+      <div id="copy-chart" style="height:220px;position:relative;margin-top:16px"><div class="chart-msg" id="copy-msg">Running the numbers…</div></div>
+      <div class="copy-foot muted-d" id="copy-foot"></div>
+      <details class="copy-how">
+        <summary>How this is calculated</summary>
+        <p>Starts with $10,000 on her first filing date in the past year. On each filing date, stocks she bought are added and stocks she sold are dropped, then the holdings are split equally. Trades are acted on the day they were filed, not the day she traded, since that is when the public could see them. Options are treated as the underlying stock. No fees, taxes, or dividends. Past results don&#39;t predict future ones; not investment advice.</p>
+      </details>
     </div>
   </div>
 </section>
@@ -741,6 +779,7 @@ async function loadTrades() {
   }
   try { const t = await getJSON('./trump_filings.json?v=' + Math.floor(Date.now() / 3.6e6)); trumpFilings = t.filings || []; } catch (e) {}
   renderFeed(); renderHoldings(); renderSignals();
+  runCopyTest();
 }
 function renderFeed() {
   const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['mine','My stocks']];
@@ -1230,6 +1269,88 @@ function renderMix() {
 //  MOTION: reveal on scroll
 // ─────────────────────────────────────────────
 // Highlight the nav link for the section on screen, and keep it visible in the phone's swipe row
+// ─────────────────────────────────────────────
+//  COPY TEST: what if you'd followed Pelosi's filings
+// ─────────────────────────────────────────────
+let copyChart = null, copyRan = false;
+async function runCopyTest() {
+  if (copyRan) return;
+  const msg = $('copy-msg');
+  const dayOf = ts => new Date(ts * 1000).toISOString().slice(0, 10);
+  const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  const mine = trades.filter(t => /pelosi/i.test(t.representative || '') && t.ticker && t.filed && t.filed >= yearAgo && /purchase|sale/i.test(t.type || ''));
+  if (!mine.length) { msg.textContent = trades.length ? 'No Pelosi stock filings in the past year.' : 'Waiting for disclosures…'; return; }
+  copyRan = true;
+  const tickers = [...new Set(mine.map(t => t.ticker))];
+  let hist;
+  try { hist = (await getJSON(`${BACKEND_URL}/api/history/${['VOO', ...tickers].join(',')}?range=1y`)).series || {}; }
+  catch (e) { copyRan = false; msg.textContent = 'Price history is unavailable right now. It will retry shortly.'; setTimeout(runCopyTest, 60000); return; }
+  if (!hist.VOO || !hist.VOO.length) { copyRan = false; msg.textContent = 'Price history is unavailable right now.'; return; }
+
+  // Daily close lookup per ticker, carried forward over gaps
+  const days = hist.VOO.map(p => dayOf(p[0]));
+  const close = {};
+  for (const t of ['VOO', ...tickers]) {
+    const m = new Map((hist[t] || []).map(p => [dayOf(p[0]), p[1]]));
+    let last = null;
+    close[t] = days.map(d => (m.has(d) ? (last = m.get(d)) : last));
+  }
+  // Group filings by the first trading day on or after the filing date
+  const events = new Map();
+  for (const t of mine) {
+    const i = days.findIndex(d => d >= t.filed);
+    if (i < 0) continue;
+    const e = events.get(i) || {buy: new Set(), sell: new Set()};
+    (/purchase/i.test(t.type) ? e.buy : e.sell).add(t.ticker);
+    events.set(i, e);
+  }
+  const startIdx = Math.min(...events.keys());
+  if (!isFinite(startIdx)) { msg.textContent = 'No filings fall inside the price history yet.'; return; }
+
+  let cash = 10000, held = {}, followed = 0;
+  const skipped = new Set();
+  const vooShares = 10000 / close.VOO[startIdx];
+  const copySeries = [], vooSeries = [];
+  for (let i = startIdx; i < days.length; i++) {
+    const value = () => cash + Object.entries(held).reduce((s, [t, sh]) => s + sh * (close[t][i] || 0), 0);
+    const e = events.get(i);
+    if (e) {
+      const keep = new Set(Object.keys(held));
+      e.sell.forEach(t => keep.delete(t));
+      e.buy.forEach(t => { if (close[t] && close[t][i]) keep.add(t); else skipped.add(t); });
+      followed += e.buy.size + e.sell.size;
+      const total = value();
+      held = {}; cash = total;
+      if (keep.size) { const each = total / keep.size; keep.forEach(t => { held[t] = each / close[t][i]; }); cash = 0; }
+    }
+    const ts = hist.VOO[i][0];
+    copySeries.push({time: ts, value: value()});
+    vooSeries.push({time: ts, value: vooShares * close.VOO[i]});
+  }
+  const end = copySeries[copySeries.length - 1].value, vooEnd = vooSeries[vooSeries.length - 1].value;
+  const r = (end / 10000 - 1) * 100, vr = (vooEnd / 10000 - 1) * 100;
+  animateTo($('copy-val'), 'copy', end, x => usd(x, 0));
+  animateTo($('copy-voo'), 'copyvoo', vooEnd, x => usd(x, 0));
+  $('copy-ret').innerHTML = `<span class="${r >= 0 ? 'up' : 'down'}">${pct(r)}</span> <span class="muted-d">${r - vr >= 0 ? 'ahead of' : 'behind'} VOO by ${Math.abs(r - vr).toFixed(1)} pts</span>`;
+  $('copy-voo-ret').innerHTML = `<span class="${vr >= 0 ? 'up' : 'down'}">${pct(vr)}</span>`;
+  const startDay = new Date(days[startIdx] + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+  $('copy-foot').textContent = `Since ${startDay} · ${followed} trades followed across ${events.size} filings · now holding ${Object.keys(held).join(', ') || 'cash'}${skipped.size ? ` · skipped ${[...skipped].join(', ')} (no price data)` : ''}`;
+
+  if (!window.LightweightCharts) { msg.textContent = 'Chart library failed to load.'; return; }
+  msg.style.display = 'none';
+  copyChart = copyChart || LightweightCharts.createChart($('copy-chart'), {
+    autoSize: true,
+    layout: {background: {type: 'solid', color: 'transparent'}, textColor: '#9FB1CE', fontFamily: getComputedStyle(document.body).fontFamily, fontSize: 12},
+    grid: {vertLines: {visible: false}, horzLines: {color: 'rgba(255,255,255,0.06)'}},
+    rightPriceScale: {borderVisible: false}, timeScale: {borderVisible: false, fixLeftEdge: true, fixRightEdge: true},
+    crosshair: {mode: 0, horzLine: {visible: false, labelVisible: false}, vertLine: {color: 'rgba(255,255,255,0.35)', labelBackgroundColor: '#12306A'}},
+    localization: {locale: 'en-US', priceFormatter: v => usd(v, 0)}, handleScroll: false, handleScale: false,
+  });
+  copyChart.addAreaSeries({lineColor: '#0A84FF', topColor: 'rgba(10,132,255,0.28)', bottomColor: 'rgba(10,132,255,0)', lineWidth: 2.5, priceLineVisible: false, lastValueVisible: false}).setData(copySeries);
+  copyChart.addLineSeries({color: '#8E9BB3', lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false}).setData(vooSeries);
+  copyChart.timeScale().fitContent();
+}
+
 function wireNavHighlight() {
   const links = [...document.querySelectorAll('.navlinks a')];
   const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
