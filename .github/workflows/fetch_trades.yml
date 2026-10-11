@@ -96,6 +96,45 @@ jobs:
               except:
                   return date_str
 
+          def asset_kind(text):
+              code = re.search(r'\[([A-Z]{2})\]', text)
+              code = code.group(1) if code else ''
+              t = text.upper()
+              if code in ('GS', 'CS') or re.search(r'\d%|\bDUE\b|\bBDS?\b|\bREV\b|\bBOND|\bNOTES?\b|\bTREASURY', t):
+                  return 'Bond'
+              if re.search(r'\bLLC\b|\bL\.?P\.?\b|\bFUND\b|\bPARTNERS|\bHOLDINGS?\b|\bTRUST\b|\bREIT\b', t):
+                  return 'Private investment'
+              return 'Other asset'
+
+          def make_trade(name, asset_text, tx, date_str, amount_text, filed_date, desc_text=None):
+              ticker = extract_ticker(asset_text)
+              company = re.split(r'\(|\[', desc_text if desc_text is not None else asset_text)[0]
+              company = re.sub(r'\s+', ' ', company).strip()[:60]
+              if not ticker and not company:
+                  return None
+              tx = tx.strip()
+              tx_type = 'Purchase' if tx.startswith('P') else 'Sale' if tx.startswith('S') else 'Exchange' if tx.startswith('E') else tx
+              amount_clean = re.sub(r'\([A-Z.\-]{1,7}\)|\[[A-Z]{2}\]', ' ', amount_text or '')
+              amount_clean = re.sub(r'\s+', ' ', amount_clean).strip()
+              am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_clean) or re.search(r'Over \$[\d,]+', amount_clean)
+              amount = re.sub(r'\s*-\s*', ' - ', am.group(0)) if am else ''
+              return {
+                  'date': parse_date(date_str),
+                  'filed': filed_date,
+                  'representative': name,
+                  'ticker': ticker or '',
+                  'type': tx_type,
+                  'amount': amount,
+                  'description': company,
+                  'private': not ticker,
+                  'kind': 'Stock' if ticker else asset_kind(asset_text),
+                  'source': 'house'
+              }
+
+          # A row the table extractor collapsed into one cell, e.g.
+          # "SP REOF XXX, LLC [AB] P 09/08/2026 09/08/2026 $1,000,001 - $5,000,000"
+          COLLAPSED = re.compile(r'^(?:(?:SP|JT|DC)\s+)?(.+?)\s+(P|S \(partial\)|S|E)\s+(\d{2}/\d{2}/\d{4})\s+\d{2}/\d{2}/\d{4}\s*(.*)$', re.S)
+
           def parse_pdf(name, url):
               trades = []
               try:
@@ -103,81 +142,31 @@ jobs:
                   if r3.status_code != 200:
                       return trades
                   with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                      text = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
+                      # Filing date = when the member signed the report, not the notification column
+                      sm = re.search(r'Digitally Signed:[^\n]*?(\d{2}/\d{2}/\d{4})', text)
+                      filed_date = parse_date(sm.group(1)) if sm else ''
                       for page in pdf.pages:
-                          tables = page.extract_tables()
-                          for tbl in tables:
+                          for tbl in page.extract_tables():
                               for row in tbl:
-                                  if not row or len(row) < 5:
+                                  if not row:
                                       continue
-                                  asset_cell = str(row[2] or '')
-                                  type_cell = str(row[3] or '')
-                                  date_cell = str(row[4] or '')
-                                  notified_cell = str(row[5] or '') if len(row) > 5 else ''
-                                  amount_cell = str(row[6] or '') if len(row) > 6 else ''
-
-                                  if not type_cell or type_cell.strip() in ('', 'None', 'Transaction\nType'):
-                                      continue
-
-                                  tx = type_cell.strip()
-                                  dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
-                                  if not dm or not tx[:1] in ('P', 'S', 'E'):
-                                      continue
-
-                                  ticker = extract_ticker(asset_cell)
-                                  # Assets without a ticker (LLCs, real estate funds, private placements)
-                                  # are kept and labeled instead of being dropped
-                                  private = not ticker
-                                  if private:
-                                      ticker = ''
-
-                                  if tx.startswith('P'):
-                                      tx_type = 'Purchase'
-                                  elif tx.startswith('S'):
-                                      tx_type = 'Sale'
-                                  else:
-                                      tx_type = tx
-
-                                  trade_date = parse_date(dm.group(1))
-                                  nm = re.search(r'(\d{2}/\d{2}/\d{4})', notified_cell)
-                                  filed_date = parse_date(nm.group(1)) if nm else ''
-
-                                  company = re.split(r'\(|\[', asset_cell)[0].strip()
-                                  company = re.sub(r'\s+', ' ', company)[:60]
-                                  if private and not company:
-                                      continue
-
-                                  # PDF cells wrap onto two lines; collapse to "$1,001 - $15,000"
-                                  amount_clean = re.sub(r'\s+', ' ', amount_cell).strip()
-                                  am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_clean)
-                                  amount = re.sub(r'\s*-\s*', ' - ', am.group(0)) if am else amount_clean
-
-                                  trades.append({
-                                      'date': trade_date,
-                                      'representative': name,
-                                      'ticker': ticker,
-                                      'type': tx_type,
-                                      'amount': amount,
-                                      'description': company,
-                                      'filed': filed_date,
-                                      'private': private,
-                                      'source': 'house'
-                                  })
+                                  cells = [str(c or '').replace('\x00', '') for c in row]
+                                  t = None
+                                  if len(cells) >= 7 and re.search(r'\d{2}/\d{2}/\d{4}', cells[4]) and cells[3].strip()[:1] in ('P', 'S', 'E'):
+                                      dm = re.search(r'(\d{2}/\d{2}/\d{4})', cells[4])
+                                      t = make_trade(name, cells[2], cells[3], dm.group(1), cells[6], filed_date)
+                                  elif cells[0].strip() and not any(c.strip() for c in cells[1:]):
+                                      m = COLLAPSED.match(re.sub(r'\s+', ' ', cells[0]).strip())
+                                      if m:
+                                          asset, tx, d, rest = m.groups()
+                                          # The ticker can land after the amount when the cell wraps
+                                          t = make_trade(name, asset + ' ' + rest, tx, d, rest, filed_date, desc_text=asset)
+                                  if t:
+                                      trades.append(t)
               except Exception as e:
                   print(f"Error {name}: {e}")
               return trades
-
-          # TEMP DEBUG: dump raw Pelosi PTR rows so the parser can be checked
-          dbg = []
-          for f in [f for f in filings if 'pelosi' in f['name'].lower()]:
-              try:
-                  rr = session.get(f['url'], headers=headers, timeout=15)
-                  with pdfplumber.open(io.BytesIO(rr.content)) as pdf:
-                      txt = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
-                      rows = [r for pg in pdf.pages for tb in pg.extract_tables() for r in tb]
-                  dbg.append({'name': f['name'], 'url': f['url'], 'text': txt[:3000], 'rows': rows[:40]})
-              except Exception as e:
-                  dbg.append({'name': f['name'], 'url': f['url'], 'error': str(e)})
-          json.dump(dbg, open('debug_pelosi.json', 'w'), indent=1)
 
           # Process ALL filings
           for i, filing in enumerate(filings):
@@ -216,6 +205,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json debug_pelosi.json
+          git add trades.json
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
