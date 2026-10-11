@@ -207,7 +207,7 @@ jobs:
               print(f"  {t['representative']} | {t['ticker'] or 'PRIVATE ' + t['description']} | {t['type']} | {t['date']} | filed {t['filed']}")
 
           output = {
-              'trades': unique[:500],
+              'trades': unique[:5000],  # full year; 5000 is only a safety limit
               'house_count': len(unique),
               'senate_count': 0,
               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
