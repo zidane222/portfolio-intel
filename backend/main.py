@@ -209,6 +209,47 @@ def history(tickers):
 
     return jsonify({'range': rng, 'series': series, 'updated': str(datetime.now())})
 
+# ── DIVIDEND YIELDS (trailing 12 months, from Yahoo dividend history) ──
+div_cache = {}
+DIV_HOURS = 12
+
+@app.route('/api/dividends/<tickers>')
+def dividends(tickers):
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:60]
+    out = {}
+    for ticker in ticker_list:
+        hit = div_cache.get(ticker)
+        if hit and (datetime.now() - hit['updated']).total_seconds() / 3600 < DIV_HOURS:
+            out[ticker] = hit['data']
+            continue
+        try:
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d&events=div'
+            res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+            if res.status_code != 200:
+                continue
+            result = (res.json().get('chart', {}).get('result') or [{}])[0]
+            meta = result.get('meta', {})
+            price = meta.get('regularMarketPrice') or 0
+            divs = (result.get('events') or {}).get('dividends') or {}
+            cutoff = datetime.now().timestamp() - 365 * 86400
+            paid = sorted((d.get('date', 0), d.get('amount', 0)) for d in divs.values() if d.get('date', 0) >= cutoff)
+            ttm = sum(a for _, a in paid)
+            closes = [c for c in ((result.get('indicators', {}).get('quote') or [{}])[0].get('close') or []) if c]
+            data = {
+                'price': round(price, 2),
+                'ttm_dividend': round(ttm, 4),
+                'yield': round(ttm / price * 100, 2) if price else 0,
+                'payments': len(paid),
+                'last_paid': datetime.fromtimestamp(paid[-1][0]).strftime('%Y-%m-%d') if paid else None,
+                'return_1y': round((closes[-1] / closes[0] - 1) * 100, 2) if len(closes) > 1 else None,
+                'name': meta.get('longName') or meta.get('shortName') or ticker,
+            }
+            div_cache[ticker] = {'data': data, 'updated': datetime.now()}
+            out[ticker] = data
+        except Exception as e:
+            print(f'Dividend error for {ticker}: {e}')
+    return jsonify({'dividends': out, 'updated': str(datetime.now())})
+
 # ── SECTORS (Yahoo Finance search) for the industry pie chart ──
 sector_cache = {}  # sectors rarely change, so cache for the life of the process
 
@@ -462,6 +503,7 @@ def health():
             '/api/news',
             '/api/news/tickers/<tickers>',
             '/api/feeds',
+            '/api/dividends/<tickers>',
             '/api/ai'
         ],
         'updated': str(datetime.now())

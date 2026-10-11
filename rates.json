@@ -1,0 +1,46 @@
+{
+  "as_of": "2026-10-11",
+  "note": "Bank and credit union rates have no free live feed. These were researched on the date above; rates are variable and change often. Verify with the institution before opening an account.",
+  "banks": [
+    {"name": "Peak Bank", "product": "High-yield savings", "apy": 4.27, "min": 100, "terms": "Rate on balances up to $499,999", "source": "The College Investor, Oct 5, 2026", "url": "https://thecollegeinvestor.com/89982/best-high-yield-savings-rates-for-october-5-2026/"},
+    {"name": "NexBank (via Raisin)", "product": "High-yield savings", "apy": 4.25, "min": 1, "terms": "Rate locked 6 months", "source": "The College Investor, Oct 5, 2026", "url": "https://thecollegeinvestor.com/89982/best-high-yield-savings-rates-for-october-5-2026/"},
+    {"name": "CIT Bank Platinum Savings", "product": "High-yield savings", "apy": 4.25, "min": 5000, "terms": "Promo code BOOST50 for 6 months on $5,000+; then 3.75%", "promo": true, "source": "The College Investor, Oct 5, 2026", "url": "https://thecollegeinvestor.com/89982/best-high-yield-savings-rates-for-october-5-2026/"},
+    {"name": "Openbank by Santander", "product": "High-yield savings", "apy": 4.15, "min": 500, "terms": "Includes 0.35% new-customer boost for 6 months", "promo": true, "source": "The College Investor, Oct 5, 2026", "url": "https://thecollegeinvestor.com/89982/best-high-yield-savings-rates-for-october-5-2026/"},
+    {"name": "Bank5 Connect", "product": "Money market account", "apy": 4.00, "min": 100, "terms": "$100 minimum balance for APY", "source": "Bankrate, Oct 6, 2026", "url": "https://www.bankrate.com/banking/money-market/rates/"},
+    {"name": "Ally Bank", "product": "Money market account", "apy": 3.10, "min": 0, "terms": "Large, well-known online bank, for comparison", "source": "Bankrate, Oct 9, 2026", "url": "https://www.bankrate.com/banking/money-market/rates/"}
+  ],
+  "credit_unions": [
+    {"name": "Sunward Federal Credit Union", "product": "Power Money Market", "apy": 5.04, "min": 1, "cap": 2500, "terms": "5.04% only on the first $2,500", "source": "WalletHub, 2026", "url": "https://wallethub.com/best-money-market-accounts"},
+    {"name": "OnPath Federal Credit Union", "product": "Elite Money Market", "apy": 4.00, "min": 25000, "terms": "On balances above $25,000", "source": "WalletHub, 2026", "url": "https://wallethub.com/best-money-market-accounts"},
+    {"name": "Langley Federal Credit Union", "product": "High-yield savings", "apy": 3.75, "min": 0, "terms": "No minimum", "source": "Bankrate, Oct 10, 2026", "url": "https://www.bankrate.com/banking/money-market/rates/"},
+    {"name": "Keesler Federal Credit Union", "product": "HIMMA Premier Money Market", "apy": 3.25, "min": 0, "terms": "Any balance", "source": "WalletHub, 2026", "url": "https://wallethub.com/best-money-market-accounts"}
+  ],
+  "merrill": [
+    {"name": "Merrill bank deposit sweep", "product": "Default cash sweep (under $250K)", "apy": 0.01, "min": 0, "terms": "What uninvested cash earns by default in a Merrill Edge brokerage account", "source": "Merrill rate sheet, Oct 9, 2026", "url": "https://oaui.fs.ml.com/Publish/Content/application/pdf/GWMOL/ICCRateSheet.pdf"},
+    {"name": "Merrill Preferred Deposit", "product": "Bank deposit", "apy": 3.15, "min": 100000, "terms": "$100,000 minimum initial deposit", "source": "Merrill rate sheet, Oct 9, 2026", "url": "https://oaui.fs.ml.com/Publish/Content/application/pdf/GWMOL/ICCRateSheet.pdf"}
+  ],
+  "money_market_funds": [
+    {"ticker": "TMCXX", "name": "BlackRock Liquidity Funds (at Merrill)", "type": "Treasury money market fund", "expense": null, "yours": true},
+    {"ticker": "SPAXX", "name": "Fidelity Government Money Market", "type": "Government money market fund", "expense": 0.42},
+    {"ticker": "VMFXX", "name": "Vanguard Federal Money Market", "type": "Government money market fund", "expense": 0.11},
+    {"ticker": "SWVXX", "name": "Schwab Value Advantage Money Fund", "type": "Prime money market fund", "expense": 0.34}
+  ],
+  "bond_etfs": [
+    {"ticker": "SGOV", "name": "iShares 0-3 Month Treasury Bond ETF", "type": "T-bills"},
+    {"ticker": "BIL", "name": "SPDR Bloomberg 1-3 Month T-Bill ETF", "type": "T-bills"},
+    {"ticker": "BND", "name": "Vanguard Total Bond Market ETF", "type": "Total US bonds"},
+    {"ticker": "AGG", "name": "iShares Core US Aggregate Bond ETF", "type": "Total US bonds"},
+    {"ticker": "LQD", "name": "iShares Investment Grade Corporate Bond ETF", "type": "Corporate bonds"},
+    {"ticker": "HYG", "name": "iShares High Yield Corporate Bond ETF", "type": "High-yield (junk) bonds"},
+    {"ticker": "MUB", "name": "iShares National Muni Bond ETF", "type": "Municipal bonds, federally tax-free"},
+    {"ticker": "TLT", "name": "iShares 20+ Year Treasury Bond ETF", "type": "Long-term Treasuries"}
+  ],
+  "dividend_etfs": ["SCHD", "VYM", "HDV", "DVY", "SPYD", "JEPI", "JEPQ", "DGRO", "NOBL", "VIG"],
+  "dividend_stocks": ["MO", "VZ", "T", "PFE", "O", "ABBV", "CVX", "XOM", "IBM", "KO", "PEP", "PM", "BTI", "ENB", "USB", "TFC", "F", "DOW", "LYB", "UPS", "MRK", "JNJ", "KHC", "MMM", "WBA", "BMY", "GIS", "KMI", "OKE", "EPD", "ET", "MPLX", "VICI", "WPC", "CAG", "HPQ", "CSCO", "TGT", "PRU", "MET"],
+  "model_portfolios": [
+    {"ticker": "AOK", "name": "iShares Core 30/70 Conservative Allocation", "mix": "30% stocks / 70% bonds"},
+    {"ticker": "AOM", "name": "iShares Core 40/60 Moderate Allocation", "mix": "40% stocks / 60% bonds"},
+    {"ticker": "AOR", "name": "iShares Core 60/40 Balanced Allocation", "mix": "60% stocks / 40% bonds"},
+    {"ticker": "AOA", "name": "iShares Core 80/20 Aggressive Allocation", "mix": "80% stocks / 20% bonds"}
+  ]
+}
