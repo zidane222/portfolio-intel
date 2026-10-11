@@ -209,6 +209,127 @@ def history(tickers):
 
     return jsonify({'range': rng, 'series': series, 'updated': str(datetime.now())})
 
+# ── TODAY'S TOP SAVINGS RATES (from a daily published rate article) ──
+# The Motley Fool publishes "Best High-Yield Savings Rates Today" every day. Its page mixes
+# picks with ad widgets, so the article text is read by the AI and returned as structured rates.
+top_rates_cache = {'data': None, 'updated': None}
+TOP_RATES_HOURS = 12
+
+def _article_text(html_text):
+    t = re.sub(r'<(script|style|noscript|svg)[^>]*>.*?</\1>', ' ', html_text, flags=re.S | re.I)
+    t = re.sub(r'<br\s*/?>|</(p|li|tr|h\d|div)>', '\n', t, flags=re.I)
+    t = re.sub(r'<[^>]+>', ' ', t)
+    import html as htmllib
+    t = htmllib.unescape(t)
+    lines = [re.sub(r'\s+', ' ', l).strip() for l in t.split('\n')]
+    lines = [l for l in lines if l]
+    # Keep the part of the page that talks about APYs
+    keep = [i for i, l in enumerate(lines) if 'APY' in l or '%' in l]
+    if not keep:
+        return ''
+    return '\n'.join(lines[max(0, keep[0] - 5): keep[-1] + 5])[:14000]
+
+@app.route('/api/top-rates')
+def top_rates():
+    fresh = top_rates_cache['updated'] and (datetime.now() - top_rates_cache['updated']).total_seconds() / 3600 < TOP_RATES_HOURS
+    if fresh and top_rates_cache['data']:
+        return jsonify(top_rates_cache['data'])
+    api_key = os.environ.get('GROQ_API_KEY', '')
+    if not api_key:
+        return jsonify({'error': 'AI not configured'}), 503
+    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36'}
+    from datetime import timedelta
+    for back in range(0, 4):
+        d = datetime.now() - timedelta(days=back)
+        url = f"https://www.fool.com/money/banks/articles/top-savings-account-rates-today-{d.strftime('%b').lower()}-{d.day}-{d.year}/"
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        text = _article_text(r.text)
+        if len(text) < 200:
+            continue
+        system = ('Extract savings and money market account offers from this article. Return ONLY a JSON array, no prose. '
+                  'Each item: {"institution": string, "product": string, "apy": number, "min_deposit": number|null, '
+                  '"balance_cap": number|null, "conditions": string, "credit_union": boolean, "promo": boolean}. '
+                  'balance_cap is the maximum balance that earns the APY (e.g. 5000 for "5% on the first $5,000"), else null. '
+                  'Use only offers the article states with a specific APY. Skip national averages, CDs, checking accounts, and duplicates. '
+                  'conditions is a short phrase about caps, minimum balances, promo periods or fees, or "" if none.')
+        try:
+            ai = requests.post('https://api.groq.com/openai/v1/chat/completions',
+                               headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'},
+                               json={'model': 'openai/gpt-oss-120b', 'max_tokens': 2500,
+                                     'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': text}]},
+                               timeout=60).json()
+            answer = ai.get('choices', [{}])[0].get('message', {}).get('content', '')
+            arr = json.loads(answer[answer.index('['): answer.rindex(']') + 1])
+        except Exception as e:
+            print('Top rates AI error:', e)
+            continue
+        rates = []
+        for x in arr:
+            try:
+                apy = float(x.get('apy'))
+            except (TypeError, ValueError):
+                continue
+            if 0.5 <= apy <= 10 and x.get('institution'):
+                rates.append({'institution': str(x['institution'])[:80], 'product': str(x.get('product') or 'Savings')[:80],
+                              'apy': round(apy, 2), 'min_deposit': x.get('min_deposit'),
+                              'cap': x.get('balance_cap') if isinstance(x.get('balance_cap'), (int, float)) and x.get('balance_cap') > 0 else None,
+                              'conditions': str(x.get('conditions') or '')[:160],
+                              'credit_union': bool(x.get('credit_union')), 'promo': bool(x.get('promo'))})
+        if rates:
+            rates.sort(key=lambda x: -x['apy'])
+            data = {'source': 'The Motley Fool', 'url': url, 'date': d.strftime('%Y-%m-%d'), 'rates': rates[:15]}
+            top_rates_cache.update({'data': data, 'updated': datetime.now()})
+            return jsonify(data)
+    if top_rates_cache['data']:
+        return jsonify(top_rates_cache['data'])
+    return jsonify({'error': 'No rate article could be read today'}), 502
+
+# ── DIVIDEND YIELDS (trailing 12 months, from Yahoo dividend history) ──
+div_cache = {}
+DIV_HOURS = 12
+
+@app.route('/api/dividends/<tickers>')
+def dividends(tickers):
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:60]
+    out = {}
+    for ticker in ticker_list:
+        hit = div_cache.get(ticker)
+        if hit and (datetime.now() - hit['updated']).total_seconds() / 3600 < DIV_HOURS:
+            out[ticker] = hit['data']
+            continue
+        try:
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=1y&interval=1d&events=div'
+            res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+            if res.status_code != 200:
+                continue
+            result = (res.json().get('chart', {}).get('result') or [{}])[0]
+            meta = result.get('meta', {})
+            price = meta.get('regularMarketPrice') or 0
+            divs = (result.get('events') or {}).get('dividends') or {}
+            cutoff = datetime.now().timestamp() - 365 * 86400
+            paid = sorted((d.get('date', 0), d.get('amount', 0)) for d in divs.values() if d.get('date', 0) >= cutoff)
+            ttm = sum(a for _, a in paid)
+            closes = [c for c in ((result.get('indicators', {}).get('quote') or [{}])[0].get('close') or []) if c]
+            data = {
+                'price': round(price, 2),
+                'ttm_dividend': round(ttm, 4),
+                'yield': round(ttm / price * 100, 2) if price else 0,
+                'payments': len(paid),
+                'last_paid': datetime.fromtimestamp(paid[-1][0]).strftime('%Y-%m-%d') if paid else None,
+                'return_1y': round((closes[-1] / closes[0] - 1) * 100, 2) if len(closes) > 1 else None,
+                'name': meta.get('longName') or meta.get('shortName') or ticker,
+            }
+            div_cache[ticker] = {'data': data, 'updated': datetime.now()}
+            out[ticker] = data
+        except Exception as e:
+            print(f'Dividend error for {ticker}: {e}')
+    return jsonify({'dividends': out, 'updated': str(datetime.now())})
+
 # ── SECTORS (Yahoo Finance search) for the industry pie chart ──
 sector_cache = {}  # sectors rarely change, so cache for the life of the process
 
@@ -462,6 +583,8 @@ def health():
             '/api/news',
             '/api/news/tickers/<tickers>',
             '/api/feeds',
+            '/api/dividends/<tickers>',
+            '/api/top-rates',
             '/api/ai'
         ],
         'updated': str(datetime.now())

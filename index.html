@@ -80,9 +80,9 @@ nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-
 
 /* PICKER + LEADERBOARD */
 .picker{min-height:44px;max-width:100%;border-radius:12px;border:1px solid rgba(255,255,255,0.18);background:rgba(7,18,40,0.5);color:var(--ink);font-size:15px;padding:0 36px 0 14px;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23C7D2E3' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
-.seg-light{background:rgba(11,26,51,0.08)}
-.seg-light button{color:var(--dark-3)}
-.seg-light button[aria-pressed="true"]{background:#fff;color:var(--dark);box-shadow:0 1px 4px rgba(11,26,51,.12)}
+.seg.seg-light{background:rgba(11,26,51,0.08)}
+.seg.seg-light button{color:var(--dark-3)}
+.seg.seg-light button[aria-pressed="true"]{background:#fff;color:var(--dark);box-shadow:0 1px 4px rgba(11,26,51,.12)}
 .seg-scroll{overflow-x:auto;max-width:100%;scrollbar-width:none}
 .seg-scroll::-webkit-scrollbar{display:none}
 .seg-scroll button{white-space:nowrap;padding:0 12px}
@@ -155,6 +155,35 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 .news-more a{display:block;font-size:13px;color:var(--dark-2);padding:4px 0;text-decoration:none}
 .news-more a:hover{color:var(--accent-press)}
 .src-count{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(11,26,51,.08);color:var(--dark-2);margin-left:6px}
+
+/* CASH, DIVIDENDS, RISK */
+.yours{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;align-items:end}
+.field label{display:block;font-size:12px;color:var(--dark-3);margin-bottom:6px}
+.inp{display:flex;align-items:center;gap:4px;min-height:44px;border:1px solid #C9D6E8;border-radius:12px;padding:0 12px;background:#fff;font-size:17px;color:var(--dark)}
+.inp input{border:0;outline:0;flex:1;min-width:0;font-size:17px;color:var(--dark);background:transparent;font-variant-numeric:tabular-nums}
+.inp:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,132,255,.15)}
+.big-l{font-size:28px;font-weight:600;letter-spacing:-.6px}
+.tbill{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-top:18px}
+.tb{background:#EEF3F9;border-radius:12px;padding:10px 12px}
+.tb .k{font-size:12px;color:var(--dark-3)}
+.tb .v{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.tb .d{font-size:11px;color:var(--dark-3);font-variant-numeric:tabular-nums}
+.rate{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:14px 0;border-top:1px solid #E3EAF3}
+.rate:first-child{border-top:0}
+.rate .n{font-size:16px;font-weight:600}
+.rate .p{font-size:13px;color:var(--dark-3);line-height:1.45}
+.rate .a{text-align:right;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.rate .x{text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
+.rate a.src{font-size:12px;color:var(--accent-press);text-decoration:none}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:2px;background:#EEF3F9;color:var(--dark-2)}
+.tag.you{background:rgba(10,132,255,.12);color:#0062CC}
+.tag.warn{background:#FFF1D6;color:#8A4B00}
+.risk-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:12px 0;border-top:1px solid #E3EAF3}
+.risk-row:first-child{border-top:0}
+.risk-bar{grid-column:1 / -1;height:6px;border-radius:3px;background:#EEF3F9;overflow:hidden}
+.risk-bar span{display:block;height:100%;border-radius:3px}
+.lvl{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;margin-left:6px;vertical-align:2px}
+.risk-me{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding-bottom:16px;border-bottom:1px solid #E3EAF3}
 
 /* SECTOR DONUT */
 .mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
@@ -329,6 +358,9 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <a href="#copy">Copy test</a>
       <a href="#leaders">Leaderboard</a>
       <a href="#smart">Smart money</a>
+      <a href="#cash">Cash &amp; yield</a>
+      <a href="#dividends">Dividends</a>
+      <a href="#risk">Risk</a>
       <a href="#disclosures">Disclosures</a>
       <a href="#holdings">Holdings</a>
       <a href="#news">News</a>
@@ -532,6 +564,50 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
           <button class="btn ghost" type="button" id="fail-manual">Enter holdings manually</button>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- CASH & YIELD -->
+<section id="cash" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Cash &amp; yield.</h2>
+    <p class="lede reveal">What your cash earns, and what it could earn elsewhere.</p>
+    <div class="card-l reveal">
+      <div class="yours">
+        <div class="field"><label for="cash-bal">Cash balance</label><div class="inp"><span>$</span><input id="cash-bal" inputmode="decimal" autocomplete="off"></div></div>
+        <div class="field"><label for="cash-apy">It earns now (APY)</label><div class="inp"><input id="cash-apy" inputmode="decimal" autocomplete="off"><span>%</span></div></div>
+        <div class="yours-out"><div class="fine" id="cash-now-label">Per year now</div><div class="big-l num" id="cash-now">$0</div></div>
+        <div class="yours-out"><div class="fine">Best cash-safe option</div><div class="big-l num up" id="cash-best">$0</div><div class="fine" id="cash-best-name"></div></div>
+      </div>
+      <p class="fine" id="cash-hint" style="margin-top:8px"></p>
+      <div class="tbill" id="tbill"></div>
+      <div class="filters" style="margin:16px 0 4px"><div class="seg seg-scroll seg-light" id="cash-tabs" role="group" aria-label="Account type"></div></div>
+      <div id="cash-list"></div>
+      <p class="fine" id="cash-note" style="margin-top:12px"></p>
+    </div>
+  </div>
+</section>
+
+<!-- DIVIDENDS -->
+<section id="dividends" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Dividends.</h2>
+    <p class="lede reveal">The highest-paying stocks and funds, and ready-made portfolios.</p>
+    <div class="filters reveal"><div class="seg seg-light" id="div-tabs" role="group" aria-label="Dividend list"></div></div>
+    <div class="card-l reveal"><div id="div-list"></div><p class="fine" id="div-note" style="margin-top:12px"></p></div>
+  </div>
+</section>
+
+<!-- RISK -->
+<section id="risk" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Risk.</h2>
+    <p class="lede reveal">How much each investment swings, from cash to single stocks.</p>
+    <div class="card-l reveal">
+      <div id="risk-me"></div>
+      <div id="risk-list" style="margin-top:8px"></div>
+      <details class="copy-how" style="color:var(--dark-3)"><summary style="color:var(--dark-2)">How risk is measured</summary><p>Volatility is how much the price swings in a typical year, from the last 12 months of daily prices. Worst drop is the biggest fall from a peak in that year. Market sensitivity (beta) is how much it tends to move when the S&amp;P 500 moves 1%. Levels: Very low under 1% volatility (cash, T-bills), Low under 8% (most bond funds), Moderate under 20% (broad stock funds like the S&amp;P 500), High under 35%, Very high above that (many single stocks). Past swings don&#39;t guarantee future ones.</p></details>
     </div>
   </div>
 </section>
@@ -1851,6 +1927,198 @@ function renderSmart() {
 }
 
 // ─────────────────────────────────────────────
+//  CASH & YIELD
+// ─────────────────────────────────────────────
+let rates = null, yields = null, topRates = null, divData = {}, cashTab = 'all';
+const cashKey = 'pi.cash.v1';
+function cashInputs() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(cashKey)) || {}; } catch (e) {}
+  const mm = myPortfolio.filter(h => h.isCash).reduce((s, h) => s + (h.marketValue || 0), 0);
+  return {bal: saved.bal !== undefined ? saved.bal : (mm || 10000), apy: saved.apy, fromPortfolio: !saved.bal && mm > 0};
+}
+function mmEstimate(f) {
+  const bill3 = yields && yields.curve && yields.curve['3 Mo'];
+  if (!bill3) return null;
+  return Math.max(0, bill3 - (f.expense === null || f.expense === undefined ? 0.2 : f.expense));
+}
+function cashOptions() {
+  if (!rates) return [];
+  const o = [];
+  const norm = n => String(n || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 10);
+  const seen = new Set();
+  // Today's published top rates first, then researched rates for anyone the article doesn't cover
+  if (topRates && topRates.rates) topRates.rates.forEach(r => {
+    seen.add(norm(r.institution));
+    o.push({name: r.institution, product: r.product, apy: r.apy, min: r.min_deposit || 0, cap: r.cap || null, terms: r.conditions, promo: r.promo,
+            cat: r.credit_union ? 'cu' : 'banks', catName: r.credit_union ? 'Credit union' : 'Bank', today: true,
+            source: `${topRates.source}, ${new Date(topRates.date + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}`, url: topRates.url});
+  });
+  rates.banks.forEach(r => { if (!seen.has(norm(r.name))) o.push({...r, cat: 'banks', catName: 'Bank'}); });
+  rates.credit_unions.forEach(r => { if (!seen.has(norm(r.name))) o.push({...r, cat: 'cu', catName: 'Credit union'}); });
+  rates.merrill.forEach(r => o.push({...r, cat: 'merrill', catName: 'Merrill'}));
+  rates.money_market_funds.forEach(f => { const e = mmEstimate(f); if (e !== null) o.push({name: `${f.ticker} · ${f.name}`, product: f.type, apy: +e.toFixed(2), est: true, min: 0, terms: f.expense === null ? 'Estimated from the 3-month T-bill rate minus a typical 0.20% fee. Enter your exact 7-day yield above.' : `Estimated from the 3-month T-bill rate minus its ${f.expense}% fee`, cat: 'mmf', catName: 'Money market fund', yours: f.yours, tk: f.ticker}); });
+  if (yields && yields.curve) [['1 Mo', '4-week'], ['3 Mo', '13-week'], ['6 Mo', '26-week'], ['1 Yr', '52-week']].forEach(([k, l]) => { if (yields.curve[k]) o.push({name: `${l} Treasury bill`, product: 'US government, buy at Merrill or TreasuryDirect', apy: yields.curve[k], min: 100, terms: 'Interest is exempt from state and local tax. Held to maturity, no price risk.', cat: 'bonds', catName: 'T-bill', live: true, source: `US Treasury, ${yields.date}`}); });
+  rates.bond_etfs.forEach(b => { const d = divData[b.ticker]; if (d && d.yield) o.push({name: `${b.ticker} · ${b.name}`, product: b.type, apy: d.yield, min: d.price, terms: `Trailing 12-month payout yield. Price can move${/T-bills/.test(b.type) ? ' very little' : ''}.${b.ticker === 'MUB' ? ' Interest is federally tax-free.' : ''}`, cat: 'bonds', catName: 'Bond ETF', live: true, tk: b.ticker, source: 'Live, last 12 months'}); });
+  return o;
+}
+function earn(o, bal) {
+  if (bal < (o.min || 0) && o.cat !== 'mmf' && o.cat !== 'bonds') return null;
+  const base = o.cap ? Math.min(bal, o.cap) : bal;
+  return base * o.apy / 100;
+}
+function renderCash() {
+  if (!rates) return;
+  const {bal, apy, fromPortfolio} = cashInputs();
+  const mine = rates.money_market_funds.find(f => f.yours);
+  const myEst = mine ? mmEstimate(mine) : null;
+  const curApy = apy !== undefined ? apy : (myEst !== null ? +myEst.toFixed(2) : 0.01);
+  const balEl = $('cash-bal'), apyEl = $('cash-apy');
+  if (document.activeElement !== balEl) balEl.value = Math.round(bal).toLocaleString('en-US');
+  if (document.activeElement !== apyEl) apyEl.value = curApy;
+  $('cash-hint').textContent = (fromPortfolio ? 'Balance taken from the money market in your portfolio. ' : '') + (apy === undefined && mine ? `Rate is an estimate for ${mine.ticker}. Check the 7-day yield in your Merrill account and type it in for an exact comparison.` : 'Saved on this device.');
+  const now = bal * curApy / 100;
+  animateTo($('cash-now'), 'cashnow', now, x => usd(x, 0), false);
+  const opts = cashOptions().map(o => ({...o, yr: earn(o, bal)}));
+  // Compare cash only with cash-safe options: insured deposits, money market funds and T-bills, not bond funds
+  const safe = o => o.cat !== 'bonds' || /t-bill/i.test(o.product) || /bill/i.test(o.name);
+  const best = opts.filter(o => o.yr !== null && !o.promo && safe(o)).sort((a, b) => b.yr - a.yr)[0];
+  if (best) { animateTo($('cash-best'), 'cashbest', best.yr, x => usd(x, 0), false); $('cash-best-name').textContent = `${best.name.split(' · ')[0]} · ${best.apy.toFixed(2)}%${best.yr > now ? ` · +${usd(best.yr - now, 0)}/yr` : ''}`; }
+  // Treasury strip
+  if (yields && yields.curve) {
+    const show = ['1 Mo', '3 Mo', '6 Mo', '1 Yr', '2 Yr', '10 Yr'];
+    $('tbill').innerHTML = show.filter(k => yields.curve[k] !== undefined).map(k => { const v = yields.curve[k], m = yields.month_ago && yields.month_ago.curve[k], d = m !== undefined ? v - m : null;
+      return `<div class="tb"><div class="k">${k.replace('Mo', 'month').replace('Yr', 'year')} Treasury</div><div class="v">${v.toFixed(2)}%</div>${d !== null ? `<div class="d">${d >= 0 ? '+' : ''}${d.toFixed(2)} vs month ago</div>` : ''}</div>`; }).join('');
+  }
+  const tabs = [['all', 'All'], ['banks', 'Banks'], ['cu', 'Credit unions'], ['merrill', 'Merrill'], ['mmf', 'Money market funds'], ['bonds', 'T-bills & bonds']];
+  $('cash-tabs').innerHTML = tabs.map(([k, l]) => `<button type="button" aria-pressed="${k === cashTab}" data-c="${k}">${l}</button>`).join('');
+  $('cash-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { cashTab = b.dataset.c; renderCash(); });
+  const list = opts.filter(o => cashTab === 'all' || o.cat === cashTab).sort((a, b) => b.apy - a.apy);
+  $('cash-list').innerHTML = list.map(o => {
+    const diff = o.yr !== null ? o.yr - now : null;
+    return `<div class="rate"><div><div class="n">${o.tk ? `<button type="button" class="tk-link" data-tk="${esc(o.tk)}">${esc(o.name.split(' · ')[0])}</button> ${esc(o.name.split(' · ')[1] || '')}` : esc(o.name)}<span class="tag">${esc(o.catName)}</span>${o.yours ? '<span class="tag you">Yours</span>' : ''}${o.today ? '<span class="tag you">Today</span>' : ''}${o.promo ? '<span class="tag warn">Promo</span>' : ''}${o.est ? '<span class="tag">Estimate</span>' : ''}${o.cat === 'bonds' && !/t-bill/i.test(o.product) && !/bill/i.test(o.name) ? '<span class="tag warn">Price can drop</span>' : ''}</div>
+      <div class="p">${esc(o.product)}${o.min ? ` · min ${usd(o.min, 0)}` : ''}${o.terms ? ` · ${esc(o.terms)}` : ''}</div>
+      <div class="p">${o.url ? `<a class="src" href="${esc(o.url)}" target="_blank" rel="noopener">${esc(o.source)}</a>` : esc(o.source || '')}</div></div>
+      <div><div class="a">${o.apy.toFixed(2)}%</div><div class="x">${o.yr === null ? `<span class="muted-l">Needs ${usd(o.min, 0)}</span>` : `${usd(o.yr, 0)}/yr${diff > 1 ? ` <span class="up">+${usd(diff, 0)}</span>` : ''}`}</div></div></div>`;
+  }).join('') || '<div class="empty">Loading rates…</div>';
+  $('cash-note').textContent = `${topRates && topRates.rates ? `Top savings rates read today from ${topRates.source}'s daily rate list. ` : ''}${rates.note} Other bank and credit union rates researched ${new Date(rates.as_of + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'})}. Treasury yields ${yields ? 'as of ' + yields.date : 'loading'}. Savings and money market accounts at banks and credit unions are FDIC or NCUA insured up to $250,000; money market funds and ETFs are not.`;
+}
+function wireCash() {
+  const save = () => {
+    const bal = parseFloat($('cash-bal').value.replace(/[$,\s]/g, '')), apy = parseFloat($('cash-apy').value);
+    try { localStorage.setItem(cashKey, JSON.stringify({bal: isFinite(bal) ? bal : undefined, apy: isFinite(apy) ? apy : undefined})); } catch (e) {}
+    renderCash();
+  };
+  $('cash-bal').addEventListener('change', save); $('cash-apy').addEventListener('change', save);
+  $('cash-bal').addEventListener('input', () => { clearTimeout(wireCash.t); wireCash.t = setTimeout(save, 500); });
+  $('cash-apy').addEventListener('input', () => { clearTimeout(wireCash.t); wireCash.t = setTimeout(save, 500); });
+}
+
+// ─────────────────────────────────────────────
+//  DIVIDENDS
+// ─────────────────────────────────────────────
+let divTab = 'stocks';
+async function loadYieldData() {
+  try { rates = await getJSON('./rates.json?v=' + Math.floor(Date.now() / 3.6e6)); } catch (e) {}
+  try { yields = await getJSON('./yields.json?v=' + Math.floor(Date.now() / 3.6e6)); } catch (e) {}
+  renderCash(); renderDividends();
+  getJSON(BACKEND_URL + '/api/top-rates').then(d => { if (d && d.rates && d.rates.length) { topRates = d; renderCash(); } }).catch(() => {});
+  if (!rates) return;
+  const tks = [...rates.bond_etfs.map(b => b.ticker), ...rates.dividend_etfs, ...rates.dividend_stocks, ...rates.model_portfolios.map(m => m.ticker)];
+  try {
+    for (let i = 0; i < tks.length; i += 60) Object.assign(divData, (await getJSON(`${BACKEND_URL}/api/dividends/${tks.slice(i, i + 60).join(',')}`)).dividends || {});
+  } catch (e) {}
+  renderCash(); renderDividends(); loadRisk();
+}
+function renderDividends() {
+  const tabs = [['stocks', 'Top dividend stocks'], ['etfs', 'Dividend ETFs'], ['models', 'All-in-one portfolios']];
+  $('div-tabs').innerHTML = tabs.map(([k, l]) => `<button type="button" aria-pressed="${k === divTab}" data-d="${k}">${l}</button>`).join('');
+  $('div-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { divTab = b.dataset.d; renderDividends(); });
+  if (!rates) { $('div-list').innerHTML = '<div class="empty">Loading…</div>'; return; }
+  const own = new Set(stocks().map(h => h.ticker));
+  let list = divTab === 'stocks' ? rates.dividend_stocks.map(t => ({t})) : divTab === 'etfs' ? rates.dividend_etfs.map(t => ({t})) : rates.model_portfolios.map(m => ({t: m.ticker, mix: m.mix, full: m.name}));
+  list = list.map(x => ({...x, d: divData[x.t]})).filter(x => x.d && x.d.price);
+  if (!list.length) { $('div-list').innerHTML = '<div class="empty">Loading yields…</div>'; return; }
+  if (divTab !== 'models') list.sort((a, b) => b.d.yield - a.d.yield);
+  list = list.slice(0, divTab === 'stocks' ? 12 : 10);
+  $('div-list').innerHTML = list.map(x => {
+    const d = x.d, trap = d.yield >= 8 && divTab === 'stocks';
+    return `<div class="rate"><div><div class="n"><button type="button" class="tk-link" data-tk="${esc(x.t)}">${esc(x.t)}</button> <span style="font-weight:400">${esc(x.full || d.name)}</span>${own.has(x.t) ? '<span class="tag you">You own</span>' : ''}${trap ? '<span class="tag warn">Very high, check if sustainable</span>' : ''}</div>
+      <div class="p">${x.mix ? esc(x.mix) + ' · ' : ''}${usd(d.price)} · ${d.payments} payment${d.payments === 1 ? '' : 's'} in 12 months${d.return_1y !== null ? ` · price ${pct(d.return_1y)} over 1 year` : ''}</div></div>
+      <div><div class="a">${d.yield.toFixed(2)}%</div><div class="x">${usd(10000 * d.yield / 100, 0)}/yr per $10K</div></div></div>`;
+  }).join('');
+  $('div-note').textContent = divTab === 'models'
+    ? 'BlackRock iShares Core allocation ETFs hold a fixed stock and bond mix in one fund and rebalance for you. Yields shown are trailing 12-month payouts.'
+    : 'Trailing 12-month dividends divided by today\'s price. Very high yields can mean the price fell or the payout may be cut.';
+}
+
+// ─────────────────────────────────────────────
+//  RISK
+// ─────────────────────────────────────────────
+const LEVELS = [[1, 'Very low', '#1A7F37', '#E3F5E8'], [8, 'Low', '#2F6F3E', '#E8F3E2'], [20, 'Moderate', '#8A6100', '#FFF4D6'], [35, 'High', '#B54708', '#FFE9D6'], [Infinity, 'Very high', '#B42318', '#FDE6E4']];
+const levelOf = v => LEVELS.find(l => v < l[0]);
+function riskStats(series, bench) {
+  if (!series || series.length < 30) return null;
+  const rets = [];
+  for (let i = 1; i < series.length; i++) if (series[i - 1] && series[i]) rets.push(series[i] / series[i - 1] - 1);
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const vol = Math.sqrt(rets.reduce((s, r) => s + (r - mean) ** 2, 0) / (rets.length - 1)) * Math.sqrt(252) * 100;
+  let peak = series[0], dd = 0;
+  series.forEach(v => { if (v > peak) peak = v; dd = Math.min(dd, v / peak - 1); });
+  let beta = null;
+  if (bench && bench.length === series.length) {
+    const br = []; for (let i = 1; i < bench.length; i++) br.push(bench[i] / bench[i - 1] - 1);
+    const bm = br.reduce((a, b) => a + b, 0) / br.length;
+    let cov = 0, varb = 0; for (let i = 0; i < Math.min(br.length, rets.length); i++) { cov += (rets[i] - mean) * (br[i] - bm); varb += (br[i] - bm) ** 2; }
+    beta = varb ? cov / varb : null;
+  }
+  return {vol, dd: dd * 100, beta, ret: (series[series.length - 1] / series[0] - 1) * 100};
+}
+function closesOn(t, days) {
+  const m = new Map((hist1y[t] || []).map(p => [dayOf(p[0]), p[1]]));
+  let last = null;
+  return days.map(d => (m.has(d) ? (last = m.get(d)) : last));
+}
+async function loadRisk() {
+  const box = $('risk-list');
+  const ladder = [['SGOV', 'T-bills (via SGOV)'], ['BND', 'Total bond market'], ['LQD', 'Corporate bonds'], ['HYG', 'High-yield bonds'], ['AOK', 'Conservative 30/70 portfolio'], ['AOR', 'Balanced 60/40 portfolio'], ['SCHD', 'Dividend stocks (SCHD)'], ['VOO', 'S&P 500'], ['QQQ', 'Nasdaq 100'], ['TLT', 'Long-term Treasuries']];
+  const mine = stocks().map(h => h.ticker);
+  try { await ensureHistory(['VOO', ...ladder.map(x => x[0]), ...mine]); }
+  catch (e) { box.innerHTML = '<div class="empty">Price history is unavailable right now.</div>'; return; }
+  const days = (hist1y.VOO || []).map(p => dayOf(p[0]));
+  if (!days.length) { box.innerHTML = '<div class="empty">Price history is unavailable right now.</div>'; return; }
+  const bench = closesOn('VOO', days);
+  const rows = [{name: 'Cash, savings, money market', sub: 'Price never moves; interest only', stats: {vol: 0, dd: 0, beta: 0}}];
+  ladder.forEach(([t, n]) => { const st = riskStats(closesOn(t, days), bench); if (st) rows.push({t, name: n, stats: st}); });
+  const own = mine.map(t => ({t, name: t, stats: riskStats(closesOn(t, days), bench), you: true})).filter(x => x.stats);
+  const all = [...rows, ...own].sort((a, b) => a.stats.vol - b.stats.vol);
+  const maxVol = Math.max(40, ...all.map(x => x.stats.vol));
+  box.innerHTML = all.map(x => { const [, lvl, fg, bg] = levelOf(x.stats.vol);
+    return `<div class="risk-row"><div><div class="n" style="font-size:15px;font-weight:600">${x.t ? `<button type="button" class="tk-link" data-tk="${esc(x.t)}">${esc(x.t)}</button> ` : ''}${x.t && x.name !== x.t ? `<span style="font-weight:400">${esc(x.name)}</span>` : x.t ? '' : esc(x.name)}${x.you ? '<span class="tag you">You own</span>' : ''}<span class="lvl" style="background:${bg};color:${fg}">${lvl}</span></div>
+      <div class="p" style="font-size:13px;color:var(--dark-3)">${x.sub || `Swings ${x.stats.vol.toFixed(1)}% a year · worst drop ${x.stats.dd.toFixed(1)}%${x.stats.beta !== null ? ` · moves ${x.stats.beta.toFixed(2)}x the market` : ''}`}</div></div>
+      <div class="num" style="text-align:right;font-weight:600">${x.stats.vol.toFixed(1)}%</div>
+      <div class="risk-bar"><span style="width:${Math.max(1.5, x.stats.vol / maxVol * 100)}%;background:${fg}"></span></div></div>`; }).join('');
+  // Your portfolio as a whole
+  const me = $('risk-me');
+  const held = stocks().filter(h => hist1y[h.ticker] && hist1y[h.ticker].length);
+  if (!held.length) { me.innerHTML = '<div class="fine" style="padding-bottom:12px">Add your portfolio to see its overall risk level.</div>'; return; }
+  const cash = myPortfolio.filter(h => h.isCash).reduce((s, h) => s + (h.marketValue || 0), 0);
+  const cl = held.map(h => closesOn(h.ticker, days));
+  const series = days.map((_, i) => cash + held.reduce((s, h, j) => s + h.shares * (cl[j][i] || 0), 0));
+  const start = series.findIndex((v, i) => cl.every(c => c[i]));
+  const st = riskStats(series.slice(start), bench.slice(start));
+  if (!st) { me.innerHTML = ''; return; }
+  const [, lvl, fg, bg] = levelOf(st.vol);
+  const total = series[series.length - 1];
+  me.innerHTML = `<div class="risk-me">
+      <div><div class="fine">Your portfolio</div><div class="big-l"><span class="lvl" style="background:${bg};color:${fg};font-size:15px;margin:0;padding:4px 12px">${lvl} risk</span></div></div>
+      <div><div class="fine">Typical yearly swing</div><div class="big-l num">±${st.vol.toFixed(1)}%</div><div class="fine num">about ±${usd(total * st.vol / 100, 0)}</div></div>
+      <div><div class="fine">Worst drop, past year</div><div class="big-l num down">${st.dd.toFixed(1)}%</div></div>
+      <div><div class="fine">If the market fell 10%</div><div class="big-l num">${st.beta !== null ? `${(-10 * st.beta).toFixed(1)}%` : 'n/a'}</div><div class="fine num">${st.beta !== null ? `about ${usd(total * st.beta * 0.1, 0)}` : ''}</div></div>
+    </div>`;
+}
+
+// ─────────────────────────────────────────────
 //  LEADERBOARD
 // ─────────────────────────────────────────────
 let lbTab = 'active', bestCache = null;
@@ -1936,6 +2204,7 @@ function wireReveal() {
 //  INIT
 // ─────────────────────────────────────────────
 function refreshAll() {
+  renderCash(); renderDividends(); loadRisk();
   renderAlerts();
   newsCache = {}; loadNews();
   renderHero(); renderHoldings(); renderFeed(); renderCompareSubs(); renderSignals(); renderTicker(); renderMix();
@@ -1945,7 +2214,7 @@ function init() {
   wireReveal(); wireNavHighlight(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   $('copy-member').onchange = e => runCopyTest(e.target.value);
-  wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons();
+  wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData();
   $('share-copy').onclick = shareCopy;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('watch-form').onsubmit = e => { e.preventDefault(); toggleWatch($('watch-in').value, true); $('watch-in').value = ''; };
