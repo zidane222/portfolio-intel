@@ -46,7 +46,15 @@ nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-
 .navlinks::-webkit-scrollbar{display:none}
 .navlinks a{color:var(--ink-2);text-decoration:none;font-size:13px;padding:10px 10px;white-space:nowrap;border-radius:8px}
 .navlinks a:hover{color:var(--ink)}
-@media(max-width:640px){.navlinks{display:none}}
+.navlinks a.active{color:#fff;background:rgba(255,255,255,0.12)}
+/* Phones: logo on top, links in a swipeable row underneath */
+@media(max-width:640px){
+  nav.top .wrap{height:auto;flex-wrap:wrap;gap:0;padding-top:10px}
+  .brand{width:100%;padding-bottom:2px}
+  .navlinks{width:calc(100% + 40px);margin:0 -20px;padding:0 14px 6px;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+  .navlinks a{padding:10px 12px;font-size:14px;scroll-snap-align:start}
+  html{scroll-padding-top:136px}
+}
 
 /* TICKER BANNER */
 .ticker{position:relative;overflow:hidden;height:34px;border-top:1px solid rgba(255,255,255,0.06);-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
@@ -1221,6 +1229,20 @@ function renderMix() {
 // ─────────────────────────────────────────────
 //  MOTION: reveal on scroll
 // ─────────────────────────────────────────────
+// Highlight the nav link for the section on screen, and keep it visible in the phone's swipe row
+function wireNavHighlight() {
+  const links = [...document.querySelectorAll('.navlinks a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  if (!('IntersectionObserver' in window)) return;
+  const io = new IntersectionObserver(entries => entries.forEach(en => {
+    if (!en.isIntersecting) return;
+    const a = map.get(en.target.id); if (!a) return;
+    links.forEach(l => l.classList.toggle('active', l === a));
+    const row = a.parentElement;
+    if (row.scrollWidth > row.clientWidth) row.scrollTo({left: a.offsetLeft - 14, behavior: reduced ? 'auto' : 'smooth'});
+  }), {rootMargin: '-45% 0px -50% 0px'});
+  map.forEach((a, id) => { const sec = document.getElementById(id); if (sec) io.observe(sec); });
+}
 function wireReveal() {
   const els = document.querySelectorAll('.reveal');
   if (reduced || !('IntersectionObserver' in window)) { els.forEach(e => e.classList.add('in')); return; }
@@ -1236,7 +1258,7 @@ function refreshAll() {
   loadPrices(); loadHistory(); loadSectors();
 }
 function init() {
-  wireReveal(); wireImport(); wireAsk(); buildChart();
+  wireReveal(); wireNavHighlight(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   renderHero(); renderHoldings(); renderFeed(); renderSignals(); renderTicker(); renderMix();
   loadPrices(); loadHistory(); loadTrades(); loadNews(); loadSectors();
