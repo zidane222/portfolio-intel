@@ -130,10 +130,15 @@ def all_trades():
 @app.route('/api/prices')
 @app.route('/api/prices/<tickers>')
 def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XOM,DJT'):
-    if is_stale('prices'):
-        ticker_list = tickers.split(',')
-        price_data = {}
-        for ticker in ticker_list:
+    # Cache per ticker so a request for new tickers is never answered with another list's cache
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:40]
+    stale = is_stale('prices')
+    if stale:
+        cache['prices']['data'] = {}
+    missing = [t for t in ticker_list if t not in cache['prices']['data']]
+    if missing:
+        price_data = cache['prices']['data']
+        for ticker in missing:
             try:
                 url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d'
                 res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
@@ -153,12 +158,55 @@ def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XO
                 print(f'Price error for {ticker}: {e}')
 
         cache['prices']['data'] = price_data
-        cache['prices']['updated'] = datetime.now()
+        if stale:
+            cache['prices']['updated'] = datetime.now()
 
     return jsonify({
-        'prices': cache['prices']['data'],
+        'prices': {t: cache['prices']['data'][t] for t in ticker_list if t in cache['prices']['data']},
         'updated': str(cache['prices']['updated'])
     })
+
+# ── PRICE HISTORY (Yahoo Finance) for the interactive chart ──
+RANGE_MAP = {
+    '1d': ('1d', '5m'),
+    '5d': ('5d', '30m'),
+    '1mo': ('1mo', '1d'),
+    '6mo': ('6mo', '1d'),
+    'ytd': ('ytd', '1d'),
+    '1y': ('1y', '1d'),
+    '5y': ('5y', '1wk'),
+}
+history_cache = {}
+HISTORY_CACHE_MINUTES = 15
+
+@app.route('/api/history/<tickers>')
+def history(tickers):
+    rng = flask_request.args.get('range', '6mo').lower()
+    yr, interval = RANGE_MAP.get(rng, RANGE_MAP['6mo'])
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:40]
+    series = {}
+    for ticker in ticker_list:
+        key = f'{ticker}:{yr}'
+        hit = history_cache.get(key)
+        if hit and (datetime.now() - hit['updated']).total_seconds() / 60 < HISTORY_CACHE_MINUTES:
+            series[ticker] = hit['data']
+            continue
+        try:
+            url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={yr}&interval={interval}'
+            res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+            if res.status_code != 200:
+                continue
+            result = (res.json().get('chart', {}).get('result') or [{}])[0]
+            stamps = result.get('timestamp') or []
+            closes = ((result.get('indicators', {}).get('quote') or [{}])[0].get('close')) or []
+            points = [[ts, round(c, 4)] for ts, c in zip(stamps, closes) if c is not None]
+            if points:
+                history_cache[key] = {'data': points, 'updated': datetime.now()}
+                series[ticker] = points
+        except Exception as e:
+            print(f'History error for {ticker}: {e}')
+
+    return jsonify({'range': rng, 'series': series, 'updated': str(datetime.now())})
 
 # ── NEWS ──
 @app.route('/api/news')
@@ -228,7 +276,7 @@ def ai_insights():
             },
             json={
              'model': 'openai/gpt-oss-120b',
-                'max_tokens': 1000,
+                'max_tokens': min(int(body.get('max_tokens', 1000)), 4000),
                 'messages': [
                     {'role': 'system', 'content': body.get('system', '')},
                     {'role': 'user', 'content': body.get('question', '')}
@@ -254,6 +302,7 @@ def health():
             '/api/house-trades',
             '/api/senate-trades',
             '/api/prices',
+            '/api/history/<tickers>?range=6mo',
             '/api/news',
             '/api/ai'
         ],
