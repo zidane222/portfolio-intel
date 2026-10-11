@@ -142,6 +142,9 @@ p.lede{font-size:clamp(16px,2.2vw,19px);text-align:center;margin-bottom:36px;col
 .pill.buy{background:rgba(48,209,88,.16);color:#6EE7A0}
 .pill.sell{background:rgba(255,69,58,.16);color:#FF8A80}
 .pill.mine{background:rgba(10,132,255,.2);color:#8EC5FF}
+.pill.hold-pill{background:rgba(255,159,10,.18);color:#FFC46B}
+.pill.priv-pill{background:rgba(191,90,242,.18);color:#D9A6F7}
+.trade .priv{font-weight:600;font-size:15px}
 .more{margin-top:16px;text-align:center}
 
 /* TABLE */
@@ -476,6 +479,8 @@ let myPortfolio = loadPortfolio();
 let prices = {};
 let trades = [];
 let tradesUpdated = null;
+let trumpFilings = [];
+let trumpLimit = 6;
 let range = '6mo';
 let feedFilter = 'all';
 let feedLimit = 12;
@@ -563,6 +568,7 @@ async function loadPrices() {
     $('live-text').textContent = Object.keys(prices).length ? 'Prices may be stale. Retrying…' : 'Market data is waking up. Retrying…';
   }
   renderHero(); renderHoldings(); renderCompareSubs(); renderSignals(); renderTicker(); renderMix();
+  if (feedFilter === 'trump') renderFeed();
 }
 
 // ─────────────────────────────────────────────
@@ -722,15 +728,16 @@ async function loadTrades() {
   try { d = await getJSON('./trades.json?v=' + Math.floor(Date.now() / 3.6e6)); }
   catch (e) { try { d = await getJSON(BACKEND_URL + '/api/all-trades'); } catch (e2) {} }
   if (d && Array.isArray(d.trades)) {
-    trades = d.trades.filter(t => t.ticker && t.ticker.length <= 6).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    trades = d.trades.filter(t => (t.ticker && t.ticker.length <= 6) || (t.private && t.description)).map(t => ({...t, amount: String(t.amount || '').replace(/\s+/g, ' ').replace(/\s*-\s*/, ' - ')})).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tradesUpdated = d.updated ? new Date(d.updated) : null;
   }
+  try { const t = await getJSON('./trump_filings.json?v=' + Math.floor(Date.now() / 3.6e6)); trumpFilings = t.filings || []; } catch (e) {}
   renderFeed(); renderHoldings(); renderSignals();
 }
 function renderFeed() {
-  const filters = [['all','All'],['pelosi','Pelosi'],['mine','My stocks']];
+  const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['mine','My stocks']];
   $('feed-filter').innerHTML = filters.map(([k, l]) => `<button type="button" aria-pressed="${k === feedFilter}" data-f="${k}">${l}</button>`).join('');
-  $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; renderFeed(); });
+  $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; trumpLimit = 6; renderFeed(); });
 
   const mine = new Set(stocks().map(h => h.ticker));
   let list = trades;
@@ -739,6 +746,7 @@ function renderFeed() {
   $('feed-lede').textContent = tradesUpdated ? `${trades.length} recent trades · filings checked ${ago(tradesUpdated)}` : 'Congressional trades, as filed.';
 
   const feed = $('feed');
+  if (feedFilter === 'trump') { renderTrumpFeed(feed); return; }
   if (!trades.length) { feed.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Loading disclosures…</div>'; $('feed-more').style.display = 'none'; return; }
   if (!list.length) {
     const why = feedFilter === 'mine' ? (mine.size ? 'No recent filings touch your stocks.' : 'Add your portfolio to see trades in your stocks.') : 'No recent filings for this filter.';
@@ -747,13 +755,54 @@ function renderFeed() {
   feed.innerHTML = list.slice(0, feedLimit).map(t => {
     const buy = /purchase|buy/i.test(t.type || '');
     const name = (t.representative || '').includes(',') ? t.representative.split(',').reverse().join(' ').trim() : (t.representative || 'Unknown');
-    const when = t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+    const traded = fmtD(t.date), filed = fmtD(t.filed);
+    const lag = t.date && t.filed ? Math.round((new Date(t.filed) - new Date(t.date)) / 864e5) : null;
+    const label = t.private ? `<span class="priv">${esc(t.description)}</span>` : esc(t.ticker);
     return `<div class="trade">
-      <div><div class="who">${esc(name)}</div><div class="what">${esc(t.ticker)}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
-      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">${esc(when)}</div></div>
+      <div><div class="who">${esc(name)}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${t.private ? `<span class="pill priv-pill">${esc(t.kind || 'Private investment')}</span>` : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
+      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">Traded ${esc(traded)}</div>${filed ? `<div class="when">Filed ${esc(filed)}${lag !== null && lag >= 0 ? ` · ${lag}d later` : ''}</div>` : ''}</div>
     </div>`;
   }).join('');
   $('feed-more').style.display = list.length > feedLimit ? 'inline-flex' : 'none';
+}
+
+// Trump files with the Office of Government Ethics, not the House, so his trades
+// aren't in the House feed. Show his disclosed positions with live prices instead.
+function renderTrumpFeed(feed) {
+  const mine = new Set(stocks().map(h => h.ticker));
+  const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  const head = t => `<div class="trade" style="display:block;padding-top:22px"><div class="what" style="font-size:13px;color:var(--ink-3);font-weight:600">${t}</div></div>`;
+  const note = `<div class="trade" style="display:block;border-top:0"><div class="who" style="line-height:1.5">Trump files with the Office of Government Ethics, not the House. His reports are scanned documents, so they're listed here with links to the originals.</div></div>`;
+
+  const filings = trumpFilings.slice(0, trumpLimit).map(f => {
+    // The filename carries the date he signed it, e.g. "Donald-J-Trump.09.17.2026-278T.pdf"
+    const m = decodeURIComponent(f.url || '').match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+    const signed = m ? fmtD(`${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`) : '';
+    const kind = /annual/i.test(f.type) ? f.type.replace(/^Annual/i, 'Annual report') : /transaction/i.test(f.type) ? 'Transaction report' : f.type;
+    const href = /^https:\/\/extapps2\.oge\.gov\//.test(f.url) ? f.url : '';
+    return `<div class="trade">
+      <div><div class="who">${signed ? 'Signed ' + esc(signed) : 'Office of Government Ethics'}</div><div class="what" style="font-size:15px">${esc(kind)}${f.amended ? '<span class="pill hold-pill">Amended</span>' : ''}</div></div>
+      <div style="text-align:right"><div class="amt">${href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="color:#8EC5FF;text-decoration:none;font-weight:600">Open</a>` : ''}</div><div class="when">Posted ${esc(fmtD(f.date))}${f.pages ? ` · ${f.pages} pages` : ''}</div></div>
+    </div>`;
+  }).join('');
+  const moreFilings = trumpFilings.length > trumpLimit ? `<div class="more"><button class="btn glass small" type="button" id="trump-more">Show more reports</button></div>` : '';
+
+  const rows = REF.trump.map(h => ({...h, value: h.shares * priceOf(h.ticker, h.cost)})).sort((a, b) => b.value - a.value);
+  const positions = rows.map(h => {
+    const p = prices[h.ticker], chg = p ? p.change_pct : null;
+    return `<div class="trade">
+      <div><div class="who">${esc(h.sector)}</div><div class="what">${esc(h.ticker)}<span class="pill hold-pill">Holds</span>${mine.has(h.ticker) ? '<span class="pill mine">You own</span>' : ''}</div></div>
+      <div><div class="amt num">${compact(h.value)} est.</div><div class="when">${p ? usd(p.price) : ''}${chg !== null ? ` · <span class="${chg >= 0 ? 'up' : 'down'}">${pct(chg, 2)}</span> today` : ''}</div></div>
+    </div>`;
+  }).join('');
+
+  feed.innerHTML = note
+    + (trumpFilings.length ? head('Latest filings') + filings + moreFilings : '')
+    + head('Disclosed positions (estimated)') + positions;
+  const btn = $('trump-more');
+  if (btn) btn.onclick = () => { trumpLimit += 10; renderFeed(); };
+  $('feed-more').style.display = 'none';
 }
 
 // ─────────────────────────────────────────────
@@ -1011,7 +1060,7 @@ async function ask(q) {
   const btn = $('ask-go'), out = $('answer');
   btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = '';
   const priceCtx = Object.entries(prices).map(([t, p]) => `${t} $${p.price} (${pct(p.change_pct, 2)} today)`).join(', ');
-  const tradeCtx = trades.slice(0, 60).map(t => `${t.date} ${t.representative} ${/purchase/i.test(t.type) ? 'BUY' : 'SELL'} ${t.ticker} ${t.amount}`).join('\n');
+  const tradeCtx = trades.slice(0, 60).map(t => `${t.date} ${t.representative} ${/purchase/i.test(t.type) ? 'BUY' : 'SELL'} ${t.ticker || t.description + ' (private)'} ${t.amount}${t.filed ? ' filed ' + t.filed : ''}`).join('\n');
   const mine = stocks().length ? 'User holdings: ' + stocks().map(h => `${h.ticker} ${h.shares} sh${h.avgCost ? ' @ $' + h.avgCost.toFixed(2) : ''}`).join(', ') : 'User has not added holdings.';
   const perf = Object.keys(lastReturns).length ? `Returns over selected period (${range}): ` + Object.entries(lastReturns).map(([k, v]) => `${k} ${pct(v)}`).join(', ') : '';
   const system = `You analyze congressional stock trading for a retail investor. Use only the data below. Be direct and specific, 2 to 4 short paragraphs, plain text with no markdown. Remind briefly that this is not investment advice only if the user asks what to buy or sell.
@@ -1056,7 +1105,7 @@ function renderSignals() {
   if (trades.length) {
     const cut = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
     const counts = {};
-    trades.filter(t => t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
+    trades.filter(t => t.ticker && t.date >= cut && /purchase/i.test(t.type || '')).forEach(t => counts[t.ticker] = (counts[t.ticker] || 0) + 1);
     const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
     if (top) out.push({h: `Most bought: ${top[0]}`, p: `${top[1]} congressional purchase filings in the last 30 days of trade dates.`});
   }

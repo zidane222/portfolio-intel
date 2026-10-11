@@ -96,6 +96,55 @@ jobs:
               except:
                   return date_str
 
+          def asset_kind(text):
+              code = re.search(r'\[([A-Z]{2})\]', text)
+              code = code.group(1) if code else ''
+              t = text.upper()
+              if code in ('GS', 'CS') or re.search(r'\d%|\bDUE\b|\bBDS?\b|\bREV\b|\bBOND|\bNOTES?\b|\bTREASURY', t):
+                  return 'Bond'
+              if re.search(r'\bLLC\b|\bL\.?P\.?\b|\bFUND\b|\bPARTNERS|\bHOLDINGS?\b|\bTRUST\b|\bREIT\b', t):
+                  return 'Private investment'
+              return 'Other asset'
+
+          RANGES = {1001: '$1,001 - $15,000', 15001: '$15,001 - $50,000', 50001: '$50,001 - $100,000',
+                    100001: '$100,001 - $250,000', 250001: '$250,001 - $500,000', 500001: '$500,001 - $1,000,000',
+                    1000001: '$1,000,001 - $5,000,000', 5000001: '$5,000,001 - $25,000,000',
+                    25000001: '$25,000,001 - $50,000,000'}
+
+          def make_trade(name, asset_text, tx, date_str, amount_text, filed_date, desc_text=None):
+              ticker = extract_ticker(asset_text)
+              company = re.split(r'\(|\[', desc_text if desc_text is not None else asset_text)[0]
+              company = re.sub(r'\s+', ' ', company).strip()[:60]
+              if not ticker and not company:
+                  return None
+              tx = tx.strip()
+              tx_type = 'Purchase' if tx.startswith('P') else 'Sale' if tx.startswith('S') else 'Exchange' if tx.startswith('E') else tx
+              amount_clean = re.sub(r'\([A-Z.\-]{1,7}\)|\[[A-Z]{2}\]', ' ', amount_text or '')
+              amount_clean = re.sub(r'\s+', ' ', amount_clean).strip()
+              am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_clean) or re.search(r'Over \$[\d,]+', amount_clean)
+              amount = re.sub(r'\s*-\s*', ' - ', am.group(0)) if am else ''
+              if not amount:
+                  # Wrapped cells can cut off the upper bound; House ranges are fixed, so infer it
+                  lo = re.search(r'\$([\d,]+)\s*-', amount_clean)
+                  if lo:
+                      amount = RANGES.get(int(lo.group(1).replace(',', '')), '')
+              return {
+                  'date': parse_date(date_str),
+                  'filed': filed_date,
+                  'representative': name,
+                  'ticker': ticker or '',
+                  'type': tx_type,
+                  'amount': amount,
+                  'description': company,
+                  'private': not ticker,
+                  'kind': 'Stock' if ticker else asset_kind(asset_text),
+                  'source': 'house'
+              }
+
+          # A row the table extractor collapsed into one cell, e.g.
+          # "SP REOF XXX, LLC [AB] P 09/08/2026 09/08/2026 $1,000,001 - $5,000,000"
+          COLLAPSED = re.compile(r'^(?:(?:SP|JT|DC)\s+)?(.+?)\s+(P|S \(partial\)|S|E)\s+(\d{2}/\d{2}/\d{4})\s+\d{2}/\d{2}/\d{4}\s*(.*)$', re.S)
+
           def parse_pdf(name, url):
               trades = []
               try:
@@ -103,50 +152,28 @@ jobs:
                   if r3.status_code != 200:
                       return trades
                   with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+                      text = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
+                      # Filing date = when the member signed the report, not the notification column
+                      sm = re.search(r'Digitally Signed:[^\n]*?(\d{2}/\d{2}/\d{4})', text)
+                      filed_date = parse_date(sm.group(1)) if sm else ''
                       for page in pdf.pages:
-                          tables = page.extract_tables()
-                          for tbl in tables:
+                          for tbl in page.extract_tables():
                               for row in tbl:
-                                  if not row or len(row) < 5:
+                                  if not row:
                                       continue
-                                  asset_cell = str(row[2] or '')
-                                  type_cell = str(row[3] or '')
-                                  date_cell = str(row[4] or '')
-                                  amount_cell = str(row[6] or '') if len(row) > 6 else ''
-
-                                  if not type_cell or type_cell.strip() in ('', 'None', 'Transaction\nType'):
-                                      continue
-
-                                  ticker = extract_ticker(asset_cell)
-                                  if not ticker:
-                                      continue
-
-                                  tx = type_cell.strip()
-                                  if tx.startswith('P'):
-                                      tx_type = 'Purchase'
-                                  elif tx.startswith('S'):
-                                      tx_type = 'Sale'
-                                  else:
-                                      tx_type = tx
-
-                                  dm = re.search(r'(\d{2}/\d{2}/\d{4})', date_cell)
-                                  trade_date = parse_date(dm.group(1)) if dm else ''
-
-                                  company = re.split(r'\(', asset_cell)[0].strip()
-                                  company = re.sub(r'\s+', ' ', company)[:60]
-
-                                  am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_cell)
-                                  amount = am.group(0) if am else amount_cell.strip()
-
-                                  trades.append({
-                                      'date': trade_date,
-                                      'representative': name,
-                                      'ticker': ticker,
-                                      'type': tx_type,
-                                      'amount': amount,
-                                      'description': company,
-                                      'source': 'house'
-                                  })
+                                  cells = [str(c or '').replace('\x00', '') for c in row]
+                                  t = None
+                                  if len(cells) >= 7 and re.search(r'\d{2}/\d{2}/\d{4}', cells[4]) and cells[3].strip()[:1] in ('P', 'S', 'E'):
+                                      dm = re.search(r'(\d{2}/\d{2}/\d{4})', cells[4])
+                                      t = make_trade(name, cells[2], cells[3], dm.group(1), cells[6], filed_date)
+                                  elif cells[0].strip() and not any(c.strip() for c in cells[1:]):
+                                      m = COLLAPSED.match(re.sub(r'\s+', ' ', cells[0]).strip())
+                                      if m:
+                                          asset, tx, d, rest = m.groups()
+                                          # The ticker can land after the amount when the cell wraps
+                                          t = make_trade(name, asset + ' ' + rest, tx, d, rest, filed_date, desc_text=asset)
+                                  if t:
+                                      trades.append(t)
               except Exception as e:
                   print(f"Error {name}: {e}")
               return trades
@@ -158,23 +185,29 @@ jobs:
               if (i+1) % 50 == 0:
                   print(f"Processed {i+1}/{len(filings)}, trades: {len(all_trades)}")
 
-          # Deduplicate
-          seen = set()
-          unique = []
+          # Deduplicate. The same trade can appear twice (a collapsed copy plus the full row),
+          # so prefer the most complete version and drop no-ticker copies of a stock row.
+          def norm(x):
+              return re.sub(r'[^a-z0-9]', '', (x or '').lower())[:14]
+          def score(t):
+              return (bool(t['ticker']), bool(t['amount']), bool(t['filed']))
+          best = {}
           for t in all_trades:
-              key = f"{t['representative']}-{t['ticker']}-{t['date']}-{t['type']}"
-              if key not in seen:
-                  seen.add(key)
-                  unique.append(t)
+              key = (t['representative'], t['date'], t['type'], t['ticker'] or norm(t['description']))
+              if key not in best or score(t) > score(best[key]):
+                  best[key] = t
+          stock_desc = {(t['representative'], t['date'], t['type'], norm(t['description'])) for t in best.values() if t['ticker']}
+          unique = [t for t in best.values()
+                    if t['ticker'] or (t['representative'], t['date'], t['type'], norm(t['description'])) not in stock_desc]
 
           # Sort newest first
           unique.sort(key=lambda x: x.get('date', ''), reverse=True)
           print(f"\nTotal unique trades: {len(unique)}")
           for t in unique[:10]:
-              print(f"  {t['representative']} | {t['ticker']} | {t['type']} | {t['date']}")
+              print(f"  {t['representative']} | {t['ticker'] or 'PRIVATE ' + t['description']} | {t['type']} | {t['date']} | filed {t['filed']}")
 
           output = {
-              'trades': unique[:500],
+              'trades': unique[:5000],  # full year; 5000 is only a safety limit
               'house_count': len(unique),
               'senate_count': 0,
               'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -184,10 +217,85 @@ jobs:
           print(f"Saved {len(unique)} trades")
           PYEOF
 
+      - name: Fetch Trump OGE filings list
+        continue-on-error: true
+        run: |
+          python3 << 'PYEOF'
+          # Trump files with the Office of Government Ethics. His reports are scanned PDFs,
+          # so we list the filings (date, type, link, pages) rather than parse the trades.
+          import requests, json, re, io, datetime, html
+          import pdfplumber
+          API = 'https://extapps2.oge.gov/201/Presiden.nsf/API.xsp/v3/rest'
+          H = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'application/json'}
+
+          def page(start, length, search=''):
+              params = {'draw': 1, 'start': start, 'length': length, 'search[value]': search}
+              r = requests.get(API, params=params, headers=H, timeout=60)
+              r.raise_for_status()
+              return r.json()
+
+          def is_trump(row):
+              return re.search(r'trump,\s*donald', row.get('name', ''), re.I)
+
+          rows = []
+          try:
+              d = page(0, 500, 'Trump')
+              rows = [x for x in d.get('data', []) if is_trump(x)]
+          except Exception as e:
+              print('Search request failed:', e)
+          if not rows:
+              # Server-side search not supported: walk every page and filter locally
+              start, total = 0, None
+              while total is None or start < total:
+                  d = page(start, 100)
+                  data = d.get('data', [])
+                  total = d.get('recordsTotal', 0) if total is None else total
+                  if not data:
+                      break
+                  rows += [x for x in data if is_trump(x)]
+                  start += len(data)
+                  if start > 20000:
+                      break
+          print(f'Trump rows: {len(rows)}')
+
+          filings = []
+          for x in rows:
+              raw = x.get('type', '')
+              link = re.search(r"href=['\"]([^'\"]+\.pdf[^'\"]*)['\"]", raw, re.I) or re.search(r"href=['\"]([^'\"]+\$FILE[^'\"]*)['\"]", raw, re.I)
+              url = html.unescape(link.group(1)) if link else ''
+              if url.startswith('/'):
+                  url = 'https://extapps2.oge.gov' + url
+              label = re.sub(r'<[^>]+>', '', raw).replace('()', '').strip()
+              filings.append({
+                  'date': (x.get('docDate') or '')[:10],
+                  'type': label,
+                  'url': url.replace(' ', '%20'),
+                  'amended': bool(x.get('amended')),
+                  'title': x.get('title', ''),
+                  'pages': None,
+              })
+          filings.sort(key=lambda f: f['date'], reverse=True)
+          # Page counts for the newest reports
+          for f in filings[:15]:
+              if not f['url']:
+                  continue
+              try:
+                  r = requests.get(f['url'], headers=H, timeout=60)
+                  if r.ok and r.content[:4] == b'%PDF':
+                      with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+                          f['pages'] = len(pdf.pages)
+              except Exception as e:
+                  print('Page count failed', f['url'], e)
+          out = {'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'filings': filings[:40]}
+          json.dump(out, open('trump_filings.json', 'w'), indent=1)
+          for f in filings[:8]:
+              print(f['date'], f['type'], f['pages'], f['url'][-60:])
+          PYEOF
+
       - name: Commit trades.json
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add trades.json
+          git add trades.json trump_filings.json 2>/dev/null || git add trades.json
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
