@@ -402,11 +402,15 @@ jobs:
           NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
           ALERT_TICKERS: ${{ vars.ALERT_TICKERS }}
           ALERT_MEMBERS: ${{ vars.ALERT_MEMBERS }}
+          ALERT_SECTORS: ${{ vars.ALERT_SECTORS }}
+          ALERT_TYPE: ${{ vars.ALERT_TYPE }}
+          ALERT_MIN_AMOUNT: ${{ vars.ALERT_MIN_AMOUNT }}
         run: |
           python3 << 'PYEOF'
           # Push a notification through ntfy.sh when a watched member or ticker shows up in a new filing.
           # Set repo variables NTFY_TOPIC (required), ALERT_TICKERS ("NVDA,VOO") and ALERT_MEMBERS ("Pelosi").
-          import json, os, requests, datetime
+          # Optional narrowing: ALERT_SECTORS ("Technology,Energy"), ALERT_TYPE ("buy" or "sell"), ALERT_MIN_AMOUNT ("100001").
+          import json, os, re, requests, datetime
           topic = (os.environ.get('NTFY_TOPIC') or '').strip()
           if not topic:
               print('NTFY_TOPIC not set; skipping alerts'); raise SystemExit
@@ -417,7 +421,26 @@ jobs:
           new = json.load(open('trades.json'))['trades']
           cutoff = (datetime.date.today() - datetime.timedelta(days=10)).isoformat()
           fresh = [t for t in new if key(t) not in old and (t.get('filed') or '') >= cutoff]
-          hits = [t for t in fresh if t['ticker'] in tickers or any(n in t['representative'].lower() for n in names)]
+          sectors = {x.strip().lower() for x in (os.environ.get('ALERT_SECTORS') or '').split(',') if x.strip()}
+          ttype = (os.environ.get('ALERT_TYPE') or '').strip().lower()
+          try:
+              min_amt = int(re.sub(r'[^0-9]', '', os.environ.get('ALERT_MIN_AMOUNT') or '') or 0)
+          except ValueError:
+              min_amt = 0
+          low = lambda a: int(re.sub(r'[^0-9]', '', (re.search(r'\$[\d,]+', a or '') or [''])[0]) or 0)
+          def narrow(t):
+              if sectors and (t.get('sector') or '').lower() not in sectors:
+                  return False
+              if ttype == 'buy' and t['type'] != 'Purchase':
+                  return False
+              if ttype == 'sell' and t['type'] != 'Sale':
+                  return False
+              return low(t['amount']) >= min_amt
+          base = [t for t in fresh if t['ticker'] in tickers or any(n in t['representative'].lower() for n in names)]
+          # With only narrowing rules set (no tickers matched), still alert on any member matching them
+          if (sectors or ttype or min_amt) and not tickers and not os.environ.get('ALERT_MEMBERS'):
+              base = fresh
+          hits = [t for t in base if narrow(t)]
           print(f'{len(fresh)} new filings, {len(hits)} match alerts')
           for t in hits[:8]:
               who = ' '.join(reversed(t['representative'].split(', ', 1)))

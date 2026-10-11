@@ -185,6 +185,26 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 .lvl{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .risk-me{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding-bottom:16px;border-bottom:1px solid #E3EAF3}
 
+/* FEED FILTERS, FLAGS, TRACKING */
+.g5{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.picker-sm{min-height:36px;font-size:14px;font-weight:600;padding:0 30px 0 10px;width:100%}
+.adv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 auto 18px;max-width:1100px;align-items:end}
+.adv-f label{display:block;font-size:12px;color:var(--ink-3);margin-bottom:4px}
+.adv-f input,.adv-f select{width:100%;min-height:40px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:rgba(7,18,40,0.5);color:var(--ink);font-size:14px;padding:0 10px}
+.adv-f select{appearance:none;-webkit-appearance:none}
+.adv-btns{display:flex;gap:8px;flex-wrap:wrap;grid-column:1 / -1;justify-content:center}
+#f-flagged[aria-pressed="true"]{background:rgba(255,214,10,.25);color:#FFE070}
+.pill.big{background:rgba(191,90,242,.2);color:#D9A6F7}
+.row-acts{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}
+.mini{min-height:32px;min-width:32px;padding:0 10px;border-radius:9px;border:1px solid rgba(255,255,255,0.14);background:transparent;color:var(--ink-2);font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.mini:hover{background:rgba(255,255,255,0.08);color:var(--ink)}
+.mini[aria-pressed="true"]{background:rgba(255,214,10,.18);border-color:rgba(255,214,10,.4);color:#FFE070}
+.trade.flagged{background:linear-gradient(90deg,rgba(255,214,10,.06),transparent)}
+.flag-note{width:100%;margin-top:6px;min-height:36px;border-radius:9px;border:1px solid rgba(255,255,255,0.14);background:rgba(7,18,40,.5);color:var(--ink);font-size:13px;padding:0 10px}
+.track-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.track-form input{width:120px;min-height:40px;border-radius:10px;border:1px solid rgba(255,255,255,0.18);background:rgba(7,18,40,.5);color:var(--ink);font-size:15px;padding:0 10px}
+.track-ok{font-size:13px;color:#6EE7A0}
+
 /* SECTOR DONUT */
 .mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
 .donut{position:relative;width:260px;height:260px;flex:none}
@@ -403,10 +423,11 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
   <div class="wrap">
     <h2 class="title reveal">You vs. Washington.</h2>
     <p class="lede reveal">Returns over the selected period, using live prices.</p>
-    <div class="grid g4 reveal">
+    <div class="grid g5 reveal">
       <article class="card-d"><div class="stat-name">You</div><div class="stat-big num" id="ret-me"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-me">Add your portfolio to compare</div></article>
       <article class="card-d"><div class="stat-name">Pelosi</div><div class="stat-big num" id="ret-pelosi"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-pelosi"></div></article>
       <article class="card-d"><div class="stat-name">Trump</div><div class="stat-big num" id="ret-trump"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-trump"></div></article>
+      <article class="card-d"><div class="stat-name"><label class="sr" for="cmp-member">Compare any member</label><select id="cmp-member" class="picker picker-sm"></select></div><div class="stat-big num" id="ret-any"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-any">Copying their filings</div></article>
       <article class="card-d"><div class="stat-name">S&amp;P 500 (VOO)</div><div class="stat-big num" id="ret-voo"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-voo">The benchmark</div></article>
     </div>
   </div>
@@ -486,7 +507,14 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
   <div class="wrap">
     <h2 class="title reveal">Latest disclosures.</h2>
     <p class="lede reveal" id="feed-lede">Congressional trades, as filed.</p>
-    <div class="filters reveal"><div class="seg" id="feed-filter" role="group" aria-label="Filter trades"></div></div>
+    <div class="filters reveal"><div class="seg seg-scroll" id="feed-filter" role="group" aria-label="Filter trades"></div></div>
+    <div class="adv reveal" id="feed-adv">
+      <div class="adv-f"><label for="f-member">Member</label><input id="f-member" list="member-list" placeholder="Any member" autocomplete="off"><datalist id="member-list"></datalist></div>
+      <div class="adv-f"><label for="f-sector">Industry</label><select id="f-sector"><option value="">Any industry</option></select></div>
+      <div class="adv-f"><label for="f-type">Type</label><select id="f-type"><option value="">Buy or sell</option><option value="buy">Buys only</option><option value="sell">Sells only</option></select></div>
+      <div class="adv-f"><label for="f-size">Size</label><select id="f-size"><option value="0">Any size</option><option value="50001">$50K+</option><option value="100001">$100K+ (large)</option><option value="250001">$250K+</option><option value="1000001">$1M+</option></select></div>
+      <div class="adv-btns"><button type="button" class="btn glass small" id="f-flagged" aria-pressed="false">Flagged</button><button type="button" class="btn glass small" id="f-clear">Clear</button><button type="button" class="btn small" id="f-alert">Alert me on this</button></div>
+    </div>
     <div class="card-d reveal">
       <div class="feed" id="feed"></div>
       <div class="more"><button class="btn glass small" id="feed-more" type="button">Show more</button></div>
@@ -653,9 +681,12 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
           <div class="copy-row"><code>NTFY_TOPIC</code><code id="v-topic"></code><button class="btn ghost small" type="button" data-copy="v-topic">Copy</button></div>
           <div class="copy-row"><code>ALERT_TICKERS</code><code id="v-tickers"></code><button class="btn ghost small" type="button" data-copy="v-tickers">Copy</button></div>
           <div class="copy-row"><code>ALERT_MEMBERS</code><code id="v-members">Pelosi</code><button class="btn ghost small" type="button" data-copy="v-members">Copy</button></div>
+          <div class="copy-row"><code>ALERT_SECTORS</code><code id="v-sectors">(optional)</code><button class="btn ghost small" type="button" data-copy="v-sectors">Copy</button></div>
+          <div class="copy-row"><code>ALERT_TYPE</code><code id="v-type">(optional)</code><button class="btn ghost small" type="button" data-copy="v-type">Copy</button></div>
+          <div class="copy-row"><code>ALERT_MIN_AMOUNT</code><code id="v-min">(optional)</code><button class="btn ghost small" type="button" data-copy="v-min">Copy</button></div>
         </li>
       </ol>
-      <p class="fine">Tickers come from your portfolio and watchlist on this device. Update the variable when they change. The check runs once a day with the filings update.</p>
+      <p class="fine">You get a notification when a new filing matches your tickers or members. If you also set industry, type or minimum size, those must match too. Use <b>Alert me on this</b> in Latest disclosures to fill these in from your filters. Tickers come from your portfolio and watchlist. The check runs once a day with the filings update.</p>
     </div>
   </div>
 </section>
@@ -753,6 +784,12 @@ try { lastVisit = localStorage.getItem('pi.lastVisit'); localStorage.setItem('pi
 if (lastVisit === new Date().toISOString().slice(0, 10)) { try { lastVisit = localStorage.getItem('pi.prevVisit'); } catch (e) {} } else { try { lastVisit && localStorage.setItem('pi.prevVisit', lastVisit); } catch (e) {} }
 let range = '6mo';
 let feedFilter = 'all';
+let feedAdv = {member: '', sector: '', type: '', size: 0, flagged: false};
+const FLAG_KEY = 'pi.flags.v1';
+let flags = (() => { try { return JSON.parse(localStorage.getItem(FLAG_KEY)) || {}; } catch (e) { return {}; } })();
+const saveFlags = () => { try { localStorage.setItem(FLAG_KEY, JSON.stringify(flags)); } catch (e) {} };
+const tradeKey = t => `${t.representative}|${t.ticker || t.description}|${t.date}|${t.type}|${t.amount}`;
+const LARGE = 100001;
 let feedLimit = 12;
 let chart = null;
 const lines = {};
@@ -972,6 +1009,7 @@ async function loadHistory() {
     setRet($('ret-pelosi'), 'rpel', lastReturns.pelosi);
     setRet($('ret-trump'), 'rtr', lastReturns.trump);
     setRet($('ret-voo'), 'rvoo', lastReturns.voo);
+    renderAnyMember();
     renderSignals();
   } catch (e) {
     if (req !== historyReq) return;
@@ -979,6 +1017,29 @@ async function loadHistory() {
     msg.textContent = 'Price history is unavailable right now. It will retry shortly.';
     setTimeout(() => { if (req === historyReq) loadHistory(); }, 60000);
   }
+}
+let cmpMember = null;
+async function renderAnyMember() {
+  const sel = $('cmp-member');
+  const cands = copyCandidates();
+  if (!cands.length) return;
+  cmpMember = cmpMember || cands.find(r => !/pelosi/i.test(r)) || cands[0];
+  const invs = smart.investors.filter(x => x.quarters && x.quarters.length);
+  sel.innerHTML = (invs.length ? `<optgroup label="Famous investors">${invs.map(x => `<option value="inv:${esc(x.id)}"${'inv:' + x.id === cmpMember ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</optgroup>` : '')
+    + `<optgroup label="Congress">${cands.slice(0, 60).sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map(r => `<option value="${esc(r)}"${r === cmpMember ? ' selected' : ''}>${esc(nameOf(r))}</option>`).join('')}</optgroup>`;
+  const el = $('ret-any'), sub = $('sub-any');
+  try { await ensureHistory(['VOO', ...((planFor(cmpMember) || {}).tickers || [])]); } catch (e) { el.textContent = 'No data'; return; }
+  const res = simulate(cmpMember);
+  if (!res) { el.classList.remove('up', 'down'); el.textContent = 'No data'; sub.textContent = 'No stock filings in the past year'; return; }
+  // Return over the same window as the chart above
+  const days = {'1d': 1, '5d': 7, '1mo': 31, '6mo': 183, '1y': 366, '5y': 9999}[range];
+  const startTs = range === 'ytd' ? Date.UTC(new Date().getUTCFullYear(), 0, 1) / 1000 : Date.now() / 1000 - (days || 183) * 86400;
+  const i = Math.max(0, res.copySeries.findIndex(p => p.time >= startTs));
+  const r = (res.copySeries[res.copySeries.length - 1].value / res.copySeries[i].value - 1) * 100;
+  const vr = (res.vooSeries[res.vooSeries.length - 1].value / res.vooSeries[i].value - 1) * 100;
+  setRet(el, 'rany', r);
+  const since = res.copySeries[i].time > startTs + 5 * 86400 ? ` · since ${new Date(res.copySeries[i].time * 1000).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})}` : '';
+  sub.innerHTML = `${r - vr >= 0 ? 'Beat' : 'Trailed'} VOO by ${Math.abs(r - vr).toFixed(1)} pts${since}`;
 }
 function renderCompareSubs() {
   const val = list => list.reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0);
@@ -1006,12 +1067,12 @@ async function loadTrades() {
   try { smart = await getJSON('./smart_money.json?v=' + Math.floor(Date.now() / 3.6e6)); smart.investors = smart.investors || []; } catch (e) {}
   try { insiderBuys = (await getJSON('./insiders.json?v=' + Math.floor(Date.now() / 3.6e6))).buys || []; } catch (e) {}
   renderSmart();
-  renderFeed(); renderHoldings(); renderSignals();
-  bestCache = null;
+  fillFeedFilters(); renderFeed(); renderHoldings(); renderSignals();
+  bestCache = null; renderAnyMember();
   runCopyTest(); renderLeaderboard();
 }
 function renderFeed() {
-  const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['mine','My stocks + watchlist']];
+  const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['large','Large trades'],['mine','My stocks + watchlist']];
   $('feed-filter').innerHTML = filters.map(([k, l]) => `<button type="button" aria-pressed="${k === feedFilter}" data-f="${k}">${l}</button>`).join('');
   $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; trumpLimit = 6; renderFeed(); });
 
@@ -1019,6 +1080,15 @@ function renderFeed() {
   let list = trades;
   if (feedFilter === 'pelosi') list = trades.filter(t => /pelosi/i.test(t.representative || ''));
   if (feedFilter === 'mine') { const f = followed(); list = trades.filter(t => f.has(t.ticker)); }
+  if (feedFilter === 'large') list = trades.filter(t => lowerBound(t.amount) >= LARGE);
+  // Advanced filters
+  const fm = feedAdv.member.trim().toLowerCase();
+  if (fm) list = list.filter(t => nameOf(t.representative).toLowerCase().includes(fm) || (t.representative || '').toLowerCase().includes(fm));
+  if (feedAdv.sector) list = list.filter(t => (t.sector || sectorOf(t.ticker) || '') === feedAdv.sector);
+  if (feedAdv.type) list = list.filter(t => feedAdv.type === 'buy' ? /purchase/i.test(t.type) : /sale/i.test(t.type));
+  if (feedAdv.size) list = list.filter(t => lowerBound(t.amount) >= feedAdv.size);
+  if (feedAdv.flagged) list = list.filter(t => flags[tradeKey(t)]);
+  const advOn = fm || feedAdv.sector || feedAdv.type || feedAdv.size || feedAdv.flagged;
   const fresh = lastVisit ? trades.filter(t => (t.filed || '') > lastVisit).length : 0;
   $('feed-lede').innerHTML = (tradesUpdated ? `${trades.length} recent trades · filings checked ${esc(ago(tradesUpdated))}` : 'Congressional trades, as filed.') + (fresh ? `<span class="new-dot">${fresh} new since your last visit</span>` : '');
 
@@ -1026,22 +1096,56 @@ function renderFeed() {
   if (feedFilter === 'trump') { renderTrumpFeed(feed); return; }
   if (!trades.length) { feed.innerHTML = '<div class="chart-msg" style="position:static;padding:28px">Loading disclosures…</div>'; $('feed-more').style.display = 'none'; return; }
   if (!list.length) {
-    const why = feedFilter === 'mine' ? (mine.size ? 'No recent filings touch your stocks.' : 'Add your portfolio to see trades in your stocks.') : 'No recent filings for this filter.';
+    const why = feedAdv.flagged && !Object.keys(flags).length ? 'Nothing flagged yet. Tap Flag on any trade to save it for review.' : feedFilter === 'mine' && !advOn ? (mine.size ? 'No recent filings touch your stocks.' : 'Add your portfolio to see trades in your stocks.') : 'No filings match these filters.';
     feed.innerHTML = `<div class="chart-msg" style="position:static;padding:28px">${why}</div>`; $('feed-more').style.display = 'none'; return;
   }
+  if (advOn || feedFilter !== 'all') $('feed-lede').innerHTML += ` <span class="new-dot" style="background:rgba(255,255,255,.18)">${list.length} match</span>`;
   feed.innerHTML = list.slice(0, feedLimit).map(t => {
     const buy = /purchase|buy/i.test(t.type || '');
+    const k = tradeKey(t), fl = flags[k], big = lowerBound(t.amount) >= LARGE;
     const name = nameOf(t.representative);
     const fmtD = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
     const traded = fmtD(t.date), filed = fmtD(t.filed);
     const lag = t.date && t.filed ? Math.round((new Date(t.filed) - new Date(t.date)) / 864e5) : null;
     const label = t.private ? `<span class="priv">${esc(t.description)}</span>` : `<button type="button" class="tk-link" data-tk="${esc(t.ticker)}">${esc(t.ticker)}</button>`;
-    return `<div class="trade">
-      <div><div class="who">${esc(name)}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${t.private ? `<span class="pill priv-pill">${esc(t.kind || 'Private investment')}</span>` : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}${lag !== null && lag > LATE_DAYS ? `<span class="pill late">Filed late</span>` : ''}${t.committees && t.committees.length ? `<span class="pill cmte" title="${esc('Sits on ' + t.committees.join(', '))}">Committee overlap</span>` : ''}</div>${t.committees && t.committees.length ? `<div class="who" style="margin-top:2px">Sits on ${esc(t.committees.join(', '))}</div>` : ''}</div>
-      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">Traded ${esc(traded)}</div>${filed ? `<div class="when">Filed ${esc(filed)}${lag !== null && lag >= 0 ? ` · ${lag}d later` : ''}</div>` : ''}</div>
+    return `<div class="trade${fl ? ' flagged' : ''}">
+      <div><div class="who">${esc(name)}${t.sector ? ' · ' + esc(t.sector) : ''}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${big ? '<span class="pill big">Large</span>' : ''}${t.private ? `<span class="pill priv-pill">${esc(t.kind || 'Private investment')}</span>` : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}${lag !== null && lag > LATE_DAYS ? `<span class="pill late">Filed late</span>` : ''}${t.committees && t.committees.length ? `<span class="pill cmte" title="${esc('Sits on ' + t.committees.join(', '))}">Committee overlap</span>` : ''}</div>${t.committees && t.committees.length ? `<div class="who" style="margin-top:2px">Sits on ${esc(t.committees.join(', '))}</div>` : ''}</div>
+      <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">Traded ${esc(traded)}</div>${filed ? `<div class="when">Filed ${esc(filed)}${lag !== null && lag >= 0 ? ` · ${lag}d later` : ''}</div>` : ''}
+        <div class="row-acts">${t.ticker ? `<button type="button" class="mini" data-track="${esc(t.ticker)}" aria-label="Track ${esc(t.ticker)} in your portfolio">+ Track</button>` : ''}<button type="button" class="mini" data-flag="${esc(k)}" aria-pressed="${!!fl}" aria-label="${fl ? 'Unflag' : 'Flag for review'}">${fl ? 'Flagged' : 'Flag'}</button></div></div>
+      ${fl ? `<div style="grid-column:1 / -1"><label class="sr" for="n-${esc(btoa(unescape(encodeURIComponent(k))).slice(0, 16))}">Review note</label><input class="flag-note" id="n-${esc(btoa(unescape(encodeURIComponent(k))).slice(0, 16))}" data-note="${esc(k)}" placeholder="Add a review note" value="${esc(fl.note || '')}"></div>` : ''}
     </div>`;
   }).join('');
   $('feed-more').style.display = list.length > feedLimit ? 'inline-flex' : 'none';
+  feed.querySelectorAll('[data-flag]').forEach(b => b.onclick = () => {
+    const key = b.dataset.flag;
+    if (flags[key]) delete flags[key]; else flags[key] = {at: new Date().toISOString().slice(0, 10), note: ''};
+    saveFlags(); renderFeed();
+  });
+  feed.querySelectorAll('[data-note]').forEach(i => i.onchange = () => { if (flags[i.dataset.note]) { flags[i.dataset.note].note = i.value.slice(0, 200); saveFlags(); } });
+  feed.querySelectorAll('[data-track]').forEach(b => b.onclick = () => openTicker(b.dataset.track, true));
+  $('f-flagged').textContent = `Flagged${Object.keys(flags).length ? ' (' + Object.keys(flags).length + ')' : ''}`;
+}
+
+function fillFeedFilters() {
+  const names = [...new Set(trades.map(t => nameOf(t.representative)))].sort();
+  $('member-list').innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+  const secs = [...new Set(trades.map(t => t.sector).filter(Boolean))].sort();
+  const cur = $('f-sector').value;
+  $('f-sector').innerHTML = '<option value="">Any industry</option>' + secs.map(x => `<option${x === cur ? ' selected' : ''}>${esc(x)}</option>`).join('');
+}
+function wireFeedFilters() {
+  const upd = () => { feedAdv = {member: $('f-member').value, sector: $('f-sector').value, type: $('f-type').value, size: +$('f-size').value, flagged: $('f-flagged').getAttribute('aria-pressed') === 'true'}; feedLimit = 12; renderFeed(); };
+  $('f-member').addEventListener('input', () => { clearTimeout(wireFeedFilters.t); wireFeedFilters.t = setTimeout(upd, 250); });
+  ['f-sector', 'f-type', 'f-size'].forEach(id => $(id).onchange = upd);
+  $('f-flagged').onclick = () => { $('f-flagged').setAttribute('aria-pressed', $('f-flagged').getAttribute('aria-pressed') !== 'true'); upd(); };
+  $('f-clear').onclick = () => { $('f-member').value = ''; $('f-sector').value = ''; $('f-type').value = ''; $('f-size').value = '0'; $('f-flagged').setAttribute('aria-pressed', 'false'); feedFilter = 'all'; upd(); };
+  $('f-alert').onclick = () => {
+    const a = {members: $('f-member').value.trim(), sectors: $('f-sector').value, type: $('f-type').value, min: +$('f-size').value || 0};
+    if (feedFilter === 'pelosi' && !a.members) a.members = 'Pelosi';
+    if (feedFilter === 'large' && !a.min) a.min = LARGE;
+    try { localStorage.setItem('pi.alertrule', JSON.stringify(a)); } catch (e) {}
+    renderAlerts(); $('alerts').scrollIntoView({behavior: reduced ? 'auto' : 'smooth'});
+  };
 }
 
 // Trump files with the Office of Government Ethics, not the House, so his trades
@@ -1421,7 +1525,7 @@ function toggleWatch(t, on) {
 //  TICKER PAGE (tap any ticker)
 // ─────────────────────────────────────────────
 let sheetChart = null, sheetLine = null, sheetTicker = null;
-async function openTicker(tk) {
+async function openTicker(tk, focusTrack) {
   tk = String(tk || '').toUpperCase(); if (!tk) return;
   sheetTicker = tk;
   const dlg = $('tk-sheet'), box = $('tk-body');
@@ -1452,6 +1556,8 @@ async function openTicker(tk) {
       ${(() => { const who = smart.investors.filter(x => x.quarters && x.quarters[0] && x.quarters[0].holdings.some(h => h.ticker === tk)).map(x => x.name.split(' ').slice(-1)[0]); return who.length ? `<div class="fact">Held by<b>${esc(who.join(', '))}</b></div>` : ''; })()}
       ${lags.length ? `<div class="fact">Avg filing delay<b class="num">${Math.round(lags.reduce((a, b) => a + b, 0) / lags.length)} days</b></div>` : ''}
     </div>
+    <h3>${pos ? 'Update your position' : 'Track in your portfolio'}</h3>
+    <form class="track-form" id="track-form"><label class="sr" for="track-sh">Shares</label><input id="track-sh" inputmode="decimal" placeholder="Shares" value="${pos ? pos.shares : ''}"><label class="sr" for="track-cost">Cost per share</label><input id="track-cost" inputmode="decimal" placeholder="Cost/share (opt.)" value="${pos && pos.avgCost ? pos.avgCost : ''}"><button class="btn small" type="submit">${pos ? 'Save' : 'Add'}</button><span class="track-ok" id="track-ok" aria-live="polite"></span></form>
     <h3>Congress trades</h3>
     <div>${tr.length ? tr.slice(0, 12).map(t => { const buy = /purchase/i.test(t.type); const lag = lagOf(t);
       return `<div class="trade"><div><div class="who">${esc(nameOf(t.representative))}</div><div class="what" style="font-size:15px">${buy ? 'Bought' : 'Sold'}<span class="pill ${buy ? 'buy' : 'sell'}">${esc(t.amount)}</span>${lag !== null && lag > LATE_DAYS ? '<span class="pill late">Filed late</span>' : ''}${t.committees && t.committees.length ? '<span class="pill cmte">Committee overlap</span>' : ''}</div></div><div><div class="when">Traded ${esc(t.date)}</div><div class="when">Filed ${esc(t.filed || '')}</div></div></div>`; }).join('')
@@ -1459,6 +1565,17 @@ async function openTicker(tk) {
     <h3>News</h3>
     <div id="tk-news"><div class="muted-d" style="font-size:14px;padding:8px 0">Loading headlines…</div></div>`;
   $('tk-close').onclick = () => dlg.close();
+  $('track-form').onsubmit = e => {
+    e.preventDefault();
+    const sh = parseFloat($('track-sh').value.replace(/,/g, '')), cost = parseFloat($('track-cost').value.replace(/[$,]/g, ''));
+    if (!(sh > 0)) { $('track-ok').textContent = 'Enter a number of shares.'; $('track-ok').style.color = '#FF8A80'; return; }
+    const i = myPortfolio.findIndex(h => h.ticker === tk && !h.isCash);
+    const row = {ticker: tk, shares: sh, avgCost: isFinite(cost) && cost > 0 ? cost : (prices[tk] ? prices[tk].price : 0), company: co, isCash: false};
+    if (i >= 0) myPortfolio[i] = {...myPortfolio[i], ...row}; else myPortfolio.push(row);
+    savePortfolio(); refreshAll(); renderFeed();
+    $('track-ok').style.color = ''; $('track-ok').textContent = i >= 0 ? 'Updated.' : 'Added to your portfolio.';
+  };
+  if (focusTrack) setTimeout(() => $('track-sh') && $('track-sh').focus(), 300);
   $('tk-star').onclick = () => { toggleWatch(tk); const on = watchlist.includes(tk); $('tk-star').setAttribute('aria-pressed', on); $('tk-star').querySelector('svg').setAttribute('fill', on ? 'currentColor' : 'none'); };
   if (!dlg.open) { dlg.showModal(); }
   sheetChart && sheetChart.remove(); sheetChart = null;
@@ -1508,6 +1625,13 @@ function renderAlerts() {
   }
   $('ntfy-topic').textContent = topic; $('v-topic').textContent = topic;
   $('v-tickers').textContent = [...followed()].join(',') || 'NVDA,VOO';
+  let rule = {};
+  try { rule = JSON.parse(localStorage.getItem('pi.alertrule')) || {}; } catch (e) {}
+  const last = rule.members ? rule.members.split(/\s+/).slice(-1)[0] : 'Pelosi';
+  $('v-members').textContent = last;
+  $('v-sectors').textContent = rule.sectors || '(optional)';
+  $('v-type').textContent = rule.type || '(optional)';
+  $('v-min').textContent = rule.min ? String(rule.min) : '(optional)';
 }
 function wireCopyButtons() {
   document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
@@ -2214,13 +2338,14 @@ function init() {
   wireReveal(); wireNavHighlight(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   $('copy-member').onchange = e => runCopyTest(e.target.value);
-  wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData();
+  wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData(); wireFeedFilters();
+  $('cmp-member').onchange = e => { cmpMember = e.target.value; renderAnyMember(); };
   $('share-copy').onclick = shareCopy;
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('watch-form').onsubmit = e => { e.preventDefault(); toggleWatch($('watch-in').value, true); $('watch-in').value = ''; };
   renderHero(); renderHoldings(); renderFeed(); renderSignals(); renderTicker(); renderMix();
   loadPrices(); loadHistory(); loadTrades(); loadNews(); loadSectors();
-  setInterval(loadPrices, 2 * 60 * 1000);
+  setInterval(() => { if (!document.hidden) loadPrices(); }, 60 * 1000);
   setInterval(loadHistory, 10 * 60 * 1000);
   setInterval(loadNews, 15 * 60 * 1000);
   setInterval(loadTrades, 60 * 60 * 1000);

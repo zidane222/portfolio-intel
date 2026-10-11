@@ -127,6 +127,28 @@ def all_trades():
         'updated': str(cache['house_trades']['updated'])
     })
 
+def previous_close(result, price):
+    """Close of the trading day before the latest one.
+
+    Yahoo omits meta.previousClose when a range is requested (and on weekends), which made
+    every change show 0%. Use the daily bars instead: the last close dated before the
+    latest market session."""
+    from datetime import timezone
+    meta = result.get('meta', {})
+    stamps = result.get('timestamp') or []
+    closes = ((result.get('indicators', {}).get('quote') or [{}])[0].get('close')) or []
+    offset = meta.get('gmtoffset') or 0
+    day = lambda ts: datetime.fromtimestamp(ts + offset, tz=timezone.utc).date()
+    bars = [(day(t), c) for t, c in zip(stamps, closes) if c is not None]
+    session = day(meta['regularMarketTime']) if meta.get('regularMarketTime') else (bars[-1][0] if bars else None)
+    earlier = [c for d, c in bars if session and d < session]
+    if earlier:
+        return earlier[-1]
+    for key in ('previousClose', 'chartPreviousClose'):
+        if meta.get(key):
+            return meta[key]
+    return price
+
 # ── STOCK PRICES (Yahoo Finance) ──
 @app.route('/api/prices')
 @app.route('/api/prices/<tickers>')
@@ -141,13 +163,14 @@ def prices(tickers='VOO,QQQM,GLD,NVDA,AAPL,TSLA,META,MSFT,GOOGL,AMZN,AMD,CRWD,XO
         price_data = cache['prices']['data']
         for ticker in missing:
             try:
-                url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d'
+                url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d'
                 res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
                 if res.status_code == 200:
                     data = res.json()
-                    meta = data.get('chart', {}).get('result', [{}])[0].get('meta', {})
+                    result = data.get('chart', {}).get('result', [{}])[0]
+                    meta = result.get('meta', {})
                     price = meta.get('regularMarketPrice', 0)
-                    prev = meta.get('previousClose', price)
+                    prev = previous_close(result, price)
                     change_pct = ((price - prev) / prev * 100) if prev else 0
                     price_data[ticker] = {
                         'price': round(price, 2),
