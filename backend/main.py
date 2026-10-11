@@ -343,6 +343,7 @@ def dividends(tickers):
                 'ttm_dividend': round(ttm, 4),
                 'yield': round(ttm / price * 100, 2) if price else 0,
                 'payments': len(paid),
+                'history': [[datetime.fromtimestamp(t).strftime('%Y-%m-%d'), round(a, 4)] for t, a in paid],
                 'last_paid': datetime.fromtimestamp(paid[-1][0]).strftime('%Y-%m-%d') if paid else None,
                 'return_1y': round((closes[-1] / closes[0] - 1) * 100, 2) if len(closes) > 1 else None,
                 'name': meta.get('longName') or meta.get('shortName') or ticker,
