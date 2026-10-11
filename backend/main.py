@@ -208,6 +208,38 @@ def history(tickers):
 
     return jsonify({'range': rng, 'series': series, 'updated': str(datetime.now())})
 
+# ── SECTORS (Yahoo Finance search) for the industry pie chart ──
+sector_cache = {}  # sectors rarely change, so cache for the life of the process
+
+@app.route('/api/sectors/<tickers>')
+def sectors(tickers):
+    ticker_list = [t.strip().upper() for t in tickers.split(',') if t.strip()][:40]
+    out = {}
+    for ticker in ticker_list:
+        if ticker in sector_cache:
+            out[ticker] = sector_cache[ticker]
+            continue
+        try:
+            url = f'https://query2.finance.yahoo.com/v1/finance/search?q={ticker}&quotesCount=5&newsCount=0'
+            res = requests.get(url, timeout=8, headers={'User-Agent': 'Mozilla/5.0'})
+            if res.status_code != 200:
+                continue
+            quotes = res.json().get('quotes') or []
+            q = next((x for x in quotes if (x.get('symbol') or '').upper() == ticker), None)
+            if not q:
+                continue
+            qtype = (q.get('quoteType') or '').upper()
+            if qtype in ('ETF', 'MUTUALFUND'):
+                info = {'sector': 'Funds & ETFs', 'industry': q.get('longname') or q.get('shortname') or ''}
+            else:
+                info = {'sector': q.get('sectorDisp') or q.get('sector') or '', 'industry': q.get('industryDisp') or q.get('industry') or ''}
+            if info['sector']:
+                sector_cache[ticker] = info
+                out[ticker] = info
+        except Exception as e:
+            print(f'Sector error for {ticker}: {e}')
+    return jsonify({'sectors': out})
+
 # ── NEWS ──
 @app.route('/api/news')
 def news():
@@ -303,6 +335,7 @@ def health():
             '/api/senate-trades',
             '/api/prices',
             '/api/history/<tickers>?range=6mo',
+            '/api/sectors/<tickers>',
             '/api/news',
             '/api/ai'
         ],

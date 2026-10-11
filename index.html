@@ -22,7 +22,7 @@
   --radius-l:28px;--radius-m:20px;--radius-s:12px;
   --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',sans-serif;
 }
-html{scroll-behavior:smooth;scroll-padding-top:64px}
+html{scroll-behavior:smooth;scroll-padding-top:100px}
 body{
   font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased;
   background:#071228;min-height:100vh;
@@ -47,6 +47,34 @@ nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-
 .navlinks a{color:var(--ink-2);text-decoration:none;font-size:13px;padding:10px 10px;white-space:nowrap;border-radius:8px}
 .navlinks a:hover{color:var(--ink)}
 @media(max-width:640px){.navlinks{display:none}}
+
+/* TICKER BANNER */
+.ticker{position:relative;overflow:hidden;height:34px;border-top:1px solid rgba(255,255,255,0.06);-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.ticker-track{display:flex;width:max-content;height:100%;align-items:center;animation:tick var(--dur,60s) linear infinite}
+.ticker:hover .ticker-track,.ticker:focus-within .ticker-track{animation-play-state:paused}
+.tk{display:inline-flex;align-items:center;gap:6px;padding:0 18px;font-size:13px;white-space:nowrap;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.tk b{color:var(--ink);font-weight:600}
+.tk .up{color:var(--up)}.tk .down{color:var(--down)}
+.tk svg{flex:none}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* SECTOR DONUT */
+.mix{display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:center}
+.donut{position:relative;width:260px;height:260px;flex:none}
+.donut svg{width:100%;height:100%;transform:rotate(-90deg)}
+.donut circle.seg{fill:none;stroke-width:34;cursor:pointer;transition:stroke-width .2s,opacity .2s}
+.donut circle.seg.dim{opacity:.35}
+.donut circle.seg.hot{stroke-width:42}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;padding:60px}
+.donut-center .big{font-size:30px;font-weight:600;letter-spacing:-.6px}
+.donut-center .small{font-size:13px;color:var(--ink-3);margin-top:4px}
+.mix-legend{flex:1 1 300px;max-width:440px;display:flex;flex-direction:column}
+.mix-row{display:grid;grid-template-columns:12px 1fr auto auto;gap:12px;align-items:center;padding:10px 8px;border-radius:10px;border:0;background:transparent;color:var(--ink);font-size:15px;text-align:left;min-height:44px}
+.mix-row:hover,.mix-row.hot{background:rgba(255,255,255,0.07)}
+.mix-row .sw{width:12px;height:12px;border-radius:4px}
+.mix-row .pc{font-weight:600;font-variant-numeric:tabular-nums}
+.mix-row .dl{color:var(--ink-3);font-size:13px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right}
+.mix-row .tks{grid-column:2 / -1;font-size:12px;color:var(--ink-3);margin-top:-6px}
 
 /* SECTIONS */
 section{padding:0 0 96px}
@@ -196,12 +224,14 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
     <div class="navlinks">
       <a href="#performance">Performance</a>
       <a href="#compare">Compare</a>
+      <a href="#mix">Industries</a>
       <a href="#disclosures">Disclosures</a>
       <a href="#holdings">Holdings</a>
       <a href="#news">News</a>
       <a href="#ask">Ask</a>
     </div>
   </div>
+  <div class="ticker" id="ticker" aria-label="Live prices" tabindex="0"><div class="ticker-track" id="ticker-track"></div></div>
 </nav>
 
 <main>
@@ -241,6 +271,22 @@ footer{padding:0 0 56px;text-align:center;font-size:12px;color:#6E6E73;line-heig
       <article class="card-d"><div class="stat-name">Pelosi</div><div class="stat-big num" id="ret-pelosi"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-pelosi"></div></article>
       <article class="card-d"><div class="stat-name">Trump</div><div class="stat-big num" id="ret-trump"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-trump"></div></article>
       <article class="card-d"><div class="stat-name">S&amp;P 500 (VOO)</div><div class="stat-big num" id="ret-voo"><span class="sk">+0.0%</span></div><div class="stat-sub num" id="sub-voo">The benchmark</div></article>
+    </div>
+  </div>
+</section>
+
+<!-- INDUSTRY MIX -->
+<section id="mix">
+  <div class="wrap">
+    <h2 class="title reveal">Where the money sits.</h2>
+    <p class="lede reveal">Holdings by industry, weighted by current value.</p>
+    <div class="filters reveal"><div class="seg" id="mix-who" role="group" aria-label="Whose portfolio"></div></div>
+    <div class="card-d reveal">
+      <div class="mix">
+        <div class="donut"><svg viewBox="0 0 200 200" role="img" aria-labelledby="mix-desc" id="donut"></svg><div class="donut-center" id="donut-center"></div></div>
+        <div class="mix-legend" id="mix-legend"></div>
+      </div>
+      <p class="sr" id="mix-desc">Industry breakdown chart</p>
     </div>
   </div>
 </section>
@@ -379,22 +425,42 @@ const REF = {
   pelosi: [
     {ticker:'NVDA',shares:175000,cost:48,sector:'Technology'},
     {ticker:'AAPL',shares:95000,cost:145,sector:'Technology'},
-    {ticker:'GOOGL',shares:55000,cost:112,sector:'Technology'},
+    {ticker:'GOOGL',shares:55000,cost:112,sector:'Communication Services'},
     {ticker:'MSFT',shares:40000,cost:285,sector:'Technology'},
-    {ticker:'AMZN',shares:70000,cost:130,sector:'E-Commerce'},
+    {ticker:'AMZN',shares:70000,cost:130,sector:'Consumer Cyclical'},
     {ticker:'AMD',shares:48000,cost:85,sector:'Technology'},
     {ticker:'CRWD',shares:15000,cost:180,sector:'Technology'},
   ],
   trump: [
-    {ticker:'DJT',shares:114750000,cost:25,sector:'Media'},
-    {ticker:'TSLA',shares:45000,cost:198,sector:'Automotive'},
-    {ticker:'META',shares:12000,cost:420,sector:'Technology'},
+    {ticker:'DJT',shares:114750000,cost:25,sector:'Communication Services'},
+    {ticker:'TSLA',shares:45000,cost:198,sector:'Consumer Cyclical'},
+    {ticker:'META',shares:12000,cost:420,sector:'Communication Services'},
     {ticker:'XOM',shares:80000,cost:98,sector:'Energy'},
     {ticker:'GEO',shares:120000,cost:12,sector:'Real Estate'},
-    {ticker:'WMT',shares:30000,cost:55,sector:'Retail'},
+    {ticker:'WMT',shares:30000,cost:55,sector:'Consumer Defensive'},
   ],
 };
 const CASH_TICKERS = new Set(['MLPDA','TMCXX','SPAXX','FDRXX','VMFXX','VMMXX','SWVXX','SPRXX','CASH','MMDA','QACDS']);
+// Known sectors so the pie works instantly; anything else is looked up once and cached on the device
+const SECTOR_MAP = {
+  'Technology': 'AAPL MSFT NVDA AMD AVGO ORCL CRM ADBE INTC QCOM TXN CSCO IBM CRWD PANW NOW SNOW PLTR MU AMAT LRCX KLAC SHOP UBER INTU ANET SMCI DELL ARM MRVL',
+  'Communication Services': 'GOOGL GOOG META NFLX DIS T VZ TMUS CMCSA DJT SPOT RDDT PINS SNAP',
+  'Consumer Cyclical': 'AMZN TSLA HD MCD NKE SBUX LOW BKNG TJX GM F RIVN ABNB CMG LULU',
+  'Consumer Defensive': 'WMT COST PG KO PEP PM MO MDLZ CL TGT KR',
+  'Financial Services': 'JPM BAC WFC C GS MS V MA AXP SCHW BLK BRK.B BRK-B PYPL SQ XYZ COIN HOOD SOFI',
+  'Healthcare': 'UNH JNJ LLY PFE MRK ABBV TMO ABT DHR BMY AMGN GILD CVS ISRG NVO',
+  'Energy': 'XOM CVX COP SLB EOG OXY PSX MPC KMI',
+  'Industrials': 'BA CAT GE HON UPS RTX LMT DE UNP NOC GD MMM',
+  'Utilities': 'NEE DUK SO D AEP',
+  'Real Estate': 'GEO PLD AMT O SPG EQIX',
+  'Basic Materials': 'LIN NEM FCX DOW',
+  'Funds & ETFs': 'VOO SPY IVV VTI QQQ QQQM DIA SCHD VUG VGT VXUS VEA VWO BND AGG GLD SLV IAU TLT ARKK XLK XLF XLE SOXX SMH IWM VYM JEPI',
+};
+const SECTOR_OF = {};
+Object.entries(SECTOR_MAP).forEach(([sec, list]) => list.split(' ').forEach(t => SECTOR_OF[t] = sec));
+const SECTOR_KEY = 'pi.sectors.v1';
+const MIX_COLORS = ['#0A84FF','#64D2FF','#BF5AF2','#FF9F0A','#30D158','#FF375F','#FFD60A','#5E5CE6'];
+const BANNER_EXTRA = ['SPY','QQQ','DIA'];
 const RANGES = [['1D','1d'],['1W','5d'],['1M','1mo'],['6M','6mo'],['YTD','ytd'],['1Y','1y'],['5Y','5y']];
 const SERIES = [
   {key:'me',label:'You',color:'#F5F5F7',width:3},
@@ -416,6 +482,9 @@ let feedLimit = 12;
 let chart = null;
 const lines = {};
 let lastReturns = {};
+let mixWho = 'me';
+let mixHot = null;
+let sectorCache = (() => { try { return JSON.parse(localStorage.getItem(SECTOR_KEY)) || {}; } catch (e) { return {}; } })();
 const shown = {};
 
 // ─────────────────────────────────────────────
@@ -477,7 +546,7 @@ function setRet(el, key, v) {
 //  DATA: PRICES
 // ─────────────────────────────────────────────
 function allTickers() {
-  const set = new Set(['VOO']);
+  const set = new Set(['VOO', ...BANNER_EXTRA]);
   stocks().forEach(h => set.add(h.ticker));
   REF.pelosi.forEach(h => set.add(h.ticker));
   REF.trump.forEach(h => set.add(h.ticker));
@@ -493,7 +562,7 @@ async function loadPrices() {
     $('live-dot').classList.remove('ok');
     $('live-text').textContent = Object.keys(prices).length ? 'Prices may be stale. Retrying…' : 'Market data is waking up. Retrying…';
   }
-  renderHero(); renderHoldings(); renderCompareSubs(); renderSignals();
+  renderHero(); renderHoldings(); renderCompareSubs(); renderSignals(); renderTicker(); renderMix();
 }
 
 // ─────────────────────────────────────────────
@@ -980,7 +1049,8 @@ function renderSignals() {
   };
   if (Object.keys(prices).length) {
     out.push({h: `Pelosi is ${share(REF.pelosi, 'Technology').toFixed(0)}% tech`, p: `Her estimated positions lean on ${REF.pelosi.filter(h => h.sector === 'Technology').map(h => h.ticker).slice(0, 4).join(', ')}.`});
-    const djt = share(REF.trump, 'Media');
+    const tTot = REF.trump.reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0);
+    const djt = tTot ? REF.trump.filter(h => h.ticker === 'DJT').reduce((s, h) => s + h.shares * priceOf(h.ticker, h.cost), 0) / tTot * 100 : 0;
     out.push({h: `Trump is ${djt.toFixed(0)}% one stock`, p: `DJT dominates his estimated positions${prices.DJT ? `, ${pct(prices.DJT.change_pct, 2)} today` : ''}. Concentration like this swings hard.`});
   }
   if (trades.length) {
@@ -1005,6 +1075,101 @@ function renderSignals() {
 }
 
 // ─────────────────────────────────────────────
+//  TICKER BANNER
+// ─────────────────────────────────────────────
+const ARROW_UP = '<svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10"><path d="M5 1 9 8H1z" fill="currentColor"/></svg>';
+const ARROW_DN = '<svg aria-hidden="true" width="9" height="9" viewBox="0 0 10 10"><path d="M5 9 1 2h8z" fill="currentColor"/></svg>';
+function renderTicker() {
+  const order = [...new Set(['SPY', 'QQQ', 'DIA', 'VOO', ...stocks().map(h => h.ticker), ...REF.pelosi.map(h => h.ticker), ...REF.trump.map(h => h.ticker)])];
+  const items = order.filter(t => prices[t]).map(t => {
+    const p = prices[t], up = p.change_pct >= 0;
+    return `<span class="tk"><b>${esc(t)}</b>${usd(p.price)}<span class="${up ? 'up' : 'down'}">${up ? ARROW_UP : ARROW_DN} ${Math.abs(p.change_pct).toFixed(2)}%</span></span>`;
+  }).join('');
+  const track = $('ticker-track');
+  if (!items) { track.innerHTML = '<span class="tk">Loading prices…</span>'; track.style.animation = 'none'; return; }
+  // Two copies side by side so the loop is seamless; speed scales with length
+  track.innerHTML = items + items.replace(/class="tk"/g, 'class="tk" aria-hidden="true"');
+  track.style.animation = '';
+  track.style.setProperty('--dur', Math.max(30, order.length * 3.2) + 's');
+  if (reduced) { track.style.animation = 'none'; $('ticker').style.overflowX = 'auto'; }
+}
+
+// ─────────────────────────────────────────────
+//  INDUSTRY MIX (donut)
+// ─────────────────────────────────────────────
+function sectorOf(t) { return (sectorCache[t] && sectorCache[t].sector) || SECTOR_OF[t] || null; }
+async function loadSectors() {
+  const need = stocks().map(h => h.ticker).filter(t => !sectorOf(t));
+  if (!need.length) return;
+  try {
+    const d = await getJSON(BACKEND_URL + '/api/sectors/' + need.join(','));
+    Object.assign(sectorCache, d.sectors || {});
+    try { localStorage.setItem(SECTOR_KEY, JSON.stringify(sectorCache)); } catch (e) {}
+  } catch (e) {}
+  renderMix();
+}
+function mixData(who) {
+  const list = who === 'pelosi' ? REF.pelosi.map(h => ({ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.cost), sector: h.sector}))
+    : who === 'trump' ? REF.trump.map(h => ({ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.cost), sector: h.sector}))
+    : myPortfolio.map(h => h.isCash
+        ? {ticker: h.ticker, value: h.marketValue || 0, sector: 'Cash'}
+        : {ticker: h.ticker, value: h.shares * priceOf(h.ticker, h.currentPrice || h.avgCost || 0), sector: sectorOf(h.ticker) || 'Other'});
+  const groups = {};
+  list.filter(x => x.value > 0).forEach(x => { (groups[x.sector] = groups[x.sector] || {sector: x.sector, value: 0, tickers: []}); groups[x.sector].value += x.value; groups[x.sector].tickers.push(x); });
+  let arr = Object.values(groups).sort((a, b) => b.value - a.value);
+  // Keep at most 7 named slices; fold the rest into Other. Cash and Other always sit last in gray tones.
+  const tail = arr.filter(g => g.sector === 'Cash' || g.sector === 'Other');
+  let named = arr.filter(g => g.sector !== 'Cash' && g.sector !== 'Other');
+  if (named.length > 7) {
+    const extra = named.slice(7); named = named.slice(0, 7);
+    const other = tail.find(g => g.sector === 'Other') || (tail.push({sector: 'Other', value: 0, tickers: []}), tail[tail.length - 1]);
+    extra.forEach(g => { other.value += g.value; other.tickers.push(...g.tickers); });
+  }
+  arr = [...named.map((g, i) => ({...g, color: MIX_COLORS[i]})), ...tail.sort((a, b) => a.sector === 'Cash' ? 1 : -1).map(g => ({...g, color: g.sector === 'Cash' ? '#C7D2E3' : '#6E7F9C'}))];
+  const total = arr.reduce((s, g) => s + g.value, 0);
+  return {groups: arr.map(g => ({...g, pct: total ? g.value / total * 100 : 0, tickers: g.tickers.sort((a, b) => b.value - a.value).map(x => x.ticker)})), total};
+}
+function renderMix() {
+  const who = [['me', 'You'], ['pelosi', 'Pelosi'], ['trump', 'Trump']];
+  $('mix-who').innerHTML = who.map(([k, l]) => `<button type="button" aria-pressed="${k === mixWho}" data-w="${k}">${l}</button>`).join('');
+  $('mix-who').querySelectorAll('button').forEach(b => b.onclick = () => { mixWho = b.dataset.w; mixHot = null; renderMix(); });
+
+  const svg = $('donut'), legend = $('mix-legend'), center = $('donut-center');
+  if (mixWho === 'me' && !myPortfolio.length) {
+    svg.innerHTML = '<circle cx="100" cy="100" r="70" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="34"/>';
+    center.innerHTML = '<div class="small">No holdings yet</div>';
+    legend.innerHTML = '<div class="muted-d" style="font-size:15px;line-height:1.5;padding:8px">Add your portfolio to see how it splits across industries. <a href="#import" style="color:#8EC5FF">Add portfolio</a></div>';
+    return;
+  }
+  const {groups, total} = mixData(mixWho);
+  if (!total) {
+    svg.innerHTML = '<circle cx="100" cy="100" r="70" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="34"/>';
+    center.innerHTML = '<div class="small">Waiting for prices</div>'; legend.innerHTML = ''; return;
+  }
+  const R = 70, C = 2 * Math.PI * R, gap = groups.length > 1 ? 1.2 : 0;
+  let off = 0;
+  svg.innerHTML = groups.map((g, i) => {
+    const len = Math.max(0, g.pct / 100 * C - gap);
+    const el = `<circle class="seg${mixHot === null ? '' : mixHot === i ? ' hot' : ' dim'}" data-i="${i}" cx="100" cy="100" r="${R}" stroke="${g.color}" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}"><title>${esc(g.sector)} ${g.pct.toFixed(1)}%</title></circle>`;
+    off += g.pct / 100 * C;
+    return el;
+  }).join('');
+  const h = mixHot !== null ? groups[mixHot] : null;
+  center.innerHTML = h
+    ? `<div class="big num">${h.pct.toFixed(1)}%</div><div class="small">${esc(h.sector)}</div>`
+    : `<div class="big num">${compact(total)}</div><div class="small">${groups.length} ${groups.length === 1 ? 'industry' : 'industries'}</div>`;
+  legend.innerHTML = groups.map((g, i) => `<button type="button" class="mix-row${mixHot === i ? ' hot' : ''}" data-i="${i}">
+      <span class="sw" style="background:${g.color}"></span><span>${esc(g.sector)}</span><span class="pc">${g.pct.toFixed(1)}%</span><span class="dl">${compact(g.value)}</span>
+      <span class="tks">${esc(g.tickers.slice(0, 6).join(', '))}${g.tickers.length > 6 ? ` +${g.tickers.length - 6}` : ''}</span>
+    </button>`).join('');
+  const pick = i => { mixHot = mixHot === i ? null : i; renderMix(); };
+  svg.querySelectorAll('.seg').forEach(c => { c.onclick = () => pick(+c.dataset.i); c.onmouseenter = () => { if (mixHot !== +c.dataset.i) { mixHot = +c.dataset.i; renderMix(); } }; });
+  svg.onmouseleave = () => { if (mixHot !== null) { mixHot = null; renderMix(); } };
+  legend.querySelectorAll('.mix-row').forEach(b => b.onclick = () => pick(+b.dataset.i));
+  $('mix-desc').textContent = 'Industry breakdown: ' + groups.map(g => `${g.sector} ${g.pct.toFixed(0)}%`).join(', ');
+}
+
+// ─────────────────────────────────────────────
 //  MOTION: reveal on scroll
 // ─────────────────────────────────────────────
 function wireReveal() {
@@ -1018,14 +1183,14 @@ function wireReveal() {
 //  INIT
 // ─────────────────────────────────────────────
 function refreshAll() {
-  renderHero(); renderHoldings(); renderFeed(); renderCompareSubs(); renderSignals();
-  loadPrices(); loadHistory();
+  renderHero(); renderHoldings(); renderFeed(); renderCompareSubs(); renderSignals(); renderTicker(); renderMix();
+  loadPrices(); loadHistory(); loadSectors();
 }
 function init() {
   wireReveal(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
-  renderHero(); renderHoldings(); renderFeed(); renderSignals();
-  loadPrices(); loadHistory(); loadTrades(); loadNews();
+  renderHero(); renderHoldings(); renderFeed(); renderSignals(); renderTicker(); renderMix();
+  loadPrices(); loadHistory(); loadTrades(); loadNews(); loadSectors();
   setInterval(loadPrices, 2 * 60 * 1000);
   setInterval(loadHistory, 10 * 60 * 1000);
   setInterval(loadNews, 15 * 60 * 1000);
