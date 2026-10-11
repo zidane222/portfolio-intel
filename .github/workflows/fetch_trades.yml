@@ -106,6 +106,11 @@ jobs:
                   return 'Private investment'
               return 'Other asset'
 
+          RANGES = {1001: '$1,001 - $15,000', 15001: '$15,001 - $50,000', 50001: '$50,001 - $100,000',
+                    100001: '$100,001 - $250,000', 250001: '$250,001 - $500,000', 500001: '$500,001 - $1,000,000',
+                    1000001: '$1,000,001 - $5,000,000', 5000001: '$5,000,001 - $25,000,000',
+                    25000001: '$25,000,001 - $50,000,000'}
+
           def make_trade(name, asset_text, tx, date_str, amount_text, filed_date, desc_text=None):
               ticker = extract_ticker(asset_text)
               company = re.split(r'\(|\[', desc_text if desc_text is not None else asset_text)[0]
@@ -118,6 +123,11 @@ jobs:
               amount_clean = re.sub(r'\s+', ' ', amount_clean).strip()
               am = re.search(r'\$[\d,]+\s*-\s*\$[\d,]+', amount_clean) or re.search(r'Over \$[\d,]+', amount_clean)
               amount = re.sub(r'\s*-\s*', ' - ', am.group(0)) if am else ''
+              if not amount:
+                  # Wrapped cells can cut off the upper bound; House ranges are fixed, so infer it
+                  lo = re.search(r'\$([\d,]+)\s*-', amount_clean)
+                  if lo:
+                      amount = RANGES.get(int(lo.group(1).replace(',', '')), '')
               return {
                   'date': parse_date(date_str),
                   'filed': filed_date,
@@ -175,14 +185,20 @@ jobs:
               if (i+1) % 50 == 0:
                   print(f"Processed {i+1}/{len(filings)}, trades: {len(all_trades)}")
 
-          # Deduplicate
-          seen = set()
-          unique = []
+          # Deduplicate. The same trade can appear twice (a collapsed copy plus the full row),
+          # so prefer the most complete version and drop no-ticker copies of a stock row.
+          def norm(x):
+              return re.sub(r'[^a-z0-9]', '', (x or '').lower())[:14]
+          def score(t):
+              return (bool(t['ticker']), bool(t['amount']), bool(t['filed']))
+          best = {}
           for t in all_trades:
-              key = f"{t['representative']}-{t['ticker'] or t['description']}-{t['date']}-{t['type']}"
-              if key not in seen:
-                  seen.add(key)
-                  unique.append(t)
+              key = (t['representative'], t['date'], t['type'], t['ticker'] or norm(t['description']))
+              if key not in best or score(t) > score(best[key]):
+                  best[key] = t
+          stock_desc = {(t['representative'], t['date'], t['type'], norm(t['description'])) for t in best.values() if t['ticker']}
+          unique = [t for t in best.values()
+                    if t['ticker'] or (t['representative'], t['date'], t['type'], norm(t['description'])) not in stock_desc]
 
           # Sort newest first
           unique.sort(key=lambda x: x.get('date', ''), reverse=True)
