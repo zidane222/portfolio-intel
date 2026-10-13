@@ -1,7 +1,7 @@
 // Offline support: the app shell loads from cache instantly and refreshes in the background;
 // data files and API calls go to the network first and fall back to the last saved copy.
-const CACHE = 'pi-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
+const CACHE = 'pi-v2';
+const SHELL = ['./', './index.html', './app.js?v=1', './manifest.webmanifest', './icons/icon-192.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
