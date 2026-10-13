@@ -705,7 +705,7 @@ def _plaid(path, body):
     d = r.json()
     if r.status_code != 200:
         print('Plaid error:', path, d.get('error_code'), d.get('error_message'))
-        raise RuntimeError(d.get('display_message') or d.get('error_message') or 'Plaid request failed.')
+        raise RuntimeError(f"{d.get('display_message') or d.get('error_message') or 'Plaid request failed.'} [{d.get('error_type', '')} {d.get('error_code', '')}, {_plaid_base().split('//')[1].split('.')[0]}]")
     return d
 
 def _plaid_guard():
