@@ -698,7 +698,7 @@ def _plaid_fernet():
     return Fernet(key.encode())
 
 def _plaid(path, body):
-    cid, sec = os.environ.get('PLAID_CLIENT_ID', ''), os.environ.get('PLAID_SECRET', '')
+    cid, sec = os.environ.get('PLAID_CLIENT_ID', '').strip().strip('"\''), os.environ.get('PLAID_SECRET', '').strip().strip('"\'')
     if not cid or not sec:
         raise RuntimeError('Plaid is not set up on the server yet.')
     r = requests.post(_plaid_base() + path, json={'client_id': cid, 'secret': sec, **body}, timeout=30)
