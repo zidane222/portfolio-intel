@@ -723,8 +723,14 @@ def _open_token(tok):
 
 @app.route('/api/plaid/status')
 def plaid_status():
-    return jsonify({'configured': bool(os.environ.get('PLAID_CLIENT_ID') and os.environ.get('PLAID_SECRET')),
-                    'env': 'production' if _plaid_base().startswith('https://production') else 'sandbox'})
+    # Lengths and the first 4 characters of the client id only (the client id is not secret); never the secret
+    cid = os.environ.get('PLAID_CLIENT_ID', '').strip().strip('"\'')
+    sec = os.environ.get('PLAID_SECRET', '').strip().strip('"\'')
+    return jsonify({'configured': bool(cid and sec),
+                    'env': 'production' if _plaid_base().startswith('https://production') else 'sandbox',
+                    'env_raw': os.environ.get('PLAID_ENV', ''),
+                    'client_id_length': len(cid), 'client_id_starts': cid[:4],
+                    'secret_length': len(sec), 'expected': 'client_id 24, secret 30'})
 
 @app.route('/api/plaid/link-token', methods=['POST'])
 def plaid_link_token():
