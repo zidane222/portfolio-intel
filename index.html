@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Portfolio Intel">
 <meta name="theme-color" content="#071228">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net blob:; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://portfolio-intel-escf.onrender.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdn.plaid.com blob:; frame-src https://cdn.plaid.com; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://portfolio-intel-escf.onrender.com https://*.plaid.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -677,6 +677,15 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
         <p class="fine" style="margin-top:14px">Your file is read in this browser. Only its text goes to the AI to find holdings, with long numbers like account numbers removed first. Nothing is stored except tickers and share counts, on this device, encrypted when you set a passcode.</p>
         <div style="margin-top:12px"><button class="btn ghost small" type="button" id="manual">Enter holdings manually</button></div>
       </div>
+      <div class="card-l" id="plaid-card">
+        <strong style="font-size:17px">Connect your broker</strong>
+        <p class="fine" style="margin:8px 0 14px" id="plaid-text">Sign in to Merrill or another broker through Plaid and your holdings sync automatically. Your login goes to Plaid, never to this app.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn small" type="button" id="plaid-connect">Connect</button>
+          <button class="btn small" type="button" id="plaid-sync" hidden>Sync now</button>
+          <button class="btn ghost small" type="button" id="plaid-off" hidden>Disconnect</button>
+        </div>
+      </div>
 
       <div class="card-l" id="review" style="display:none">
         <div style="font-size:12px;font-weight:600;color:var(--dark-3)">Review</div>
@@ -858,6 +867,6 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <dialog class="sheet" id="tk-sheet" aria-label="Stock details"><div class="sheet-in" id="tk-body"></div></dialog>
 
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

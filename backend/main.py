@@ -678,6 +678,116 @@ def ai_insights():
         print('AI error:', e)
         return jsonify({'error': 'The assistant is unavailable right now.'}), 502
 
+
+# ── PLAID (brokerage sync) ──
+# Keys live only in Render env vars: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV (sandbox or production).
+# No database: the Plaid access token is encrypted with a server key and handed back to the user's device,
+# which stores it in its passcode-encrypted vault. The server never keeps it.
+import base64 as _b64, hashlib as _hashlib, secrets as _secrets
+from cryptography.fernet import Fernet, InvalidToken
+
+def _plaid_base():
+    env = os.environ.get('PLAID_ENV', 'sandbox').strip().lower()
+    return 'https://production.plaid.com' if env == 'production' else 'https://sandbox.plaid.com'
+
+def _plaid_fernet():
+    key = os.environ.get('PLAID_TOKEN_KEY') or ''
+    if not key:
+        seed = (os.environ.get('PLAID_SECRET', '') + ':portfolio-intel-token').encode()
+        key = _b64.urlsafe_b64encode(_hashlib.sha256(seed).digest()).decode()
+    return Fernet(key.encode())
+
+def _plaid(path, body):
+    cid, sec = os.environ.get('PLAID_CLIENT_ID', ''), os.environ.get('PLAID_SECRET', '')
+    if not cid or not sec:
+        raise RuntimeError('Plaid is not set up on the server yet.')
+    r = requests.post(_plaid_base() + path, json={'client_id': cid, 'secret': sec, **body}, timeout=30)
+    d = r.json()
+    if r.status_code != 200:
+        print('Plaid error:', path, d.get('error_code'), d.get('error_message'))
+        raise RuntimeError(d.get('display_message') or d.get('error_message') or 'Plaid request failed.')
+    return d
+
+def _plaid_guard():
+    if not origin_allowed():
+        return jsonify({'error': 'Not allowed'}), 403
+    if rate_limited('ai'):
+        return jsonify({'error': 'Too many requests. Try again later.'}), 429
+    return None
+
+def _open_token(tok):
+    try:
+        return _plaid_fernet().decrypt(str(tok or '').encode()).decode()
+    except (InvalidToken, ValueError):
+        raise RuntimeError('This connection is no longer valid. Connect again.')
+
+@app.route('/api/plaid/status')
+def plaid_status():
+    return jsonify({'configured': bool(os.environ.get('PLAID_CLIENT_ID') and os.environ.get('PLAID_SECRET')),
+                    'env': 'production' if _plaid_base().startswith('https://production') else 'sandbox'})
+
+@app.route('/api/plaid/link-token', methods=['POST'])
+def plaid_link_token():
+    g = _plaid_guard()
+    if g: return g
+    try:
+        d = _plaid('/link/token/create', {'client_name': 'Portfolio Intel', 'language': 'en', 'country_codes': ['US'],
+                                          'user': {'client_user_id': _secrets.token_hex(12)}, 'products': ['investments'],
+                                          **({'redirect_uri': os.environ['PLAID_REDIRECT_URI']} if os.environ.get('PLAID_REDIRECT_URI') else {})})
+        return jsonify({'link_token': d['link_token']})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+@app.route('/api/plaid/exchange', methods=['POST'])
+def plaid_exchange():
+    g = _plaid_guard()
+    if g: return g
+    body = flask_request.get_json(silent=True) or {}
+    try:
+        d = _plaid('/item/public_token/exchange', {'public_token': str(body.get('public_token') or '')})
+        return jsonify({'token': _plaid_fernet().encrypt(d['access_token'].encode()).decode()})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
+@app.route('/api/plaid/holdings', methods=['POST'])
+def plaid_holdings():
+    g = _plaid_guard()
+    if g: return g
+    body = flask_request.get_json(silent=True) or {}
+    try:
+        d = _plaid('/investments/holdings/get', {'access_token': _open_token(body.get('token'))})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+    secs = {x['security_id']: x for x in d.get('securities', [])}
+    merged = {}
+    for h in d.get('holdings', []):
+        s = secs.get(h.get('security_id'), {})
+        cash = bool(s.get('is_cash_equivalent')) or s.get('type') == 'cash'
+        tk = (s.get('ticker_symbol') or ('CASH' if cash else '')).upper()
+        if not tk:
+            continue
+        qty = float(h.get('quantity') or 0)
+        m = merged.setdefault(tk, {'ticker': tk, 'name': s.get('name') or tk, 'shares': 0.0, 'cost': 0.0, 'value': 0.0, 'isCash': cash})
+        m['shares'] += qty
+        m['cost'] += float(h.get('cost_basis') or 0)
+        m['value'] += float(h.get('institution_value') or 0)
+    out = [{'ticker': m['ticker'], 'name': m['name'], 'shares': round(m['shares'], 6), 'isCash': m['isCash'],
+            'avgCost': round(m['cost'] / m['shares'], 4) if m['shares'] and m['cost'] else None,
+            'marketValue': round(m['value'], 2)} for m in merged.values()]
+    inst = ', '.join(sorted({a.get('name', '') for a in d.get('accounts', []) if a.get('type') == 'investment'})) or None
+    return jsonify({'holdings': out, 'accounts': inst, 'as_of': datetime.now().strftime('%Y-%m-%d')})
+
+@app.route('/api/plaid/remove', methods=['POST'])
+def plaid_remove():
+    g = _plaid_guard()
+    if g: return g
+    body = flask_request.get_json(silent=True) or {}
+    try:
+        _plaid('/item/remove', {'access_token': _open_token(body.get('token'))})
+    except Exception as e:
+        print('Plaid remove:', e)
+    return jsonify({'ok': True})
+
 # ── HEALTH CHECK ──
 @app.route('/')
 @app.route('/health')
@@ -697,7 +807,8 @@ def health():
             '/api/feeds',
             '/api/dividends/<tickers>',
             '/api/top-rates',
-            '/api/ai'
+            '/api/ai',
+            '/api/plaid/*'
         ],
         'updated': str(datetime.now())
     })
