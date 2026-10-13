@@ -399,7 +399,7 @@ jobs:
       - name: Send alerts for new filings
         continue-on-error: true
         env:
-          NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || vars.NTFY_TOPIC }}
           ALERT_TICKERS: ${{ vars.ALERT_TICKERS }}
           ALERT_MEMBERS: ${{ vars.ALERT_MEMBERS }}
           ALERT_SECTORS: ${{ vars.ALERT_SECTORS }}
@@ -408,7 +408,7 @@ jobs:
         run: |
           python3 << 'PYEOF'
           # Push a notification through ntfy.sh when a watched member or ticker shows up in a new filing.
-          # Set repo variables NTFY_TOPIC (required), ALERT_TICKERS ("NVDA,VOO") and ALERT_MEMBERS ("Pelosi").
+          # Set repo secret NTFY_TOPIC (required, long random name), ALERT_TICKERS ("NVDA,VOO") and ALERT_MEMBERS ("Pelosi").
           # Optional narrowing: ALERT_SECTORS ("Technology,Energy"), ALERT_TYPE ("buy" or "sell"), ALERT_MIN_AMOUNT ("100001").
           import json, os, re, requests, datetime
           topic = (os.environ.get('NTFY_TOPIC') or '').strip()

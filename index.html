@@ -674,7 +674,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
           <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.txt,.xlsx,.xls,image/*">
         </label>
         <div class="progress" id="progress"><span class="spinner" aria-hidden="true"></span><span id="progress-text">Reading your file…</span></div>
-        <p class="fine" style="margin-top:14px">Your file is read in this browser. Only its text goes to the AI to find holdings, with long numbers like account numbers removed first. Nothing is stored except tickers and share counts, on this device.</p>
+        <p class="fine" style="margin-top:14px">Your file is read in this browser. Only its text goes to the AI to find holdings, with long numbers like account numbers removed first. Nothing is stored except tickers and share counts, on this device, encrypted when you set a passcode.</p>
         <div style="margin-top:12px"><button class="btn ghost small" type="button" id="manual">Enter holdings manually</button></div>
       </div>
 
@@ -787,7 +787,9 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
         <li><b>Subscribe to your private topic</b> in the app:
           <div class="copy-row"><code id="ntfy-topic"></code><button class="btn ghost small" type="button" data-copy="ntfy-topic">Copy</button></div></li>
         <li><b>Tell the daily updater what to watch.</b> In your GitHub repo, open <a href="https://github.com/zidane222/portfolio-intel/settings/variables/actions" target="_blank" rel="noopener">Settings · Secrets and variables · Actions · Variables</a> and add:
+          <div class="fine" style="margin:6px 0">Add the topic under the <a href="https://github.com/zidane222/portfolio-intel/settings/secrets/actions/new" target="_blank" rel="noopener">Secrets</a> tab (not Variables), so nobody can see it:</div>
           <div class="copy-row"><code>NTFY_TOPIC</code><code id="v-topic"></code><button class="btn ghost small" type="button" data-copy="v-topic">Copy</button></div>
+          <div class="fine" style="margin:6px 0">Then these under Variables:</div>
           <div class="copy-row"><code>ALERT_TICKERS</code><code id="v-tickers"></code><button class="btn ghost small" type="button" data-copy="v-tickers">Copy</button></div>
           <div class="copy-row"><code>ALERT_MEMBERS</code><code id="v-members">Pelosi</code><button class="btn ghost small" type="button" data-copy="v-members">Copy</button></div>
           <div class="copy-row"><code>ALERT_SECTORS</code><code id="v-sectors">(optional)</code><button class="btn ghost small" type="button" data-copy="v-sectors">Copy</button></div>
@@ -924,6 +926,72 @@ const SERIES = [
 // ─────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────
+
+// ── Encrypted storage ──
+// With a passcode set, holdings, cash and value history are stored encrypted (AES-GCM, key from the passcode via PBKDF2).
+// The key lives only in this tab's session storage and is dropped on lock, so the data is unreadable without the passcode.
+const VAULT_KEYS = ['pi.portfolio.v2', 'pi.snapshots.v1', 'pi.cash.v1'];
+const VAULT = {key: null, cache: {}};
+const vb64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const vunb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function vaultOn() { try { const c = JSON.parse(localStorage.getItem('pi.lock.v1')); return !!(c && c.encSalt); } catch (e) { return false; } }
+async function vaultDerive(pass, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 210000}, base, {name: 'AES-GCM', length: 256}, true, ['encrypt', 'decrypt']);
+}
+async function vaultEncrypt(text) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  return 'enc1:' + vb64(iv) + ':' + vb64(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, VAULT.key, new TextEncoder().encode(text)));
+}
+async function vaultDecrypt(v) {
+  const [, iv, ct] = v.split(':');
+  return new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: vunb64(iv)}, VAULT.key, vunb64(ct)));
+}
+function vget(k) {
+  if (!VAULT_KEYS.includes(k)) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  if (k in VAULT.cache) return VAULT.cache[k];
+  let v = null; try { v = localStorage.getItem(k); } catch (e) {}
+  return v && v.startsWith('enc1:') ? null : v;
+}
+function vset(k, val) {
+  if (VAULT_KEYS.includes(k) && VAULT.key) {
+    VAULT.cache[k] = val;
+    vaultEncrypt(val).then(c => { try { localStorage.setItem(k, c); } catch (e) {} });
+    return;
+  }
+  if (VAULT_KEYS.includes(k) && vaultOn()) return; // locked: never write plain text over encrypted data
+  try { localStorage.setItem(k, val); } catch (e) {}
+}
+// Open the vault with the key saved for this tab, if any
+async function openVault() {
+  if (!vaultOn()) return;
+  let raw = null; try { raw = sessionStorage.getItem('pi.vk'); } catch (e) {}
+  if (!raw) return;
+  try { VAULT.key = await crypto.subtle.importKey('raw', vunb64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']); }
+  catch (e) { VAULT.key = null; return; }
+  for (const k of VAULT_KEYS) {
+    let v = null; try { v = localStorage.getItem(k); } catch (e) {}
+    if (!v) continue;
+    try { VAULT.cache[k] = v.startsWith('enc1:') ? await vaultDecrypt(v) : v; } catch (e) { VAULT.cache[k] = null; }
+  }
+}
+async function vaultUse(key) {
+  VAULT.key = key;
+  try { sessionStorage.setItem('pi.vk', vb64(await crypto.subtle.exportKey('raw', key))); } catch (e) {}
+}
+// Turn encryption on (or re-key it) using the current plain or decrypted values
+async function vaultSeal(pass) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const vals = {}; VAULT_KEYS.forEach(k => vals[k] = vget(k));
+  await vaultUse(await vaultDerive(pass, salt));
+  for (const k of VAULT_KEYS) if (vals[k] != null) { VAULT.cache[k] = vals[k]; localStorage.setItem(k, await vaultEncrypt(vals[k])); }
+  return vb64(salt);
+}
+function vaultUnseal() {
+  VAULT_KEYS.forEach(k => { const v = vget(k); try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} });
+  VAULT.key = null; VAULT.cache = {};
+  try { sessionStorage.removeItem('pi.vk'); } catch (e) {}
+}
 let myPortfolio = loadPortfolio();
 let watchlist = (() => { try { return JSON.parse(localStorage.getItem(WATCH_KEY)) || []; } catch (e) { return []; } })();
 function saveWatch() { try { localStorage.setItem(WATCH_KEY, JSON.stringify(watchlist)); } catch (e) {} }
@@ -964,7 +1032,7 @@ const usd = (v, d=2) => (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('e
 const compact = v => v >= 1e9 ? '$' + (v/1e9).toFixed(2) + 'B' : v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + (v/1e3).toFixed(1) + 'K' : usd(v);
 const pct = (v, d=1) => (v >= 0 ? '+' : '') + v.toFixed(d) + '%';
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-function store(get, val) { try { return get ? localStorage.getItem(STORE_KEY) : localStorage.setItem(STORE_KEY, val); } catch (e) { return null; } }
+function store(get, val) { return get ? vget(STORE_KEY) : vset(STORE_KEY, val); }
 function loadPortfolio() { try { return JSON.parse(store(true)) || []; } catch (e) { return []; } }
 function savePortfolio() { store(false, JSON.stringify(myPortfolio)); }
 function stocks() { return myPortfolio.filter(h => !h.isCash); }
@@ -1830,9 +1898,9 @@ function wireTickerLinks() {
 function renderAlerts() {
   let topic = null;
   try { topic = localStorage.getItem('pi.ntfy'); } catch (e) {}
-  if (!topic) {
-    const rnd = (crypto.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(36).padStart(2, '0')).join('') : Math.random().toString(36).slice(2, 14));
-    topic = 'portfolio-intel-' + rnd.slice(0, 12);
+  if (!topic || topic.startsWith('portfolio-intel-')) { // older short names are replaced with a longer random one
+    const rnd = (crypto.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(36).padStart(2, '0')).join('') : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+    topic = 'pi-' + rnd.slice(0, 28);
     try { localStorage.setItem('pi.ntfy', topic); } catch (e) {}
   }
   $('ntfy-topic').textContent = topic; $('v-topic').textContent = topic;
@@ -1896,6 +1964,7 @@ async function hashPass(pass, salt, iter) {
 }
 function lockConf() { try { return JSON.parse(localStorage.getItem(LOCK_KEY)); } catch (e) { return null; } }
 function showLock(on) {
+  if (on && VAULT.key) { VAULT.key = null; VAULT.cache = {}; try { sessionStorage.removeItem('pi.vk'); } catch (e) {} myPortfolio = []; snapshots = []; }
   document.body.classList.toggle('locked', on);
   $('lock').hidden = !on;
   if (on) { $('lock-in').value = ''; $('lock-err').textContent = ''; setTimeout(() => $('lock-in').focus(), 50); $('tk-sheet').open && $('tk-sheet').close(); }
@@ -1917,7 +1986,13 @@ function wireLock() {
     const c = lockConf(); if (!c) return showLock(false);
     if (Date.now() < lockUntil) { $('lock-err').textContent = `Too many tries. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)} seconds.`; return; }
     const ok = await hashPass($('lock-in').value, unb64(c.salt), c.iter) === c.hash;
-    if (ok) { lockFails = 0; try { sessionStorage.setItem('pi.unlocked', String(Date.now())); } catch (e2) {} showLock(false); }
+    if (ok) {
+      lockFails = 0; try { sessionStorage.setItem('pi.unlocked', String(Date.now())); } catch (e2) {}
+      if (c.encSalt) { await vaultUse(await vaultDerive($('lock-in').value, unb64(c.encSalt))); location.reload(); return; }
+      // Older passcode without encryption: turn it on now
+      try { c.encSalt = await vaultSeal($('lock-in').value); localStorage.setItem(LOCK_KEY, JSON.stringify(c)); } catch (e2) {}
+      showLock(false);
+    }
     else { lockFails++; $('lock-in').value = ''; if (lockFails >= 5) { lockUntil = Date.now() + 30000; lockFails = 0; } $('lock-err').textContent = Date.now() < lockUntil ? 'Too many tries. Wait 30 seconds.' : 'Wrong passcode.'; }
   };
   $('lock-forgot').onclick = () => {
@@ -1928,14 +2003,14 @@ function wireLock() {
   const dlg = $('pass-dlg');
   $('lock-set').onclick = () => { $('pass-1').value = ''; $('pass-2').value = ''; $('pass-err').textContent = ''; $('pass-off').style.display = lockConf() ? '' : 'none'; dlg.showModal(); };
   $('pass-cancel').onclick = () => dlg.close();
-  $('pass-off').onclick = () => { try { localStorage.removeItem(LOCK_KEY); } catch (e) {} $('lock-set').textContent = 'Set passcode'; dlg.close(); };
+  $('pass-off').onclick = () => { vaultUnseal(); try { localStorage.removeItem(LOCK_KEY); } catch (e) {} $('lock-set').textContent = 'Set passcode'; dlg.close(); };
   $('pass-form').onsubmit = async e => {
     e.preventDefault();
     const a = $('pass-1').value, b = $('pass-2').value;
     if (a.length < 4) { $('pass-err').textContent = 'Use at least 4 characters.'; return; }
     if (a !== b) { $('pass-err').textContent = 'Passcodes don\'t match.'; return; }
     const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 210000;
-    try { localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter)})); sessionStorage.setItem('pi.unlocked', String(Date.now())); }
+    try { const encSalt = await vaultSeal(a); localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter), encSalt})); sessionStorage.setItem('pi.unlocked', String(Date.now())); }
     catch (err) { $('pass-err').textContent = 'Couldn\'t save on this device.'; return; }
     $('lock-set').textContent = 'Change passcode'; dlg.close();
   };
@@ -2405,7 +2480,7 @@ let rates = null, yields = null, topRates = null, divData = {}, cashTab = 'all';
 const cashKey = 'pi.cash.v1';
 function cashInputs() {
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(cashKey)) || {}; } catch (e) {}
+  try { saved = JSON.parse(vget(cashKey)) || {}; } catch (e) {}
   const mm = myPortfolio.filter(h => h.isCash).reduce((s, h) => s + (h.marketValue || 0), 0);
   const cashRows = myPortfolio.filter(h => h.isCash && h.apy);
   const wApy = cashRows.length ? cashRows.reduce((s, h) => s + h.apy * (h.marketValue || 0), 0) / Math.max(1, cashRows.reduce((s, h) => s + (h.marketValue || 0), 0)) : undefined;
@@ -2480,7 +2555,7 @@ function renderCash() {
 function wireCash() {
   const save = () => {
     const bal = parseFloat($('cash-bal').value.replace(/[$,\s]/g, '')), apy = parseFloat($('cash-apy').value);
-    try { localStorage.setItem(cashKey, JSON.stringify({bal: isFinite(bal) ? bal : undefined, apy: isFinite(apy) ? apy : undefined})); } catch (e) {}
+    vset(cashKey, JSON.stringify({bal: isFinite(bal) ? bal : undefined, apy: isFinite(apy) ? apy : undefined}));
     renderCash();
   };
   $('cash-bal').addEventListener('change', save); $('cash-apy').addEventListener('change', save);
@@ -2599,7 +2674,8 @@ const GOLD = new Set(['GLD', 'IAU', 'SLV', 'GLDM', 'SGOL', 'PPLT', 'BAR', 'AAAU'
 const BONDS = new Set(['BND', 'AGG', 'TLT', 'SHY', 'IEF', 'VGIT', 'VGSH', 'VCIT', 'VCSH', 'LQD', 'HYG', 'JNK', 'MUB', 'SGOV', 'BIL', 'TIP', 'SCHZ', 'BNDX', 'GOVT', 'USFR', 'TFLO', 'VTEB']);
 const CLASS_COLORS = {'Cash & money market': '#9DBBE0', 'Equities': '#0A84FF', 'Fixed income': '#30A46C', 'Alternatives': '#E8A33D'};
 const SNAP_KEY = 'pi.snapshots.v1';
-let snapshots = (() => { try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } })();
+function loadSnaps() { try { return JSON.parse(vget(SNAP_KEY)) || []; } catch (e) { return []; } }
+let snapshots = loadSnaps();
 function saveSnap(d, v, src) {
   if (!(v > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
   // A statement value for a date beats a live reading for the same date
@@ -2609,7 +2685,7 @@ function saveSnap(d, v, src) {
   snapshots.push({d, v: Math.round(v * 100) / 100, src});
   snapshots.sort((a, b) => a.d.localeCompare(b.d));
   snapshots = snapshots.slice(-400);
-  try { localStorage.setItem(SNAP_KEY, JSON.stringify(snapshots)); } catch (e) {}
+  vset(SNAP_KEY, JSON.stringify(snapshots));
 }
 function classOf(h) {
   if (h.isCash) return 'Cash & money market';
@@ -2871,7 +2947,7 @@ function init() {
   setInterval(loadTrades, 60 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPrices(); });
 }
-init();
+openVault().then(() => { myPortfolio = loadPortfolio(); snapshots = loadSnaps(); init(); });
 </script>
 </body>
 </html>
