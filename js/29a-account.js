@@ -194,6 +194,7 @@ function wireAccount() {
   if (s && !s.email) sbFetch('/auth/v1/user').then(u => { sbSave({...sbSession(), email: u.email}); syncUI(); }).catch(() => {});
   syncUI();
   if (typeof wirePasskeys === 'function') wirePasskeys();
+  wireWelcome();
   syncOnStart().then(() => {
     if (!justSignedIn) return;
     location.hash = '#import'; // the Portfolio page, where the sync box lives
@@ -207,4 +208,24 @@ function wireAccount() {
       setTimeout(() => card.classList.remove('flash'), 2500);
     }, 400);
   });
+}
+
+// First visit: offer sign-up / sign-in once, with a skip
+const WELCOME_KEY = 'pi.welcome.v1';
+function wireWelcome() {
+  const dlg = $('welcome-dlg'); if (!dlg) return;
+  const seen = (() => { try { return localStorage.getItem(WELCOME_KEY); } catch (e) { return '1'; } })();
+  const done = () => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) {} dlg.close(); };
+  const toCard = focusId => {
+    done(); location.hash = '#import';
+    setTimeout(() => { const c = $('sync-card'); if (!c) return; c.scrollIntoView({behavior: 'smooth', block: 'center'}); c.classList.add('flash');
+      setTimeout(() => c.classList.remove('flash'), 2500); focusId && $(focusId) && $(focusId).focus(); }, 400);
+  };
+  $('welcome-email').onclick = () => toCard('sync-email');
+  $('welcome-skip').onclick = done;
+  const pk = $('welcome-pk');
+  if (typeof pkOn === 'function' && pkOn()) { pk.hidden = false; pk.onclick = () => { toCard(); pkSignIn().catch(e => pkErr(e, syncUI)); }; }
+  dlg.addEventListener('cancel', () => { try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) {} });
+  const c = lockConf();
+  if (!seen && !sbSession() && !justSignedIn && !(c && c.encSalt) && !document.body.classList.contains('locked')) dlg.showModal();
 }

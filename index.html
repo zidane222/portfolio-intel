@@ -878,6 +878,16 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
     <button type="button" class="lock-forgot" id="lock-forgot">Forgot passcode?</button>
   </form>
 </div>
+<dialog class="pass-dlg" id="welcome-dlg" aria-labelledby="welcome-t">
+  <h2 id="welcome-t" style="font-size:19px;margin-bottom:6px">Welcome to Portfolio Intel</h2>
+  <p class="fine" style="margin-bottom:14px">Sign in to keep your portfolio on all your devices, encrypted so only you can read it. New here? The same step creates your account.</p>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <button class="btn" type="button" id="welcome-pk" hidden>Sign in with a passkey</button>
+    <button class="btn" type="button" id="welcome-email">Sign up or sign in with email</button>
+    <button class="btn ghost" type="button" id="welcome-skip">Skip, use without an account</button>
+  </div>
+  <p class="fine" style="margin-top:12px">Without an account, everything stays on this device only. You can sign in later from the Portfolio page.</p>
+</dialog>
 <dialog class="pass-dlg" id="pass-dlg" aria-labelledby="pass-t">
   <form method="dialog" id="pass-form">
     <h2 id="pass-t" style="font-size:19px;margin-bottom:6px">Set a passcode</h2>
@@ -921,7 +931,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/27-risk.js?v=10"></script>
 <script src="js/28-review.js?v=10"></script>
 <script src="js/29-leaderboard.js?v=10"></script>
-<script src="js/29a-account.js?v=11"></script>
+<script src="js/29a-account.js?v=12"></script>
 <script src="js/29c-passkey.js?v=11"></script>
 <script src="js/29b-pages.js?v=10"></script>
 <script src="js/30-init.js?v=10"></script>
