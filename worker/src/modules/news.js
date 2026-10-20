@@ -84,9 +84,14 @@ export async function tickerNews(req, env, url, raw) {
   const per = Math.max(2, Math.min(parseInt(url.searchParams.get('per') || '3', 10) || 3, 6));
   const lists = await pool(list, 6, async t => {
     let items = memGet('tn:' + t);
-    if (!items) { items = await googleNews(`"${t}" stock when:7d`, 6); memSet('tn:' + t, items, 1200); }
+    if (!items) { items = await googleNews(`"${t}" stock when:7d`, 6); if (items.length) memSet('tn:' + t, items, 1200); }
     return items;
   });
+  // Google News often refuses cloud servers: if nothing came back, ask the backup server (a different network)
+  if (!lists.some(l => l && l.length) && env && env.FALLBACK_API) {
+    const d = await grab(`${env.FALLBACK_API}/api/news/tickers/${list.join(',')}?per=${per}`, {timeout: 25000});
+    if (d && Array.isArray(d.articles) && d.articles.length) return json({articles: d.articles, updated: nowIso(), via: 'backup'});
+  }
   const seen = new Set(), articles = [];
   list.forEach((t, i) => {
     for (const a of (lists[i] || []).slice(0, per)) {
@@ -98,7 +103,7 @@ export async function tickerNews(req, env, url, raw) {
   return json({articles, updated: nowIso()});
 }
 
-export async function news() {
+export async function news(req, env) {
   let data = memGet('news');
   if (!data) {
     const queries = ['Congress stock trade disclosure', 'Pelosi stock trade', 'Senate stock trade', 'stock market today'];
@@ -106,7 +111,11 @@ export async function news() {
     const seen = new Set(), articles = [];
     queries.forEach((q, i) => (lists[i] || []).forEach(a => { if (!seen.has(a.title)) { seen.add(a.title); articles.push({...a, query: q}); } }));
     data = {articles: articles.slice(0, 20), updated: nowIso(), count: Math.min(articles.length, 20)};
-    memSet('news', data, 300);
+    if (!articles.length && env && env.FALLBACK_API) {
+      const d = await grab(env.FALLBACK_API + '/api/news', {timeout: 25000});
+      if (d && Array.isArray(d.articles) && d.articles.length) data = {...d, via: 'backup'};
+    }
+    if (data.articles.length) memSet('news', data, 300);
   }
   return json(data);
 }
