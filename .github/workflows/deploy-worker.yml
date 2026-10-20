@@ -42,4 +42,4 @@ jobs:
           grep -oE "https://[a-z0-9.-]+\.workers\.dev" deploy.log | head -1 | sed 's/^/::notice::Worker URL /'
         env:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
-          CF_ACCOUNT_RAW: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_ACCOUNT_RAW: ${{ secrets.cfkd || secrets.CLOUDFLARE_ACCOUNT_ID }}
