@@ -85,3 +85,25 @@ console.log(`\n${n} tests passed`);
   globalThis.fetch = real;
   console.log('ok reddit falls back to backup server');
 }
+// Google News blocked -> ticker news and news come from the backup server, and empty results are not cached
+{
+  const {tickerNews, news} = await import('../src/modules/news.js');
+  (await import('../src/lib/http.js')).memClear();
+  const real = globalThis.fetch; let gn = 0;
+  globalThis.fetch = async (u) => {
+    u = String(u);
+    if (u.includes('news.google.com')) { gn++; return new Response('blocked', {status: 503}); }
+    if (u.startsWith('https://backup.test/api/news/tickers/')) return new Response(JSON.stringify({articles: [{title: 'Backup NVDA', link: 'https://b/1', ticker: 'NVDA'}]}), {status: 200});
+    if (u === 'https://backup.test/api/news') return new Response(JSON.stringify({articles: [{title: 'Backup top', link: 'https://b/2'}]}), {status: 200});
+    return new Response('no', {status: 404});
+  };
+  const e = {FALLBACK_API: 'https://backup.test'};
+  const d = await (await tickerNews(null, e, new URL('https://w/api/news/tickers/ZZZQ?per=3'), 'ZZZQ')).json();
+  assert.equal(d.articles[0].title, 'Backup NVDA');
+  const before = gn; await tickerNews(null, e, new URL('https://w/api/news/tickers/ZZZQ?per=3'), 'ZZZQ');
+  assert.ok(gn > before, 'empty result was cached');
+  const n = await (await news(null, e)).json();
+  assert.equal(n.articles[0].title, 'Backup top');
+  globalThis.fetch = real;
+  console.log('ok google news falls back to backup server, empties not cached');
+}
