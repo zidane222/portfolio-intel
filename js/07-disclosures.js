@@ -20,13 +20,15 @@ async function loadTrades() {
   runCopyTest(); renderLeaderboard();
 }
 function renderFeed() {
-  const filters = [['all','All'],['pelosi','Pelosi'],['trump','Trump'],['large','Large trades'],['mine','My stocks + watchlist']];
+  const filters = [['all','All'],['house','House'],['senate','Senate'],['pelosi','Pelosi'],['trump','Trump'],['large','Large trades'],['mine','My stocks + watchlist']];
   $('feed-filter').innerHTML = filters.map(([k, l]) => `<button type="button" aria-pressed="${k === feedFilter}" data-f="${k}">${l}</button>`).join('');
   $('feed-filter').querySelectorAll('button').forEach(b => b.onclick = () => { feedFilter = b.dataset.f; feedLimit = 12; trumpLimit = 6; renderFeed(); });
 
   const mine = new Set(stocks().map(h => h.ticker));
   let list = trades;
   if (feedFilter === 'pelosi') list = trades.filter(t => /pelosi/i.test(t.representative || ''));
+  if (feedFilter === 'senate') list = trades.filter(t => t.source === 'senate');
+  if (feedFilter === 'house') list = trades.filter(t => t.source !== 'senate');
   if (feedFilter === 'mine') { const f = followed(); list = trades.filter(t => f.has(t.ticker)); }
   if (feedFilter === 'large') list = trades.filter(t => lowerBound(t.amount) >= LARGE);
   // Advanced filters
@@ -57,7 +59,7 @@ function renderFeed() {
     const lag = t.date && t.filed ? Math.round((new Date(t.filed) - new Date(t.date)) / 864e5) : null;
     const label = t.private ? `<span class="priv">${esc(t.description)}</span>` : `<button type="button" class="tk-link" data-tk="${esc(t.ticker)}">${esc(t.ticker)}</button>`;
     return `<div class="trade${fl ? ' flagged' : ''}">
-      <div><div class="who">${esc(name)}${t.sector ? ' · ' + esc(t.sector) : ''}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${big ? '<span class="pill big">Large</span>' : ''}${t.private ? `<span class="pill priv-pill">${esc(t.kind || 'Private investment')}</span>` : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}${lag !== null && lag > LATE_DAYS ? `<span class="pill late">Filed late</span>` : ''}${t.committees && t.committees.length ? `<span class="pill cmte" title="${esc('Sits on ' + t.committees.join(', '))}">Committee overlap</span>` : ''}</div>${t.committees && t.committees.length ? `<div class="who" style="margin-top:2px">Sits on ${esc(t.committees.join(', '))}</div>` : ''}</div>
+      <div><div class="who">${t.source === 'senate' ? '<span class="pill chamber">Senate</span>' : ''}${esc(name)}${t.sector ? ' · ' + esc(t.sector) : ''}</div><div class="what">${label}<span class="pill ${buy ? 'buy' : 'sell'}">${buy ? 'Buy' : 'Sell'}</span>${big ? '<span class="pill big">Large</span>' : ''}${t.private ? `<span class="pill priv-pill">${esc(t.kind || 'Private investment')}</span>` : ''}${mine.has(t.ticker) ? '<span class="pill mine">You own</span>' : ''}${lag !== null && lag > LATE_DAYS ? `<span class="pill late">Filed late</span>` : ''}${t.committees && t.committees.length ? `<span class="pill cmte" title="${esc('Sits on ' + t.committees.join(', '))}">Committee overlap</span>` : ''}</div>${t.committees && t.committees.length ? `<div class="who" style="margin-top:2px">Sits on ${esc(t.committees.join(', '))}</div>` : ''}</div>
       <div><div class="amt num">${esc(t.amount || '')}</div><div class="when">Traded ${esc(traded)}</div>${filed ? `<div class="when">Filed ${esc(filed)}${lag !== null && lag >= 0 ? ` · ${lag}d later` : ''}</div>` : ''}
         <div class="row-acts">${t.ticker ? `<button type="button" class="mini" data-track="${esc(t.ticker)}" aria-label="Track ${esc(t.ticker)} in your portfolio">+ Track</button>` : ''}<button type="button" class="mini" data-flag="${esc(k)}" aria-pressed="${!!fl}" aria-label="${fl ? 'Unflag' : 'Flag for review'}">${fl ? 'Flagged' : 'Flag'}</button></div></div>
       ${fl ? `<div style="grid-column:1 / -1"><label class="sr" for="n-${esc(btoa(unescape(encodeURIComponent(k))).slice(0, 16))}">Review note</label><input class="flag-note" id="n-${esc(btoa(unescape(encodeURIComponent(k))).slice(0, 16))}" data-note="${esc(k)}" placeholder="Add a review note" value="${esc(fl.note || '')}"></div>` : ''}
