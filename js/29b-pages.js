@@ -2,19 +2,20 @@
 //  PAGES: one section group at a time instead of one long scroll
 // ─────────────────────────────────────────────
 // Every old #section link still works: it opens the page that holds that section.
+// Order follows the questions a visitor asks next ("why?"), so each page answers the last one.
 const PAGES = [
   {id: 'home', label: 'Home', sections: ['overview', 'performance', 'compare', 'mix', 'signals']},
-  {id: 'copy', label: 'Copy test', sections: ['copy']},
-  {id: 'smart', label: 'Smart money', sections: ['smart']},
-  {id: 'leaders', label: 'Leaderboard', sections: ['leaders']},
-  {id: 'disclosures', label: 'Disclosures', sections: ['disclosures']},
-  {id: 'portfolio', label: 'Portfolio', sections: ['review-sec', 'holdings', 'import']},
-  {id: 'cash', label: 'Cash & yield', sections: ['cash']},
-  {id: 'dividends', label: 'Dividends', sections: ['dividends']},
-  {id: 'risk', label: 'Risk', sections: ['risk']},
-  {id: 'news', label: 'News', sections: ['news']},
-  {id: 'ask', label: 'Ask', sections: ['ask']},
-  {id: 'alerts', label: 'Alerts', sections: ['alerts']},
+  {id: 'disclosures', label: 'Disclosures', sections: ['disclosures'], ask: 'Why? See what they\'re buying'},
+  {id: 'leaders', label: 'Leaderboard', sections: ['leaders'], ask: 'Who\'s best at it?'},
+  {id: 'smart', label: 'Smart money', sections: ['smart'], ask: 'Do insiders and top investors agree?'},
+  {id: 'portfolio', label: 'Portfolio', sections: ['review-sec', 'holdings', 'import'], ask: 'What does it mean for my portfolio?'},
+  {id: 'risk', label: 'Risk', sections: ['risk'], ask: 'Am I taking too much risk?'},
+  {id: 'cash', label: 'Cash & yield', sections: ['cash'], ask: 'Is my cash earning enough?'},
+  {id: 'dividends', label: 'Dividends', sections: ['dividends'], ask: 'Could I earn more income?'},
+  {id: 'copy', label: 'Copy test', sections: ['copy'], ask: 'What if I had followed them?'},
+  {id: 'news', label: 'News', sections: ['news'], ask: 'What\'s happening right now?'},
+  {id: 'ask', label: 'Ask', sections: ['ask'], ask: 'Still have a question? Ask'},
+  {id: 'alerts', label: 'Alerts', sections: ['alerts'], ask: 'Stay on top of it'},
 ];
 const pageOf = id => PAGES.find(p => p.id === id || p.sections.includes(id)) || PAGES[0];
 let currentPage = null;
@@ -53,7 +54,7 @@ function wirePages() {
     const last = $(p.sections[p.sections.length - 1]); if (!last) return;
     const wrap = document.createElement('div');
     wrap.className = 'page-next'; wrap.dataset.page = p.id;
-    wrap.innerHTML = `<a class="btn glass" href="#${next.sections[0]}">Next: ${esc(next.label)} →</a>`;
+    wrap.innerHTML = `<a class="btn glass" href="#${next.sections[0]}">${esc(next.ask || 'Next: ' + next.label)} →</a>`;
     last.appendChild(wrap);
   });
   const go = () => showPage(decodeURIComponent(location.hash.slice(1)) || 'overview');
