@@ -65,7 +65,7 @@ def list_reports(s, since):
             return out
         time.sleep(0.5)
 
-FUND_RE = re.compile(r'\bETF\b|\bETN\b|\bSPDR\b|\biShares\b|Invesco QQQ|Exchange[- ]Traded|Index Fund', re.I)
+FUND_RE = re.compile(r'\bETF\b|\bSPDR\b|\biShares\b|Invesco QQQ|Exchange[- ]Traded|Index Fund', re.I)
 
 
 def classify_fund(ticker, name, reported=''):
