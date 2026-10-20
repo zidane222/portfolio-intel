@@ -10,7 +10,7 @@ function refreshAll() {
   loadPrices(); loadHistory(); loadSectors();
 }
 function init() {
-  wireReveal(); wireNavHighlight(); wireImport(); wireAsk(); buildChart();
+  wireReveal(); wirePages(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   $('copy-member').onchange = e => runCopyTest(e.target.value);
   wireLock(); wireAssist(); wirePlaid(); wireAccount();

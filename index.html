@@ -45,6 +45,13 @@ a{color:var(--accent)}
 
 /* NAV */
 [hidden]{display:none!important}
+/* Pages: show one group of sections at a time */
+body.paged main section[id]:not(.page-on){display:none}
+body.paged .zone-off{display:none}
+body.paged main section.page-on{scroll-margin-top:110px}
+.page-next{display:flex;justify-content:center;margin:36px auto 8px}
+.page-next[hidden]{display:none}
+body.paged main{min-height:calc(100vh - 120px)}
 nav.top{position:sticky;top:0;z-index:50;background:rgba(7,18,40,0.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid rgba(255,255,255,0.08);padding-top:env(safe-area-inset-top)}
 nav.top .wrap{height:52px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;color:var(--ink);text-decoration:none;flex:0 0 auto;white-space:nowrap;margin-right:28px}
@@ -458,7 +465,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
       <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/></svg>
       Portfolio Intel
     </a>
-    <div class="navlinks">
+    <div class="navlinks" id="navlinks">
       <a href="#performance">Performance</a>
       <a href="#compare">Compare</a>
       <a href="#mix">Industries</a>
@@ -908,6 +915,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/28-review.js?v=6"></script>
 <script src="js/29-leaderboard.js?v=6"></script>
 <script src="js/29a-account.js?v=6"></script>
+<script src="js/29b-pages.js?v=6"></script>
 <script src="js/30-init.js?v=6"></script>
 </body>
 </html>
