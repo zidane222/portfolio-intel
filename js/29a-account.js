@@ -6,7 +6,7 @@
 // upload, so Supabase only ever stores ciphertext. Row level security limits each user to their row.
 const SB_SESSION = 'pi.sb.session', SB_SYNCED = 'pi.sync.at';
 const SYNC_MIN_PASS = 8;
-let syncTimer = null, syncBusy = false, remoteCache = null;
+let syncTimer = null, syncBusy = false, remoteCache = null, justSignedIn = false;
 
 const sbOn = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 function sbSession() { try { return JSON.parse(localStorage.getItem(SB_SESSION)); } catch (e) { return null; } }
@@ -39,6 +39,7 @@ function sbTakeRedirect() {
   const p = new URLSearchParams(location.hash.slice(1));
   history.replaceState(null, '', location.pathname + location.search);
   if (p.get('error_description')) { setTimeout(() => syncUI('Sign-in link problem: ' + p.get('error_description')), 0); return; }
+  justSignedIn = true;
   sbSave({access_token: p.get('access_token'), refresh_token: p.get('refresh_token'), expires_at: +p.get('expires_at') || Math.floor(Date.now() / 1000) + (+p.get('expires_in') || 3600)});
 }
 
@@ -174,5 +175,17 @@ function wireAccount() {
   const s = sbSession();
   if (s && !s.email) sbFetch('/auth/v1/user').then(u => { sbSave({...sbSession(), email: u.email}); syncUI(); }).catch(() => {});
   syncUI();
-  syncOnStart();
+  syncOnStart().then(() => {
+    if (!justSignedIn) return;
+    location.hash = '#import'; // the Portfolio page, where the sync box lives
+    setTimeout(() => {
+      const card = $('sync-card'); if (!card) return;
+      card.scrollIntoView({behavior: 'smooth', block: 'center'});
+      card.classList.add('flash');
+      const c = lockConf();
+      if (!(remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) && !(c && c.sync))
+        syncUI(`You're signed in. Enter your passcode to start syncing (at least ${SYNC_MIN_PASS} characters; no passcode yet? Tap Set passcode).`);
+      setTimeout(() => card.classList.remove('flash'), 2500);
+    }, 400);
+  });
 }
