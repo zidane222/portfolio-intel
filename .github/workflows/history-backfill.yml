@@ -43,8 +43,24 @@ jobs:
           path: trades_${{ matrix.year }}.json
           retention-days: 7
 
+  senate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet requests beautifulsoup4
+      - run: python3 scripts/senate_ptr.py --since "$(echo '${{ github.event.inputs.years }}' | tr -s ' ' '\n' | grep -E '^20[0-9]{2}$' | sort | head -1)-01-01" --out trades_senate.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trades-senate
+          path: trades_senate.json
+          retention-days: 7
+
   load:
-    needs: scrape
+    needs: [scrape, senate]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 120

@@ -40,6 +40,20 @@ jobs:
       - name: Scrape House PTR filings
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 
+      - name: Scrape Senate PTR filings
+        continue-on-error: true
+        run: |
+          python3 scripts/senate_ptr.py --since "$(date +%Y)-01-01" --out senate.json
+          python3 - <<'PYEOF'
+          import json
+          d = json.load(open('trades.json'))
+          senate = json.load(open('senate.json'))
+          d['trades'] = sorted(d['trades'] + senate, key=lambda t: t.get('date', ''), reverse=True)
+          d['senate_count'] = len(senate)
+          json.dump(d, open('trades.json', 'w'))
+          print(f"Added {len(senate)} Senate trades")
+          PYEOF
+
       - name: Google Cloud sign-in (for the BigQuery archive)
         if: env.HAS_GCP == 'true'
         continue-on-error: true
@@ -168,14 +182,14 @@ jobs:
           legs = yaml.safe_load(requests.get(BASE + 'legislators-current.yaml', timeout=30).text)
           comms = yaml.safe_load(requests.get(BASE + 'committees-current.yaml', timeout=30).text)
           members = yaml.safe_load(requests.get(BASE + 'committee-membership-current.yaml', timeout=30).text)
-          house_names = {c['thomas_id']: re.sub(r'^House (Permanent )?(Select )?Committee on (the )?', '', c['name']) for c in comms if c.get('type') == 'house'}
+          house_names = {c['thomas_id']: re.sub(r'^(House|Senate) (Permanent )?(Select |Special )?Committee on (the )?', '', c['name']) for c in comms if c.get('type') in ('house', 'senate')}
           house_names.update({k: 'China Select Committee' for k in house_names if k == 'HSZS'})
           by_bio = {}
           for cid, rows in members.items():
               if cid in house_names:  # main committees only, not subcommittees
                   for m in rows:
                       by_bio.setdefault(m.get('bioguide'), []).append(cid)
-          reps = [l for l in legs if l['terms'][-1]['type'] == 'rep']
+          reps_by = {'house': [l for l in legs if l['terms'][-1]['type'] == 'rep'], 'senate': [l for l in legs if l['terms'][-1]['type'] == 'sen']}
 
           # Which industries each committee oversees
           OVERSEES = {
@@ -191,12 +205,24 @@ jobs:
               'HSWM': ['Healthcare'],
               'HLIG': ['Technology'],
               'HSZS': ['Technology'],
+              # Senate
+              'SSAF': ['Consumer Defensive', 'Basic Materials'],
+              'SSAS': ['Industrials'],
+              'SSBK': ['Financial Services', 'Real Estate'],
+              'SSCM': ['Communication Services', 'Technology', 'Industrials'],
+              'SSEG': ['Energy', 'Utilities', 'Basic Materials'],
+              'SSEV': ['Industrials', 'Utilities'],
+              'SSFI': ['Healthcare', 'Financial Services'],
+              'SSHR': ['Healthcare'],
+              'SSGA': ['Technology'],
+              'SLIN': ['Technology'],
           }
 
           import unicodedata
           plain = lambda x: unicodedata.normalize('NFKD', x or '').encode('ascii', 'ignore').decode().lower().strip()
 
-          def find_rep(name):
+          def find_rep(name, chamber='house'):
+              reps = reps_by.get(chamber, reps_by['house'])
               # Filing names look like "Pelosi, Nancy" or "Beyer, Donald Sternoff Jr."
               last, _, first = name.partition(',')
               last, first = plain(last), plain(first)
@@ -214,7 +240,7 @@ jobs:
               t['sector'] = cache.get(t['ticker'], '') if t['ticker'] else ''
               name = t['representative']
               if name not in rep_cache:
-                  r = find_rep(name)
+                  r = find_rep(name, t.get('source') or 'house')
                   rep_cache[name] = by_bio.get(r['id']['bioguide'], []) if r else []
               cids = rep_cache[name]
               hits = [house_names[c] for c in cids if t['sector'] in OVERSEES.get(c, [])]
