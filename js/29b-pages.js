@@ -14,8 +14,7 @@ const PAGES = [
   {id: 'dividends', label: 'Dividends', sections: ['dividends'], ask: 'Could I earn more income?'},
   {id: 'copy', label: 'Copy test', sections: ['copy'], ask: 'What if I had followed them?'},
   {id: 'news', label: 'News', sections: ['news'], ask: 'What\'s happening right now?'},
-  {id: 'ask', label: 'Ask', sections: ['ask'], ask: 'Still have a question? Ask'},
-  {id: 'alerts', label: 'Alerts', sections: ['alerts'], ask: 'Stay on top of it'},
+  {id: 'ask', label: 'Ask & alerts', sections: ['ask', 'alerts'], ask: 'Still have a question? Ask, or set alerts'},
   // The original single long page, everything in its first order and colors
   {id: 'all', label: 'See it all', all: true, ask: 'Or see it all on one page'},
 ];
