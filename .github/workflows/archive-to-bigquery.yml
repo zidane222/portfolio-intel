@@ -10,6 +10,7 @@ on:
         required: true
 
 permissions:
+  id-token: write
   contents: read
   actions: read
 
@@ -30,7 +31,8 @@ jobs:
           github-token: ${{ github.token }}
       - uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP }}
+          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
+          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
       - name: Load into BigQuery
         env:
           BQ_PROJECT: ${{ secrets.BQP }}

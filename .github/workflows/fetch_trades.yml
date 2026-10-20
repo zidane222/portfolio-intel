@@ -6,13 +6,14 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write
   contents: write
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
     env:
-      HAS_GCP: ${{ secrets.GCP != '' }}
+      HAS_GCP: ${{ secrets.BQP != '' }}
     timeout-minutes: 45
     steps:
       - name: Checkout repo
@@ -59,7 +60,8 @@ jobs:
         continue-on-error: true
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP }}
+          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
+          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
 
       - name: Save to history (Supabase 5 years, BigQuery archive)
         continue-on-error: true

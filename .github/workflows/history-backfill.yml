@@ -14,6 +14,7 @@ on:
         default: false
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -69,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      HAS_GCP: ${{ secrets.GCP != '' }}
+      HAS_GCP: ${{ secrets.BQP != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -83,7 +84,8 @@ jobs:
         if: env.HAS_GCP == 'true'
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP }}
+          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
+          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
       - name: Load history
         env:
           SUPABASE_URL: ${{ secrets.SP }}
