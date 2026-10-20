@@ -26,29 +26,35 @@ jobs:
           pip install --quiet cryptography
           TOKEN=$(python3 -c "from cryptography.fernet import Fernet; import base64,hashlib; k=base64.urlsafe_b64encode(hashlib.sha256(b'testsecret:portfolio-intel-token').digest()); print(Fernet(k).encrypt(b'access-sandbox-123').decode())")
           node test/test.mjs "$TOKEN"
-      - name: Deploy to Cloudflare
+      - name: Deploy services, then the gateway
         run: |
           set -o pipefail
           # Strip spaces or line breaks that sneak in when pasting secrets
           export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '[:space:]')"
           export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '[:space:]')"
-          # Link the 3 keys from the Cloudflare Secrets Store; the store id comes from the cfks secret
           STORE_ID="$(printf '%s' "$CF_STORE_RAW" | tr -d '[:space:]')"
-          if [ -n "$STORE_ID" ]; then
-            for n in GROQ_API_KEY PLAID_CLIENT_ID PLAID_SECRET; do
-              printf '\n[[secrets_store_secrets]]\nbinding = "%s"\nstore_id = "%s"\nsecret_name = "%s"\n' "$n" "$STORE_ID" "$n" >> wrangler.toml
-            done
-            echo "::notice::Linked 3 keys from the Secrets Store (store id length ${#STORE_ID})"
-          fi
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::The deploy token secret is empty"; exit 1; }
           [ ${#CLOUDFLARE_ACCOUNT_ID} -eq 32 ] || { echo "::error::The cfkd secret should be the 32-character account id (it has ${#CLOUDFLARE_ACCOUNT_ID})"; exit 1; }
-          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::The cf secret is empty"; exit 1; }
-          echo "::notice::Token length ${#CLOUDFLARE_API_TOKEN}"
-          npx wrangler deploy 2>&1 | tee deploy.log || {
-            # Surface Cloudflare's message as an annotation so it shows on the run page
-            grep -iE "error|✘|subdomain|authentication|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -8 | sed 's/^/::error::/'
-            exit 1
+          [ ${#STORE_ID} -eq 32 ] || { echo "::error::The cfks secret should be the 32-character Secrets Store id"; exit 1; }
+
+          # Each service gets only the keys it needs, linked from the Secrets Store
+          link() { f=$1; shift; for n in "$@"; do printf '\n[[secrets_store_secrets]]\nbinding = "%s"\nstore_id = "%s"\nsecret_name = "%s"\n' "$n" "$STORE_ID" "$n" >> "$f"; done; }
+          link config/ai.toml GROQ_API_KEY
+          link config/rates.toml GROQ_API_KEY
+          link config/broker.toml PLAID_CLIENT_ID PLAID_SECRET
+
+          deploy() {
+            npx wrangler deploy "$@" 2>&1 | tee deploy.log || {
+              grep -iE "error|✘|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -6 | sed "s/^/::error::[$*] /"
+              exit 1
+            }
           }
-          grep -oE "https://[a-z0-9.-]+\.workers\.dev" deploy.log | head -1 | sed 's/^/::notice::Worker URL /'
+          for svc in market news rates ai broker disclosures; do
+            deploy -c config/$svc.toml
+            echo "::notice::Deployed pi-$svc (private)"
+          done
+          deploy
+          grep -oE "https://[a-z0-9.-]+\.workers\.dev" deploy.log | head -1 | sed 's/^/::notice::Gateway URL /'
         env:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
           CF_ACCOUNT_RAW: ${{ secrets.cfkd }}

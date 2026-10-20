@@ -1,6 +1,12 @@
 // Offline tests with mocked outside services. Run: node test/test.mjs
 import assert from 'node:assert/strict';
-import worker from '../src/index.js';
+import gateway from '../src/index.js';
+import market from '../src/services/market.js';
+import newsSvc from '../src/services/news.js';
+import ratesSvc from '../src/services/rates.js';
+import aiSvc from '../src/services/ai.js';
+import brokerSvc from '../src/services/broker.js';
+import disclosuresSvc from '../src/services/disclosures.js';
 import {fernetKey, fernetEncrypt, fernetDecrypt} from '../src/lib/fernet.js';
 import {parseFeed} from '../src/modules/news.js';
 import {mapHoldings} from '../src/modules/broker.js';
@@ -8,6 +14,9 @@ import {previousClose} from '../src/modules/market.js';
 
 const env = {ALLOWED_ORIGINS: 'https://portfolio-intel-279.pages.dev', PLAID_SECRET: 'testsecret', PLAID_CLIENT_ID: 'cid', PLAID_ENV: 'sandbox', GROQ_API_KEY: 'k'};
 const O = 'https://portfolio-intel-279.pages.dev';
+const bind = (svc, e) => ({fetch: (r, init) => svc.fetch(r instanceof Request ? r : new Request(r, init), e)});
+const withServices = e => ({...e, MARKET: bind(market, e), NEWS: bind(newsSvc, e), RATES: bind(ratesSvc, e), AI_SVC: bind(aiSvc, e), BROKER: bind(brokerSvc, e), DISCLOSURES: bind(disclosuresSvc, e)});
+const worker = {fetch: (req, e) => gateway.fetch(req, withServices(e))};
 const call = (path, init = {}) => worker.fetch(new Request('https://w.dev' + path, {...init, headers: {Origin: O, 'CF-Connecting-IP': '1.2.3.4', ...(init.headers || {})}}), env);
 
 const chart = (price, closes) => ({chart: {result: [{meta: {regularMarketPrice: price, regularMarketTime: 1760400000, gmtoffset: -14400, currency: 'USD', longName: 'Test Co'},
@@ -28,7 +37,9 @@ globalThis.fetch = async (u, init) => {
 
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 
-await t('health', async () => { const r = await call('/health'); assert.equal((await r.json()).status, 'ok'); });
+await t('health checks every service', async () => { const d = await (await call('/health')).json(); assert.equal(d.status, 'ok'); assert.deepEqual(Object.keys(d.services).sort(), ['ai','broker','disclosures','market','news','rates']); });
+await t('missing service gives 503 (app falls back to Render)', async () => { const r = await gateway.fetch(new Request('https://w.dev/api/prices/AAPL', {headers: {Origin: O, 'CF-Connecting-IP': '5.5.5.5'}}), env); assert.equal(r.status, 503); });
+await t('services keep the visitor IP and origin', async () => { const r = await call('/api/ai', {method: 'POST', headers: {Origin: 'https://evil.com'}, body: '{}'}); assert.equal(r.status, 403); });
 await t('CORS allowed origin', async () => { const r = await call('/api/prices/AAPL'); assert.equal(r.headers.get('Access-Control-Allow-Origin'), O); });
 await t('CORS other origin gets no header', async () => { const r = await call('/api/prices/AAPL', {headers: {Origin: 'https://evil.com'}}); assert.equal(r.headers.get('Access-Control-Allow-Origin'), null); });
 await t('preflight', async () => { const r = await call('/api/ai', {method: 'OPTIONS'}); assert.equal(r.status, 204); });
