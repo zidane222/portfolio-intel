@@ -1,13 +1,20 @@
+# Gateway: the only public Worker. It forwards to the private services below.
 name = "portfolio-intel-api"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+services = [
+  { binding = "MARKET", service = "pi-market" },
+  { binding = "NEWS", service = "pi-news" },
+  { binding = "RATES", service = "pi-rates" },
+  { binding = "AI_SVC", service = "pi-ai" },
+  { binding = "BROKER", service = "pi-broker" },
+  { binding = "DISCLOSURES", service = "pi-disclosures" },
+]
 
-# Non-secret settings. Secrets (GROQ_API_KEY, PLAID_CLIENT_ID, PLAID_SECRET) are set in the
-# Cloudflare dashboard under the Worker's Settings > Variables and Secrets, never in this file.
 [vars]
-PLAID_ENV = "sandbox"
 ALLOWED_ORIGINS = "https://zidane222.github.io,https://portfolio-intel-279.pages.dev,http://localhost:8765"
+
 
 [observability]
 enabled = true

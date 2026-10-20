@@ -1,0 +1,13 @@
+# Private service: reachable only through the gateway (no public URL).
+name = "pi-ai"
+main = "../src/services/ai.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[vars]
+SERVICE = "ai"
+ALLOWED_ORIGINS = "https://zidane222.github.io,https://portfolio-intel-279.pages.dev,http://localhost:8765"
+
+[observability]
+enabled = true
