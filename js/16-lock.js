@@ -31,7 +31,15 @@ function wireLock() {
     e.preventDefault();
     const c = lockConf(); if (!c) return showLock(false);
     if (Date.now() < lockUntil) { $('lock-err').textContent = `Too many tries. Wait ${Math.ceil((lockUntil - Date.now()) / 1000)} seconds.`; return; }
-    const ok = await hashPass($('lock-in').value, unb64(c.salt), c.iter) === c.hash;
+    let ok;
+    if (c.hash) ok = await hashPass($('lock-in').value, unb64(c.salt), c.iter) === c.hash;
+    else { // set up by passkey on this device: check the passcode against the saved check value
+      try { const k = await vaultDerive($('lock-in').value, unb64(c.encSalt)); const [, iv, ct] = c.check.split(':');
+        await crypto.subtle.decrypt({name: 'AES-GCM', iv: vunb64(iv)}, k, vunb64(ct)); ok = true;
+        const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 210000;
+        localStorage.setItem(LOCK_KEY, JSON.stringify({...c, salt: b64(salt), iter, hash: await hashPass($('lock-in').value, salt, iter)}));
+      } catch (e2) { ok = false; }
+    }
     if (ok) {
       lockFails = 0; try { sessionStorage.setItem('pi.unlocked', String(Date.now())); } catch (e2) {}
       if (c.encSalt) { await vaultUse(await vaultDerive($('lock-in').value, unb64(c.encSalt))); location.reload(); return; }
