@@ -99,10 +99,14 @@ def parse_report(html, name, filed):
             date = iso(get('transaction date'))
             if not date or not (ticker or asset):
                 continue
-            stock = bool(ticker) and ('stock' in kind.lower() or 'etf' in kind.lower() or not kind)
-            out.append({'date': date, 'filed': filed, 'representative': name, 'ticker': ticker if stock else '',
+            k = kind.lower()
+            fund = 'mutual fund' in k or ('fund' in k and 'etf' not in k)
+            etf = 'etf' in k or 'exchange traded' in k
+            tradable = bool(ticker) and ('stock' in k or etf or fund or not kind)
+            label = 'Mutual fund' if fund else 'ETF' if etf else 'Stock'
+            out.append({'date': date, 'filed': filed, 'representative': name, 'ticker': ticker if tradable else '',
                         'type': tx_type(get('type')), 'amount': amount, 'description': asset[:60],
-                        'private': not stock, 'kind': 'Stock' if stock else (kind or 'Other asset'), 'source': 'senate'})
+                        'private': not tradable, 'kind': label if tradable else (kind or 'Other asset'), 'source': 'senate'})
     return out
 
 
