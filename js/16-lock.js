@@ -47,7 +47,10 @@ function wireLock() {
     location.reload();
   };
   const dlg = $('pass-dlg');
-  $('lock-set').onclick = () => { $('pass-1').value = ''; $('pass-2').value = ''; $('pass-err').textContent = ''; $('pass-off').style.display = lockConf() ? '' : 'none'; dlg.showModal(); };
+  $('lock-set').onclick = () => { $('pass-1').value = ''; $('pass-2').value = ''; $('pass-err').textContent = ''; $('pass-off').style.display = lockConf() ? '' : 'none';
+    const hint = $('pass-sync-hint'); if (hint) hint.hidden = !!lockConf() || typeof sbSession !== 'function' || !!sbSession();
+    dlg.showModal(); };
+  const ps = $('pass-signin'); if (ps) ps.onclick = () => { dlg.close(); setTimeout(() => { const c = $('sync-card'); c && c.scrollIntoView({behavior: 'smooth', block: 'center'}); $('sync-email') && $('sync-email').focus(); }, 300); };
   $('pass-cancel').onclick = () => dlg.close();
   $('pass-off').onclick = () => { vaultUnseal(); try { localStorage.removeItem(LOCK_KEY); } catch (e) {} $('lock-set').textContent = 'Set passcode'; dlg.close(); };
   $('pass-form').onsubmit = async e => {

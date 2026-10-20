@@ -6,7 +6,7 @@
 // upload, so Supabase only ever stores ciphertext. Row level security limits each user to their row.
 const SB_SESSION = 'pi.sb.session', SB_SYNCED = 'pi.sync.at';
 const SYNC_MIN_PASS = 8;
-let syncTimer = null, syncBusy = false, remoteCache = null, justSignedIn = false;
+let syncTimer = null, syncBusy = false, remoteCache = null, remoteChecked = false, justSignedIn = false, pendingEmail = '';
 
 const sbOn = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 function sbSession() { try { return JSON.parse(localStorage.getItem(SB_SESSION)); } catch (e) { return null; } }
@@ -67,6 +67,7 @@ function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(syncPush, 
 async function syncPull() {
   const rows = await sbFetch('/rest/v1/synced_data?select=enc_salt,payload,updated_at');
   remoteCache = rows && rows[0] || null;
+  remoteChecked = true;
   return remoteCache;
 }
 async function syncApply(remote, key) {
@@ -82,7 +83,7 @@ async function syncApply(remote, key) {
 async function syncOnStart() {
   if (!sbOn() || !sbSession()) return syncUI();
   let remote;
-  try { remote = await syncPull(); } catch (e) { return syncUI('Couldn\'t reach sync: ' + e.message); }
+  try { remote = await syncPull(); } catch (e) { remoteChecked = true; return syncUI('Couldn\'t reach sync: ' + e.message); }
   const c = lockConf(), local = (() => { try { return localStorage.getItem(SB_SYNCED); } catch (e) { return null; } })();
   if (!remote) return syncUI();
   if (VAULT.key && c && c.encSalt === remote.enc_salt) {
@@ -100,11 +101,13 @@ function syncUI(msg) {
   card.hidden = !sbOn();
   if (!sbOn()) return;
   const s = sbSession(), c = lockConf();
-  const show = id => ['sync-out', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
+  const show = id => ['sync-out', 'sync-code', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
   $('sync-setpass').hidden = true;
   let text;
-  if (!s) { show('sync-out'); text = 'Sign in with your email to keep your portfolio on all your devices. Your data is encrypted with your passcode before it leaves this device.'; }
-  else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter your passcode to load it on this device.'; }
+  if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser.`; }
+  else if (!s) { show('sync-out'); text = 'Already use Portfolio Intel on another device? Sign in with the same email and you\'ll unlock your data with your existing passcode. No need to set a new one. Your data is encrypted with your passcode before it leaves the device.'; }
+  else if (!remoteChecked) { show(null); text = 'Checking for your synced data…'; }
+  else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter the passcode you use on your other device to load it here.'; }
   else if (!c || !c.sync) { show('sync-pass'); $('sync-setpass').hidden = false; $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in. Enter your passcode to turn on sync. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. No passcode yet? Tap Set passcode.`; }
   else {
     show('sync-in');
@@ -146,9 +149,24 @@ function wireAccount() {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return syncUI('Enter a valid email address.');
     try {
       await sbFetch('/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + location.pathname), {method: 'POST', body: JSON.stringify({email, create_user: true})}, false);
-      syncUI(`Check ${email} for a sign-in link. Open it on this device.`);
-    } catch (e) { syncUI('Couldn\'t send the link: ' + e.message); }
+      pendingEmail = email;
+      syncUI();
+      setTimeout(() => $('sync-code-in').focus(), 50);
+    } catch (e) { syncUI('Couldn\'t send the email: ' + e.message); }
   };
+  $('sync-code').onsubmit = async e => {
+    e.preventDefault();
+    const token = $('sync-code-in').value.replace(/\D/g, '');
+    if (token.length < 6) return syncUI('Enter the code from the email.');
+    try {
+      const d = await sbFetch('/auth/v1/verify', {method: 'POST', body: JSON.stringify({type: 'email', email: pendingEmail, token})}, false);
+      sbSave({access_token: d.access_token, refresh_token: d.refresh_token, email: d.user && d.user.email || pendingEmail,
+        expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600)});
+      pendingEmail = ''; $('sync-code-in').value = '';
+      syncUI(); await syncOnStart();
+    } catch (err) { syncUI('That code didn\'t work (' + err.message + '). Check it, or tap Back and send a new one.'); }
+  };
+  $('sync-code-back').onclick = () => { pendingEmail = ''; syncUI(); };
   $('sync-pass').onsubmit = async e => {
     e.preventDefault();
     const pass = $('sync-pass-in').value; $('sync-pass-in').value = '';
@@ -158,7 +176,7 @@ function wireAccount() {
   $('sync-setpass').onclick = () => $('lock-set').click();
   $('sync-signout').onclick = async () => {
     try { await sbFetch('/auth/v1/logout', {method: 'POST'}); } catch (e) {}
-    sbSave(null); remoteCache = null;
+    sbSave(null); remoteCache = null; remoteChecked = false;
     const c = lockConf(); if (c && c.sync) { delete c.sync; localStorage.setItem(LOCK_KEY, JSON.stringify(c)); }
     syncUI('Signed out. Your data stays on this device.');
   };
@@ -166,7 +184,7 @@ function wireAccount() {
     if (!confirm('Delete your synced copy from the cloud? Data on this device stays.')) return;
     try {
       await sbFetch('/rest/v1/synced_data?user_id=not.is.null', {method: 'DELETE'});
-      remoteCache = null;
+      remoteCache = null; remoteChecked = true;
       const c = lockConf(); if (c && c.sync) { delete c.sync; localStorage.setItem(LOCK_KEY, JSON.stringify(c)); }
       localStorage.removeItem(SB_SYNCED);
       syncUI('Synced copy deleted.');
