@@ -65,6 +65,19 @@ def list_reports(s, since):
             return out
         time.sleep(0.5)
 
+FUND_RE = re.compile(r'\bETF\b|\bETN\b|\bSPDR\b|\biShares\b|Invesco QQQ|Exchange[- ]Traded|Index Fund', re.I)
+
+
+def classify_fund(ticker, name, reported=''):
+    """Mutual fund, ETF or Stock. Members often file ETFs as plain stock, so check the name and
+    ticker too: mutual fund tickers are 5 letters ending in X (VFIAX, FXAIX)."""
+    r = (reported or '').lower()
+    if 'mutual' in r or re.fullmatch(r'[A-Z]{4}X', ticker or ''):
+        return 'Mutual fund'
+    if 'etf' in r or 'exchange traded' in r or FUND_RE.search(name or ''):
+        return 'ETF'
+    return 'Stock'
+
 
 def iso(d):
     try:
@@ -103,7 +116,7 @@ def parse_report(html, name, filed):
             fund = 'mutual fund' in k or ('fund' in k and 'etf' not in k)
             etf = 'etf' in k or 'exchange traded' in k
             tradable = bool(ticker) and ('stock' in k or etf or fund or not kind)
-            label = 'Mutual fund' if fund else 'ETF' if etf else 'Stock'
+            label = classify_fund(ticker, asset, kind)
             out.append({'date': date, 'filed': filed, 'representative': name, 'ticker': ticker if tradable else '',
                         'type': tx_type(get('type')), 'amount': amount, 'description': asset[:60],
                         'private': not tradable, 'kind': label if tradable else (kind or 'Other asset'), 'source': 'senate'})
