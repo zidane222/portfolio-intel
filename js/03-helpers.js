@@ -19,7 +19,7 @@ function ago(date) {
   if (m < 1440) return Math.round(m/60) + ' hr ago';
   return Math.round(m/1440) + ' days ago';
 }
-async function getJSON(url, opts) {
+async function fetchJSON(url, opts) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), (opts && opts.timeout) || 45000); // Render free tier can take a while to wake
   try {
@@ -29,6 +29,14 @@ async function getJSON(url, opts) {
     return await r.json();
   }
   finally { clearTimeout(t); }
+}
+// Calls the Worker; on a network error or server error (not a 4xx answer) tries the backup once
+async function getJSON(url, opts) {
+  try { return await fetchJSON(url, opts); }
+  catch (e) {
+    if (!url.startsWith(BACKEND_URL) || (e.status && e.status < 500)) throw e;
+    return fetchJSON(FALLBACK_URL + url.slice(BACKEND_URL.length), opts);
+  }
 }
 function loadScript(lib) {
   const [src, integrity] = Array.isArray(lib) ? lib : [lib, null];
