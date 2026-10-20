@@ -14,6 +14,19 @@ headers = {
     'Referer': BASE + '/FinancialDisclosure',
 }
 
+FUND_RE = re.compile(r'\bETF\b|\bETN\b|\bSPDR\b|\biShares\b|Invesco QQQ|Exchange[- ]Traded|Index Fund', re.I)
+
+
+def classify_fund(ticker, name, reported=''):
+    """Mutual fund, ETF or Stock. Members often file ETFs as plain stock, so check the name and
+    ticker too: mutual fund tickers are 5 letters ending in X (VFIAX, FXAIX)."""
+    r = (reported or '').lower()
+    if 'mutual' in r or re.fullmatch(r'[A-Z]{4}X', ticker or ''):
+        return 'Mutual fund'
+    if 'etf' in r or 'exchange traded' in r or FUND_RE.search(name or ''):
+        return 'ETF'
+    return 'Stock'
+
 SKIP = {'ST','OT','SP','JT','OP','PT','RE','CO','FX','HE','PE','CS','PS'}
 
 def scrape(year, log=print):
@@ -79,7 +92,8 @@ def scrape(year, log=print):
         # House reports tag each asset with a code: [ST] stock, [EF] exchange-traded fund, [MF] mutual fund
         code = re.search(r'\[([A-Z]{2})\]', text)
         code = code.group(1) if code else ''
-        return {'MF': 'Mutual fund', 'EF': 'ETF'}.get(code, 'Stock')
+        reported = {'MF': 'mutual fund', 'EF': 'etf'}.get(code, '')
+        return classify_fund(extract_ticker(text), text, reported)
 
     def asset_kind(text):
         code = re.search(r'\[([A-Z]{2})\]', text)
