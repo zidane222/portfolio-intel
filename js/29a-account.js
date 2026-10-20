@@ -135,7 +135,7 @@ async function syncWithPasscode(pass) {
   }
   // Turn on sync from this device
   if (!c || !c.encSalt) return syncUI(`Set a passcode first (at least ${SYNC_MIN_PASS} characters). Tap Set passcode.`);
-  if (await hashPass(pass, unb64(c.salt), c.iter) !== c.hash) return syncUI('Wrong passcode.');
+  if (!c.hash || await hashPass(pass, unb64(c.salt), c.iter) !== c.hash) return syncUI('Wrong passcode.');
   if (pass.length < SYNC_MIN_PASS) return syncUI(`Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. Tap Set passcode to change it, then try again.`);
   localStorage.setItem(LOCK_KEY, JSON.stringify({...c, sync: true}));
   await syncPush();
@@ -193,6 +193,7 @@ function wireAccount() {
   const s = sbSession();
   if (s && !s.email) sbFetch('/auth/v1/user').then(u => { sbSave({...sbSession(), email: u.email}); syncUI(); }).catch(() => {});
   syncUI();
+  if (typeof wirePasskeys === 'function') wirePasskeys();
   syncOnStart().then(() => {
     if (!justSignedIn) return;
     location.hash = '#import'; // the Portfolio page, where the sync box lives
