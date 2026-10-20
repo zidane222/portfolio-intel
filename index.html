@@ -706,6 +706,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
         <p class="fine" style="margin:8px 0 14px" id="sync-text"></p>
         <form id="sync-out" style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr" for="sync-email">Email</label><input id="sync-email" type="email" autocomplete="email" placeholder="you@example.com" class="picker" style="flex:1;min-width:180px"><button class="btn small" type="submit">Email me a sign-in code</button><button class="btn ghost small" type="button" id="sync-pk" hidden>Sign in with a passkey</button></form>
         <form id="sync-code" hidden style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr" for="sync-code-in">Code from the email</label><input id="sync-code-in" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="6-digit code" class="picker" style="flex:1;min-width:140px"><button class="btn small" type="submit">Sign in</button><button class="btn ghost small" type="button" id="sync-code-back">Back</button></form>
+        <form id="sync-create" hidden style="display:flex;flex-direction:column;gap:8px;max-width:420px"><label class="sr" for="sync-new-1">New passcode</label><input id="sync-new-1" type="password" autocomplete="new-password" placeholder="Create a passcode (8+ characters)" class="picker"><label class="sr" for="sync-new-2">Confirm passcode</label><input id="sync-new-2" type="password" autocomplete="new-password" placeholder="Confirm passcode" class="picker"><p class="fine" id="sync-new-meter" aria-live="polite" style="margin:0"></p><label class="fine" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="sync-new-ack" style="margin-top:3px"> I understand this passcode encrypts my data and can't be reset. If I forget it, my synced data can't be recovered.</label><button class="btn small" type="submit">Create passcode and turn on sync</button></form>
         <form id="sync-pass" hidden style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr" for="sync-pass-in">Passcode</label><input id="sync-pass-in" type="password" autocomplete="current-password" placeholder="Passcode" class="picker" style="flex:1;min-width:160px"><button class="btn small" type="submit" id="sync-pass-btn">Turn on sync</button><button class="btn ghost small" type="button" id="sync-setpass" hidden>Set passcode</button></form>
         <div id="sync-in" hidden style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" type="button" id="sync-now">Sync now</button><button class="btn ghost small" type="button" id="sync-pk-add" hidden>Add a passkey</button><button class="btn ghost small" type="button" id="sync-signout">Sign out</button><button class="btn ghost small" type="button" id="sync-delete">Delete cloud copy</button></div>
       </div>
@@ -878,6 +879,16 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
     <button type="button" class="lock-forgot" id="lock-forgot">Forgot passcode?</button>
   </form>
 </div>
+<dialog class="pass-dlg" id="welcome-dlg" aria-labelledby="welcome-t">
+  <h2 id="welcome-t" style="font-size:19px;margin-bottom:6px">Welcome to Portfolio Intel</h2>
+  <p class="fine" style="margin-bottom:14px">Sign in to keep your portfolio on all your devices, encrypted so only you can read it. New here? The same step creates your account.</p>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <button class="btn" type="button" id="welcome-pk" hidden>Sign in with a passkey</button>
+    <button class="btn" type="button" id="welcome-email">Sign up or sign in with email</button>
+    <button class="btn ghost" type="button" id="welcome-skip">Skip, use without an account</button>
+  </div>
+  <p class="fine" style="margin-top:12px">Without an account, everything stays on this device only. You can sign in later from the Portfolio page.</p>
+</dialog>
 <dialog class="pass-dlg" id="pass-dlg" aria-labelledby="pass-t">
   <form method="dialog" id="pass-form">
     <h2 id="pass-t" style="font-size:19px;margin-bottom:6px">Set a passcode</h2>
@@ -921,7 +932,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/27-risk.js?v=10"></script>
 <script src="js/28-review.js?v=10"></script>
 <script src="js/29-leaderboard.js?v=10"></script>
-<script src="js/29a-account.js?v=11"></script>
+<script src="js/29a-account.js?v=13"></script>
 <script src="js/29c-passkey.js?v=11"></script>
 <script src="js/29b-pages.js?v=10"></script>
 <script src="js/30-init.js?v=10"></script>
