@@ -45,3 +45,4 @@ create or replace function public.hist_size() returns bigint language sql securi
   where n.nspname = 'public' and c.relname in ('hist_trades', 'hist_prices')
 $$;
 revoke all on function public.hist_size() from public, anon, authenticated;
+grant execute on function public.hist_size() to service_role;
