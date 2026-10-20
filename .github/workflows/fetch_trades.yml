@@ -21,8 +21,8 @@ jobs:
       - name: Keep Supabase awake (free projects pause after a week idle)
         continue-on-error: true
         env:
-          SB_URL: ${{ secrets.SUPABASE_URL }}
-          SB_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SB_URL: ${{ secrets.SP || secrets.SUPABASE_URL }}
+          SB_KEY: ${{ secrets.AK || secrets.SUPABASE_ANON_KEY }}
         run: |
           [ -n "$SB_URL" ] && [ -n "$SB_KEY" ] || { echo "Supabase not configured, skipping"; exit 0; }
           URL="$(printf '%s' "$SB_URL" | tr -d '[:space:]' | sed 's#/rest/v1/*$##; s#/*$##')"
