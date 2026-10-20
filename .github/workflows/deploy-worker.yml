@@ -31,9 +31,8 @@ jobs:
           set -o pipefail
           # Strip spaces or line breaks that sneak in when pasting secrets
           export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '[:space:]')"
-          export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '[:space:]')"
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::The cf secret is empty"; exit 1; }
-          echo "::notice::Token length ${#CLOUDFLARE_API_TOKEN}, account id length ${#CLOUDFLARE_ACCOUNT_ID} (expected 32)"
+          echo "::notice::Token length ${#CLOUDFLARE_API_TOKEN}"
           npx wrangler deploy 2>&1 | tee deploy.log || {
             # Surface Cloudflare's message as an annotation so it shows on the run page
             grep -iE "error|✘|subdomain|authentication|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -8 | sed 's/^/::error::/'
@@ -42,4 +41,3 @@ jobs:
           grep -oE "https://[a-z0-9.-]+\.workers\.dev" deploy.log | head -1 | sed 's/^/::notice::Worker URL /'
         env:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
-          CF_ACCOUNT_RAW: ${{ secrets.cfkd || secrets.CLOUDFLARE_ACCOUNT_ID }}
