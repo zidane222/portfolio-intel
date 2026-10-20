@@ -46,3 +46,5 @@ create or replace function public.hist_size() returns bigint language sql securi
 $$;
 revoke all on function public.hist_size() from public, anon, authenticated;
 grant execute on function public.hist_size() to service_role;
+-- The server job (service role) writes and prunes the history tables.
+grant select, insert, update, delete on public.hist_trades, public.hist_prices to service_role;
