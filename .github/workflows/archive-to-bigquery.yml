@@ -1,0 +1,40 @@
+name: Archive to BigQuery (one-time)
+
+# Loads trades and prices already collected by a history backfill run into BigQuery only
+# (Supabase is skipped, so it doesn't fill up again). Artifacts are kept for 7 days.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Backfill run id whose collected data to load'
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: trades-*
+          merge-multiple: true
+          run-id: ${{ github.event.inputs.run_id }}
+          github-token: ${{ github.token }}
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP }}
+      - name: Load into BigQuery
+        env:
+          BQ_PROJECT: ${{ secrets.BQP }}
+        run: |
+          pip install --quiet requests google-cloud-bigquery
+          ls trades_*.json
+          python3 scripts/history_load.py --trades trades_*.json --prices 5y
