@@ -4,6 +4,9 @@
 // API: Cloudflare Worker first; the old Render server answers only if the Worker fails.
 const BACKEND_URL = 'https://portfolio-intel-api.viphashkahn.workers.dev';
 const FALLBACK_URL = 'https://portfolio-intel-escf.onrender.com';
+// Supabase (sign-in and sync). Both values are public by design; row level security protects the data.
+const SUPABASE_URL = 'https://hqkmumuezvfoxlvrhnrk.supabase.co';
+const SUPABASE_ANON_KEY = ''; // set once the project's anon/publishable key is known
 const STORE_KEY = 'pi.portfolio.v2';
 const WATCH_KEY = 'pi.watch.v1';
 

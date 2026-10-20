@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Portfolio Intel">
 <meta name="theme-color" content="#071228">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdn.plaid.com blob:; frame-src https://cdn.plaid.com; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://portfolio-intel-api.viphashkahn.workers.dev https://portfolio-intel-escf.onrender.com https://*.plaid.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdn.plaid.com blob:; frame-src https://cdn.plaid.com; worker-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' https://hqkmumuezvfoxlvrhnrk.supabase.co https://portfolio-intel-api.viphashkahn.workers.dev https://portfolio-intel-escf.onrender.com https://*.plaid.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -690,6 +690,13 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
           <button class="btn ghost small" type="button" id="plaid-off" hidden>Disconnect</button>
         </div>
       </div>
+      <div class="card-l" id="sync-card" hidden>
+        <strong style="font-size:17px">Sync across devices</strong>
+        <p class="fine" style="margin:8px 0 14px" id="sync-text"></p>
+        <form id="sync-out" style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr" for="sync-email">Email</label><input id="sync-email" type="email" autocomplete="email" placeholder="you@example.com" class="picker" style="flex:1;min-width:180px"><button class="btn small" type="submit">Email me a link</button></form>
+        <form id="sync-pass" hidden style="display:flex;gap:8px;flex-wrap:wrap"><label class="sr" for="sync-pass-in">Passcode</label><input id="sync-pass-in" type="password" autocomplete="current-password" placeholder="Passcode" class="picker" style="flex:1;min-width:160px"><button class="btn small" type="submit" id="sync-pass-btn">Turn on sync</button></form>
+        <div id="sync-in" hidden style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn small" type="button" id="sync-now">Sync now</button><button class="btn ghost small" type="button" id="sync-signout">Sign out</button><button class="btn ghost small" type="button" id="sync-delete">Delete cloud copy</button></div>
+      </div>
 
       <div class="card-l" id="review" style="display:none">
         <div style="font-size:12px;font-weight:600;color:var(--dark-3)">Review</div>
@@ -900,6 +907,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/27-risk.js?v=4"></script>
 <script src="js/28-review.js?v=4"></script>
 <script src="js/29-leaderboard.js?v=4"></script>
+<script src="js/29a-account.js?v=4"></script>
 <script src="js/30-init.js?v=4"></script>
 </body>
 </html>

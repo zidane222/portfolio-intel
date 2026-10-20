@@ -13,7 +13,7 @@ function init() {
   wireReveal(); wireNavHighlight(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   $('copy-member').onchange = e => runCopyTest(e.target.value);
-  wireLock(); wireAssist(); wirePlaid();
+  wireLock(); wireAssist(); wirePlaid(); wireAccount();
   wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData(); wireFeedFilters();
   $('cmp-member').onchange = e => { cmpMember = e.target.value; renderAnyMember(); };
   $('share-copy').onclick = shareCopy;
@@ -27,4 +27,5 @@ function init() {
   setInterval(loadTrades, 60 * 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadPrices(); });
 }
+sbTakeRedirect();
 openVault().then(() => { myPortfolio = loadPortfolio(); snapshots = loadSnaps(); init(); });

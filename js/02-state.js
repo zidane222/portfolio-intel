@@ -32,6 +32,7 @@ function vset(k, val) {
   if (VAULT_KEYS.includes(k) && VAULT.key) {
     VAULT.cache[k] = val;
     vaultEncrypt(val).then(c => { try { localStorage.setItem(k, c); } catch (e) {} });
+    if (typeof syncSoon === 'function') syncSoon();
     return;
   }
   if (VAULT_KEYS.includes(k) && vaultOn()) return; // locked: never write plain text over encrypted data
@@ -69,7 +70,7 @@ function vaultUnseal() {
 }
 let myPortfolio = []; // filled in 30-init.js once the vault is open
 let watchlist = (() => { try { return JSON.parse(localStorage.getItem(WATCH_KEY)) || []; } catch (e) { return []; } })();
-function saveWatch() { try { localStorage.setItem(WATCH_KEY, JSON.stringify(watchlist)); } catch (e) {} }
+function saveWatch() { try { localStorage.setItem(WATCH_KEY, JSON.stringify(watchlist)); } catch (e) {} if (typeof syncSoon === 'function') syncSoon(); }
 const followed = () => new Set([...stocks().map(h => h.ticker), ...watchlist]);
 let prices = {};
 let trades = [];
