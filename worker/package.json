@@ -1,0 +1,7 @@
+{
+  "name": "portfolio-intel-api",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node test/test.mjs", "deploy": "wrangler deploy"},
+  "devDependencies": {"wrangler": "4.151.2"}
+}
