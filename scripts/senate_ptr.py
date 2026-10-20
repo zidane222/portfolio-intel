@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 BASE = 'https://efdsearch.senate.gov'
 UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36'}
 PTR = 11  # eFD report type id for periodic transaction reports
-SENATOR = 1  # eFD filer type id for sitting senators (candidates and former senators are other types)
+SENATORS = '[1,5]'  # eFD filer types: 1 sitting senator, 5 former senator (candidates, 4, are excluded)
 
 
 def session():
@@ -33,7 +33,7 @@ def list_reports(s, since):
     while True:
         r = s.post(BASE + '/search/report/data/', timeout=60, headers={
             'Referer': BASE + '/search/', 'X-CSRFToken': s.cookies.get('csrftoken', ''), 'X-Requested-With': 'XMLHttpRequest'},
-            data={'start': str(start), 'length': '100', 'report_types': f'[{PTR}]', 'filer_types': f'[{SENATOR}]',
+            data={'start': str(start), 'length': '100', 'report_types': f'[{PTR}]', 'filer_types': SENATORS,
                   'submitted_start_date': since.strftime('%m/%d/%Y 00:00:00'), 'submitted_end_date': '',
                   'candidate_state': '', 'senator_state': '', 'office_id': '', 'first_name': '', 'last_name': '', 'draw': '1'})
         r.raise_for_status()
