@@ -2,6 +2,7 @@ name = "portfolio-intel-api"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+account_id = "cd44f4028602ea1f8a67431524cca352"
 
 # Non-secret settings. Secrets (GROQ_API_KEY, PLAID_CLIENT_ID, PLAID_SECRET) are set in the
 # Cloudflare dashboard under the Worker's Settings > Variables and Secrets, never in this file.
