@@ -126,11 +126,19 @@ class Supabase:
             if r.status_code >= 300:
                 raise RuntimeError(f'{table} upsert failed: {r.status_code} {r.text[:200]}')
 
+    def clear_chamber(self, chamber):
+        r = requests.delete(f'{self.url}/rest/v1/hist_trades?chamber=eq.{chamber}', headers={**self.h, 'Prefer': 'return=minimal'}, timeout=120)
+        if r.status_code >= 300:
+            raise RuntimeError(f'clearing {chamber} failed: {r.status_code} {r.text[:150]}')
+
     def prune(self, cutoff):
         for table, col in (('hist_trades', 'traded'), ('hist_prices', 'd')):
             r = requests.delete(f'{self.url}/rest/v1/{table}?{col}=lt.{cutoff}', headers={**self.h, 'Prefer': 'return=minimal'}, timeout=120)
             if r.status_code >= 300:
                 warn(f'Supabase prune of {table} failed: {r.status_code} {r.text[:150]}')
+
+
+REPLACE = []  # chambers to clear before loading (set by --replace-chamber)
 
 
 def to_supabase(trades, prices):
@@ -140,6 +148,9 @@ def to_supabase(trades, prices):
         return
     sb = Supabase(url, key)
     cutoff = (datetime.date.today() - datetime.timedelta(days=365 * KEEP_YEARS)).isoformat()
+    for c in REPLACE:
+        sb.clear_chamber(c)
+        notice(f'Supabase history: cleared old {c} rows before reloading')
     sb.prune(cutoff)  # drop rows older than 5 years first (they stay in BigQuery)
     used = sb.size()
     if used >= SUPABASE_LIMIT:
@@ -207,7 +218,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--trades', nargs='+', required=True)
     ap.add_argument('--prices', choices=['recent', '5y', 'max', 'none'], default='recent')
+    ap.add_argument('--replace-chamber', action='append', default=[], help='delete this chamber from the history first (fixes)')
     a = ap.parse_args()
+    REPLACE.extend(a.replace_chamber)
     trades = load_trades(a.trades)
     tickers = {t['ticker'] for t in trades if t['ticker'] and re.fullmatch(r'[A-Z][A-Z.]{0,6}', t['ticker'])}
     prices = [] if a.prices == 'none' else load_prices(tickers, {'recent': '1mo', '5y': '5y', 'max': 'max'}[a.prices])
