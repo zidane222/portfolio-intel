@@ -28,6 +28,21 @@ def session():
     return s
 
 
+SUFFIX = re.compile(r',?\s*\b(Jr|Sr|II|III|IV|V)\.?\s*$', re.I)
+
+
+def clean_name(first, last):
+    """'King, Jr.' + 'Angus S' -> 'King, Angus S Jr.'; 'Moran,' + 'Jerry' -> 'Moran, Jerry'."""
+    last = re.sub(r'\s+', ' ', last).strip().strip(',').strip()
+    first = re.sub(r'\s+', ' ', first).strip().strip(',').strip()
+    suf = ''
+    m = SUFFIX.search(last)
+    if m:
+        suf = m.group(1).capitalize() + ('.' if m.group(1).lower() in ('jr', 'sr') else '') if m.group(1).lower() in ('jr', 'sr') else m.group(1).upper()
+        last = SUFFIX.sub('', last).strip().strip(',').strip()
+    return f"{last}, {first}{' ' + suf if suf else ''}"
+
+
 def list_reports(s, since):
     out, start = [], 0
     while True:
@@ -43,7 +58,7 @@ def list_reports(s, since):
             m = re.search(r'href="([^"]+)"', link)
             if not m:
                 continue
-            out.append({'name': f"{BeautifulSoup(last, 'html.parser').get_text(strip=True)}, {BeautifulSoup(first, 'html.parser').get_text(strip=True)}",
+            out.append({'name': clean_name(BeautifulSoup(first, 'html.parser').get_text(strip=True), BeautifulSoup(last, 'html.parser').get_text(strip=True)),
                         'url': BASE + m.group(1), 'paper': '/paper/' in m.group(1), 'received': received})
         start += len(rows)
         if not rows or start >= int(d.get('recordsFiltered') or 0):
