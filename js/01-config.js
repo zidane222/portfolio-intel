@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────
 //  CONFIG
 // ─────────────────────────────────────────────
-const BACKEND_URL = 'https://portfolio-intel-escf.onrender.com';
+// API: Cloudflare Worker first; the old Render server answers only if the Worker fails.
+const BACKEND_URL = 'https://portfolio-intel-api.viphashkahn.workers.dev';
+const FALLBACK_URL = 'https://portfolio-intel-escf.onrender.com';
 const STORE_KEY = 'pi.portfolio.v2';
 const WATCH_KEY = 'pi.watch.v1';
 
