@@ -101,13 +101,14 @@ function syncUI(msg) {
   card.hidden = !sbOn();
   if (!sbOn()) return;
   const s = sbSession(), c = lockConf();
-  const show = id => ['sync-out', 'sync-code', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
+  const show = id => ['sync-out', 'sync-code', 'sync-create', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
   $('sync-setpass').hidden = true;
   let text;
   if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser.`; }
   else if (!s) { show('sync-out'); text = 'Already use Portfolio Intel on another device? Sign in with the same email and you\'ll unlock your data with your existing passcode. No need to set a new one. Your data is encrypted with your passcode before it leaves the device.'; }
   else if (!remoteChecked) { show(null); text = 'Checking for your synced data…'; }
   else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter the passcode you use on your other device to load it here.'; }
+  else if (!c || !c.encSalt) { show('sync-create'); text = 'You\'re signed in. Last step: create a passcode. It encrypts your portfolio on this device before it syncs, so only you can read it.'; }
   else if (!c || !c.sync) { show('sync-pass'); $('sync-setpass').hidden = false; $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in. Enter your passcode to turn on sync. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. No passcode yet? Tap Set passcode.`; }
   else {
     show('sync-in');
@@ -172,6 +173,28 @@ function wireAccount() {
     const pass = $('sync-pass-in').value; $('sync-pass-in').value = '';
     try { await syncWithPasscode(pass); } catch (err) { syncUI('Something went wrong: ' + err.message); }
   };
+  const meter = () => {
+    const v = $('sync-new-1').value, kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(v)).length;
+    $('sync-new-meter').textContent = !v ? '' : v.length < SYNC_MIN_PASS ? `Too short: ${v.length}/${SYNC_MIN_PASS} characters.`
+      : v.length >= 14 || (v.length >= 10 && kinds >= 3) ? 'Strong.' : 'OK. Longer is stronger, a short phrase works well.';
+  };
+  $('sync-new-1').oninput = meter;
+  $('sync-create').onsubmit = async e => {
+    e.preventDefault();
+    const a = $('sync-new-1').value, b = $('sync-new-2').value;
+    if (a.length < SYNC_MIN_PASS) return syncUI(`Use at least ${SYNC_MIN_PASS} characters.`);
+    if (a !== b) return syncUI('Passcodes don\'t match.');
+    if (!$('sync-new-ack').checked) return syncUI('Tick the box to confirm you understand the passcode can\'t be reset.');
+    try {
+      const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 210000, encSalt = await vaultSeal(a);
+      localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter), encSalt, sync: true}));
+      sessionStorage.setItem('pi.unlocked', String(Date.now()));
+      $('sync-new-1').value = $('sync-new-2').value = ''; $('sync-new-meter').textContent = '';
+      $('lock-set').textContent = 'Change passcode';
+      await syncPush();
+      syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
+    } catch (err) { syncUI('Couldn\'t set up: ' + err.message); }
+  };
   $('sync-now').onclick = syncPush;
   $('sync-setpass').onclick = () => $('lock-set').click();
   $('sync-signout').onclick = async () => {
@@ -203,7 +226,7 @@ function wireAccount() {
       card.scrollIntoView({behavior: 'smooth', block: 'center'});
       card.classList.add('flash');
       const c = lockConf();
-      if (!(remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) && !(c && c.sync))
+      if (c && c.encSalt && !(remoteCache && !(VAULT.key && c.encSalt === remoteCache.enc_salt)) && !c.sync)
         syncUI(`You're signed in. Enter your passcode to start syncing (at least ${SYNC_MIN_PASS} characters; no passcode yet? Tap Set passcode).`);
       setTimeout(() => card.classList.remove('flash'), 2500);
     }, 400);
