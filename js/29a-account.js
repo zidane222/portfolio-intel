@@ -100,10 +100,11 @@ function syncUI(msg) {
   if (!sbOn()) return;
   const s = sbSession(), c = lockConf();
   const show = id => ['sync-out', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
+  $('sync-setpass').hidden = true;
   let text;
   if (!s) { show('sync-out'); text = 'Sign in with your email to keep your portfolio on all your devices. Your data is encrypted with your passcode before it leaves this device.'; }
   else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter your passcode to load it on this device.'; }
-  else if (!c || !c.sync) { show('sync-pass'); $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in. Enter your passcode to turn on sync. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters; set or change it under Security.`; }
+  else if (!c || !c.sync) { show('sync-pass'); $('sync-setpass').hidden = false; $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in. Enter your passcode to turn on sync. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. No passcode yet? Tap Set passcode.`; }
   else {
     show('sync-in');
     const at = (() => { try { return localStorage.getItem(SB_SYNCED); } catch (e) { return null; } })();
@@ -129,9 +130,9 @@ async function syncWithPasscode(pass) {
     return;
   }
   // Turn on sync from this device
-  if (!c || !c.encSalt) return syncUI(`Set a passcode first (at least ${SYNC_MIN_PASS} characters), under Security.`);
+  if (!c || !c.encSalt) return syncUI(`Set a passcode first (at least ${SYNC_MIN_PASS} characters). Tap Set passcode.`);
   if (await hashPass(pass, unb64(c.salt), c.iter) !== c.hash) return syncUI('Wrong passcode.');
-  if (pass.length < SYNC_MIN_PASS) return syncUI(`Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. Change it under Security, then try again.`);
+  if (pass.length < SYNC_MIN_PASS) return syncUI(`Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. Tap Set passcode to change it, then try again.`);
   localStorage.setItem(LOCK_KEY, JSON.stringify({...c, sync: true}));
   await syncPush();
 }
@@ -153,6 +154,7 @@ function wireAccount() {
     try { await syncWithPasscode(pass); } catch (err) { syncUI('Something went wrong: ' + err.message); }
   };
   $('sync-now').onclick = syncPush;
+  $('sync-setpass').onclick = () => $('lock-set').click();
   $('sync-signout').onclick = async () => {
     try { await sbFetch('/auth/v1/logout', {method: 'POST'}); } catch (e) {}
     sbSave(null); remoteCache = null;
