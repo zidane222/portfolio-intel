@@ -14,7 +14,8 @@ const PAGES = [
   {id: 'dividends', label: 'Dividends', sections: ['dividends'], ask: 'Could I earn more income?'},
   {id: 'copy', label: 'Copy test', sections: ['copy'], ask: 'What if I had followed them?'},
   {id: 'news', label: 'News', sections: ['news'], ask: 'What\'s happening right now?'},
-  {id: 'ask', label: 'Ask & alerts', sections: ['ask', 'alerts'], ask: 'Still have a question? Ask, or set alerts'},
+  // One page, two menu links that jump to each part
+  {id: 'ask', label: 'Ask & alerts', sections: ['ask', 'alerts'], links: [['ask', 'Ask'], ['alerts', 'Alerts']], ask: 'Still have a question? Ask, or set alerts'},
   // The original single long page, everything in its first order and colors
   {id: 'all', label: 'See it all', all: true, ask: 'Or see it all on one page'},
 ];
@@ -67,8 +68,11 @@ function showPage(target, {scroll = true} = {}) {
   document.body.classList.toggle('page-all', !!page.all);
   // Hide the dark or light background band when none of its sections are on this page
   document.querySelectorAll('main > .zone-dark, main > .zone-light').forEach(z => z.classList.toggle('zone-off', !z.querySelector('section.page-on')));
+  const pageLinks = [...document.querySelectorAll(`.navlinks a[data-page="${page.id}"]`)];
+  const exact = pageLinks.find(a => a.getAttribute('href') === '#' + target);
+  const activeLink = exact || pageLinks[0];
   document.querySelectorAll('.navlinks a').forEach(a => {
-    const on = a.dataset.page === page.id;
+    const on = a === activeLink;
     a.classList.toggle('active', on);
     if (on) { a.setAttribute('aria-current', 'page'); const row = a.parentElement; if (row.scrollWidth > row.clientWidth) row.scrollTo({left: a.offsetLeft - 14, behavior: reduced ? 'auto' : 'smooth'}); }
     else a.removeAttribute('aria-current');
@@ -88,7 +92,7 @@ function showPage(target, {scroll = true} = {}) {
 function wirePages() {
   document.body.classList.add('paged');
   // Top menu: one link per page
-  $('navlinks').innerHTML = PAGES.map(p => `<a href="#${p.all ? 'all' : p.sections[0]}" data-page="${p.id}">${esc(p.label)}</a>`).join('');
+  $('navlinks').innerHTML = PAGES.map(p => (p.links || [[p.all ? 'all' : p.sections[0], p.label]]).map(([h, l]) => `<a href="#${h}" data-page="${p.id}">${esc(l)}</a>`).join('')).join('');
   // "Next" button at the end of every page
   PAGES.forEach((p, i) => {
     const next = PAGES[i + 1]; if (!next || p.all) return;
