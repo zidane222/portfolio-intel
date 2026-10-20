@@ -32,6 +32,14 @@ jobs:
           # Strip spaces or line breaks that sneak in when pasting secrets
           export CLOUDFLARE_API_TOKEN="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '[:space:]')"
           export CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '[:space:]')"
+          # Link the 3 keys from the Cloudflare Secrets Store; the store id comes from the cfks secret
+          STORE_ID="$(printf '%s' "$CF_STORE_RAW" | tr -d '[:space:]')"
+          if [ -n "$STORE_ID" ]; then
+            for n in GROQ_API_KEY PLAID_CLIENT_ID PLAID_SECRET; do
+              printf '\n[[secrets_store_secrets]]\nbinding = "%s"\nstore_id = "%s"\nsecret_name = "%s"\n' "$n" "$STORE_ID" "$n" >> wrangler.toml
+            done
+            echo "::notice::Linked 3 keys from the Secrets Store (store id length ${#STORE_ID})"
+          fi
           [ ${#CLOUDFLARE_ACCOUNT_ID} -eq 32 ] || { echo "::error::The cfkd secret should be the 32-character account id (it has ${#CLOUDFLARE_ACCOUNT_ID})"; exit 1; }
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::The cf secret is empty"; exit 1; }
           echo "::notice::Token length ${#CLOUDFLARE_API_TOKEN}"
@@ -44,3 +52,4 @@ jobs:
         env:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
           CF_ACCOUNT_RAW: ${{ secrets.cfkd }}
+          CF_STORE_RAW: ${{ secrets.cfks }}

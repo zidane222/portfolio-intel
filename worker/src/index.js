@@ -3,6 +3,7 @@
 // move into its own Worker behind this router without changing the app.
 import {json, corsHeaders} from './lib/http.js';
 import {rateLimited} from './lib/ratelimit.js';
+import {resolveSecrets} from './lib/secrets.js';
 import * as market from './modules/market.js';
 import * as news from './modules/news.js';
 import * as rates from './modules/rates.js';
@@ -33,7 +34,8 @@ function health() {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, rawEnv) {
+    const env = await resolveSecrets(rawEnv);
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});

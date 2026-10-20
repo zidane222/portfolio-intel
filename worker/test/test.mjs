@@ -50,3 +50,12 @@ await t('feed parser rss + atom', async () => { const a = parseFeed('X', '<rss><
 await t('404', async () => { assert.equal((await call('/api/nope')).status, 404); });
 await t('rate limit', async () => { let last; for (let i = 0; i < 125; i++) last = await worker.fetch(new Request('https://w.dev/api/news', {headers: {Origin: O, 'CF-Connecting-IP': '9.9.9.9'}}), env); assert.equal(last.status, 429); });
 console.log(`\n${n} tests passed`);
+// Secrets Store bindings are objects with get()
+{
+  const {resolveSecrets} = await import('../src/lib/secrets.js');
+  const e = await resolveSecrets({GROQ_API_KEY: {get: async () => 'from-store'}, PLAID_SECRET: 'plain', PLAID_ENV: 'sandbox'});
+  assert.equal(e.GROQ_API_KEY, 'from-store'); assert.equal(e.PLAID_SECRET, 'plain'); assert.equal(e.PLAID_ENV, 'sandbox');
+  const r = await worker.fetch(new Request('https://w.dev/api/plaid/status', {headers: {Origin: O}}), {...env, PLAID_CLIENT_ID: {get: async () => 'x'.repeat(24)}, PLAID_SECRET: {get: async () => 'y'.repeat(30)}});
+  const d = await r.json(); assert.equal(d.client_id_length, 24); assert.equal(d.secret_length, 30);
+  console.log('ok secrets store bindings');
+}
