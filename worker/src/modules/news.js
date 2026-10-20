@@ -10,8 +10,8 @@ const FEEDS = [
   ['Seeking Alpha', 'https://seekingalpha.com/market_currents.xml'],
   ['Nasdaq', 'https://www.nasdaq.com/feed/rssoutbound?category=Markets'],
   ['Axios', 'https://api.axios.com/feed/'],
-  ['r/stocks', 'https://www.reddit.com/r/stocks/top/.rss?t=day'],
-  ['r/wallstreetbets', 'https://www.reddit.com/r/wallstreetbets/top/.rss?t=day'],
+  ['r/stocks', 'https://old.reddit.com/r/stocks/top/.rss?t=day'],
+  ['r/wallstreetbets', 'https://old.reddit.com/r/wallstreetbets/top/.rss?t=day'],
 ];
 
 const tag = (s, name) => { const m = s.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`, 'i')); return m ? m[1] : ''; };
@@ -47,14 +47,24 @@ async function googleNews(query, limit) {
   }).filter(a => a.title && a.link);
 }
 
-export async function feeds() {
+const REDDIT_UA = 'web:portfolio-intel:v1.0 (personal dashboard; github.com/zidane222/portfolio-intel)';
+
+export async function feeds(req, env) {
   let data = memGet('feeds');
   if (!data) {
     const prev = memGet('feeds:last') || {articles: []};
     const results = await pool(FEEDS, 10, async ([name, u]) => {
-      const text = await grab(u, {as: 'text', timeout: 10000});
+      // Reddit expects an app-style User-Agent and often refuses cloud servers without one
+      const headers = name.startsWith('r/') ? {'User-Agent': REDDIT_UA, 'Accept': 'application/rss+xml'} : {};
+      const text = await grab(u, {as: 'text', timeout: 10000, headers});
       return [name, text ? parseFeed(name, text) : null];
     });
+    // If Reddit still refuses, borrow its headlines from the backup server (a different network)
+    if (results.some(([n, items]) => n.startsWith('r/') && !(items && items.length)) && env && env.FALLBACK_API) {
+      const d = await grab(env.FALLBACK_API + '/api/feeds', {timeout: 25000});
+      const extra = (d && d.articles || []).filter(a => String(a.source || '').startsWith('r/'));
+      for (const r of results) if (r[0].startsWith('r/') && !(r[1] && r[1].length)) { const got = extra.filter(a => a.source === r[0]); if (got.length) r[1] = got; }
+    }
     const articles = [], sources = {};
     for (const [name, items] of results) {
       sources[name] = items ? items.length : 'unavailable';
