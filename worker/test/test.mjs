@@ -70,3 +70,18 @@ console.log(`\n${n} tests passed`);
   const d = await r.json(); assert.equal(d.client_id_length, 24); assert.equal(d.secret_length, 30);
   console.log('ok secrets store bindings');
 }
+// Reddit blocked -> headlines come from the backup server
+{
+  const {feeds} = await import('../src/modules/news.js');
+  const real = globalThis.fetch;
+  globalThis.fetch = async (u, init) => {
+    u = String(u);
+    if (u.includes('reddit.com')) return new Response('blocked', {status: 403});
+    if (u.startsWith('https://backup.test/api/feeds')) return new Response(JSON.stringify({articles: [{title: 'WSB post', link: 'https://r/1', source: 'r/wallstreetbets', social: true}]}), {status: 200});
+    return new Response('<rss><item><title>Market up</title><link>https://n/1</link></item></rss>', {status: 200});
+  };
+  const d = await (await feeds(null, {FALLBACK_API: 'https://backup.test'})).json();
+  assert.ok(d.articles.some(a => a.source === 'r/wallstreetbets' && a.title === 'WSB post'));
+  globalThis.fetch = real;
+  console.log('ok reddit falls back to backup server');
+}
