@@ -75,6 +75,12 @@ def scrape(year, log=print):
         except:
             return date_str
 
+    def fund_kind(text):
+        # House reports tag each asset with a code: [ST] stock, [EF] exchange-traded fund, [MF] mutual fund
+        code = re.search(r'\[([A-Z]{2})\]', text)
+        code = code.group(1) if code else ''
+        return {'MF': 'Mutual fund', 'EF': 'ETF'}.get(code, 'Stock')
+
     def asset_kind(text):
         code = re.search(r'\[([A-Z]{2})\]', text)
         code = code.group(1) if code else ''
@@ -116,7 +122,7 @@ def scrape(year, log=print):
             'amount': amount,
             'description': company,
             'private': not ticker,
-            'kind': 'Stock' if ticker else asset_kind(asset_text),
+            'kind': fund_kind(asset_text) if ticker else asset_kind(asset_text),
             'source': 'house'
         }
 
