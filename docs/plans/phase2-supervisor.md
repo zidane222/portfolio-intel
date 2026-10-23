@@ -499,3 +499,9 @@ Rollback: revert the PR. The frontend falls back to `/api/ai` automatically if `
 1. Should the Ask **chat** (`js/18-assistant.js`) also move to `/api/ask` in this PR, or stay on `/api/ai` until Phase 3? (The plan keeps it on `/api/ai`.)
 2. Is the fallback note wording in section 14 acceptable, or would you rather hide the AI text entirely and show only the sources list (which is the current plan)?
 3. Is 150 asks per day per visitor the right cap, given that the Groq free tier is shared by all users?
+
+## 20. Owner decisions (2026-10-23)
+
+1. **Yes:** the chat (`js/18-assistant.js`) also moves to `/api/ask` in this PR, with the same Sources list and Checked badge. It falls back to `/api/ai` if `/api/ask` fails or returns 404. Frontend owns this change.
+2. **Yes:** when both builder attempts fail validation, hide the AI text and show only the sources list with the short fallback note.
+3. **Yes:** 150 asks per visitor per day.
