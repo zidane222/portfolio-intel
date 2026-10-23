@@ -21,6 +21,12 @@ const ORDER = [/place (an|the) order/i, /\bI (bought|sold|executed)\b/i];
 const ECHO = [/system prompt/i, /ignore (all|previous) instructions/i, /"value_display"/, /\{\s*"id"\s*:\s*"f\d+"/];
 const UNKNOWN_WORDS = /unknown|not available|sources disagree/i;
 
+// Checks run on a normalized copy: NFKC folds full-width, math, superscript and circled digits
+// to ASCII, and format characters (zero-width, soft hyphen, word joiner) are removed so they
+// cannot split words or numbers. Any digit left outside ASCII (Arabic-Indic, Devanagari, ...)
+// and any vulgar fraction or roman numeral sign is a typed number.
+const norm = s => String(s).normalize('NFKC').replace(/\p{Cf}/gu, '');
+
 const sentences = s => String(s).split(/(?<=[.!?])\s+|\n+/);
 
 // V1 (L3): numbers reach the answer only through [[fN]] placeholders. Checked on the draft with
@@ -28,7 +34,9 @@ const sentences = s => String(s).split(/(?<=[.!?])\s+|\n+/);
 // only as 4-digit years 1900 to 2099 and as list numbering (1. or 1) at the start of a line).
 function strayNumbers(text) {
   const bad = [];
-  for (const line of String(text).replace(PLACEHOLDER, ' ').split('\n')) {
+  const n = norm(text).replace(PLACEHOLDER, ' ');
+  for (const ch of String(text) + n) if (ch > '\x7F' && /\p{N}/u.test(ch)) bad.push(ch);
+  for (const line of n.split('\n')) {
     const body = line.replace(/^\s*\d{1,2}[.)]\s/, '');
     for (const t of body.match(/\d+(?:[.,]\d+)*/g) || []) {
       if (/^(19|20)\d{2}$/.test(t)) continue;
@@ -54,10 +62,12 @@ const NUMBER_WORDS = [
   /\bdouble\b(?![- ](?:check|checked|checking|edged))/i,
   /(?<!\b(?:first|second|back|front)\s)\bhalf\b(?![- ]?years?\b)/i,
   /\b(?:[0-9]+|x|n)\s*times\b/i,
+  /\b[a-z]+-?fold\b/i,
+  /\b(?:one|a)[- ](?:third|quarter|fifth|tenth)s?\b/i,
 ];
 const PCT_WORD = /(\S*)\s*\b(?:percent(?:age points?)?|per\s+cent|basis\s+points?|bps)\b/gi;
 function numberWords(text) {
-  const s = String(text).replace(PLACEHOLDER, PH);
+  const s = norm(text).replace(PLACEHOLDER, PH);
   const hits = [];
   for (const re of NUMBER_WORDS) { const m = s.match(re); if (m) hits.push(m[0].trim().toLowerCase()); }
   for (const m of s.matchAll(PCT_WORD)) if (!m[1].endsWith(PH)) hits.push(m[0].trim().toLowerCase());
@@ -67,7 +77,8 @@ function numberWords(text) {
 
 // Rules V4 to V11 on one piece of text. Used for drafts, rendered text and the safe answer.
 export function safetyFlags(text, {rendered = false} = {}) {
-  const s = String(text || '');
+  const raw = String(text || '');
+  const s = norm(raw);
   const flags = [];
   for (const re of ADVICE) if (re.test(s)) { flags.push({rule: 'V4', detail: 'personalized advice wording'}); break; }
   for (const re of GUARANTEE) if (re.test(s)) { flags.push({rule: 'V5', detail: 'guaranteed return wording'}); break; }
@@ -75,8 +86,8 @@ export function safetyFlags(text, {rendered = false} = {}) {
   if (rendered && !s.includes(DISCLAIMER)) flags.push({rule: 'V7', detail: 'disclaimer missing'});
   for (const re of ORDER) if (re.test(s)) { flags.push({rule: 'V8', detail: 'order wording'}); break; }
   for (const re of ECHO) if (re.test(s)) { flags.push({rule: 'V9', detail: 'echoed instructions or data'}); break; }
-  if (/[\u2013\u2014]/.test(s)) flags.push({rule: 'V10', detail: 'em or en dash'});
-  const body = rendered ? s.replace(DISCLAIMER, '') : s;
+  if (/[\u2013\u2014]/.test(raw)) flags.push({rule: 'V10', detail: 'em or en dash'});
+  const body = rendered ? raw.replace(DISCLAIMER, '') : raw;
   if (!body.trim() || body.length > (rendered ? 1600 : 1200) || /^\s{0,3}#{1,6}\s/m.test(s)) flags.push({rule: 'V11', detail: 'empty, too long or markdown header'});
   return flags;
 }

@@ -627,4 +627,16 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.equal(validateFinal(s.text).status, 'PASS'); assert.ok(!s.shown.includes('f3')); assert.equal(s.shown.length, 8);
     assert.equal(validateFinal(safeAnswer([], lineSafe).text).status, 'PASS');
   });
+  // ---------------- V1/V1b unicode and zero-width (AppSec re-review) ----------------
+  await t('validator: unicode digits, fractions, superscripts and roman signs are typed numbers', async () => {
+    for (const x of ['Up \u0661\u0662\u0663 this year.', 'Up \uFF11\uFF12 this year.', 'Up \u0967\u0968 this year.', 'Up \u{1D7CF}\u{1D7D0} now.',
+      'Up \u2460 this year.', 'About \u00BD of holdings.', 'Up \u00B2\u00B3 this year.', 'Shares rose \u2153.', 'Up \u216B this year.'])
+      assert.equal(validate({draft: {text: x, used: []}, facts: []}).status, 'FLAG', x);
+  });
+  await t('validator: zero-width and soft hyphen cannot hide words; fold and fraction words flag', async () => {
+    for (const x of ['You should b\u200Buy more.', 'Up t\u200Bwo this year.', 'Up tw\u00ADo this year.', 'Shares rose tenfold.', 'Roughly one-third fell.'])
+      assert.equal(validate({draft: {text: x, used: []}, facts: []}).status, 'FLAG', x);
+    assert.equal(validate({draft: {text: 'It was the third quarter of 2025.', used: []}, facts: []}).status, 'PASS');
+  });
+
 }
