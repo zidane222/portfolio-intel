@@ -7,15 +7,16 @@ import ratesSvc from '../src/services/rates.js';
 import aiSvc from '../src/services/ai.js';
 import brokerSvc from '../src/services/broker.js';
 import disclosuresSvc from '../src/services/disclosures.js';
+import privateSvc from '../src/services/private.js';
 import {fernetKey, fernetEncrypt, fernetDecrypt} from '../src/lib/fernet.js';
 import {parseFeed} from '../src/modules/news.js';
 import {mapHoldings} from '../src/modules/broker.js';
 import {previousClose} from '../src/modules/market.js';
 
-const env = {ALLOWED_ORIGINS: 'https://portfolio-intel-279.pages.dev', PLAID_SECRET: 'testsecret', PLAID_CLIENT_ID: 'cid', PLAID_ENV: 'sandbox', GROQ_API_KEY: 'k'};
+const env = {ALLOWED_ORIGINS: 'https://portfolio-intel-279.pages.dev', PLAID_SECRET: 'testsecret', PLAID_CLIENT_ID: 'cid', PLAID_ENV: 'sandbox', GROQ_API_KEY: 'k', PRIVATE_DATA_URL: 'https://portfolio-intel-279.pages.dev/private_markets.json'};
 const O = 'https://portfolio-intel-279.pages.dev';
 const bind = (svc, e) => ({fetch: (r, init) => svc.fetch(r instanceof Request ? r : new Request(r, init), e)});
-const withServices = e => ({...e, MARKET: bind(market, e), NEWS: bind(newsSvc, e), RATES: bind(ratesSvc, e), AI_SVC: bind(aiSvc, e), BROKER: bind(brokerSvc, e), DISCLOSURES: bind(disclosuresSvc, e)});
+const withServices = e => ({...e, MARKET: bind(market, e), NEWS: bind(newsSvc, e), RATES: bind(ratesSvc, e), AI_SVC: bind(aiSvc, e), BROKER: bind(brokerSvc, e), DISCLOSURES: bind(disclosuresSvc, e), PRIVATE: bind(privateSvc, e)});
 const worker = {fetch: (req, e) => gateway.fetch(req, withServices(e))};
 const call = (path, init = {}) => worker.fetch(new Request('https://w.dev' + path, {...init, headers: {Origin: O, 'CF-Connecting-IP': '1.2.3.4', ...(init.headers || {})}}), env);
 
@@ -28,7 +29,8 @@ globalThis.fetch = async (u, init) => {
   if (u.includes('/v1/finance/search')) return ok({quotes: [{symbol: 'AAPL', quoteType: 'EQUITY', sectorDisp: 'Technology', industryDisp: 'Consumer Electronics'}]});
   if (u.includes('news.google.com')) return ok('<rss><channel><item><title>Apple rises - Reuters</title><link>https://x.com/a</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><source url="r">Reuters</source></item></channel></rss>');
   if (u.includes('raw.githubusercontent.com')) return ok({trades: [{ticker: 'NVDA'}], house_count: 1, updated: 'x'});
-  if (u.includes('api.groq.com')) return ok({choices: [{message: {content: '{"holdings":[]}'}}]});
+  if (u.includes('api.groq.com')) { if (globalThis.__groq) return globalThis.__groq(init); return ok({choices: [{message: {content: '{"holdings":[]}'}}]}); }
+  if (u.includes('pages.dev')) { if (globalThis.__pages) return globalThis.__pages(u); return new Response(JSON.stringify({updated: new Date().toISOString(), raises: []}), {status: 200, headers: {'Content-Type': 'application/json'}}); }
   if (u.includes('plaid.com/link/token/create')) return ok({link_token: 'link-sandbox-1'});
   if (u.includes('plaid.com/item/public_token/exchange')) return ok({access_token: 'access-sandbox-xyz'});
   if (u.includes('plaid.com/investments/holdings/get')) { assert.equal(JSON.parse(init.body).access_token, 'access-sandbox-123'); return ok({accounts: [{name: 'CMA', type: 'investment'}], securities: [{security_id: 'a', ticker_symbol: 'NVDA', name: 'NVIDIA'}], holdings: [{security_id: 'a', quantity: 2, cost_basis: 200, institution_value: 300}]}); }
@@ -37,7 +39,7 @@ globalThis.fetch = async (u, init) => {
 
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 
-await t('health checks every service', async () => { const d = await (await call('/health')).json(); assert.equal(d.status, 'ok'); assert.deepEqual(Object.keys(d.services).sort(), ['ai','broker','disclosures','market','news','rates']); });
+await t('health checks every service', async () => { const d = await (await call('/health')).json(); assert.equal(d.status, 'ok'); assert.deepEqual(Object.keys(d.services).sort(), ['ai','broker','disclosures','market','news','private','rates']); assert.equal(Object.keys(d.services).length, 7); });
 await t('missing service gives 503 (app falls back to Render)', async () => { const r = await gateway.fetch(new Request('https://w.dev/api/prices/AAPL', {headers: {Origin: O, 'CF-Connecting-IP': '5.5.5.5'}}), env); assert.equal(r.status, 503); });
 await t('services keep the visitor IP and origin', async () => { const r = await call('/api/ai', {method: 'POST', headers: {Origin: 'https://evil.com'}, body: '{}'}); assert.equal(r.status, 403); });
 await t('CORS allowed origin', async () => { const r = await call('/api/prices/AAPL'); assert.equal(r.headers.get('Access-Control-Allow-Origin'), O); });
@@ -60,6 +62,7 @@ await t('plaid link + exchange', async () => { assert.equal((await (await call('
 await t('feed parser rss + atom', async () => { const a = parseFeed('X', '<rss><item><title><![CDATA[A &amp; B]]></title><link>https://a.com</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate></item></rss>'); assert.equal(a[0].title, 'A & B'); const b = parseFeed('r/stocks', '<feed><entry><title>T</title><link href="https://r.com/x"/><updated>2026-10-19T10:00:00Z</updated></entry></feed>'); assert.equal(b[0].link, 'https://r.com/x'); assert.equal(b[0].social, true); });
 await t('404', async () => { assert.equal((await call('/api/nope')).status, 404); });
 await t('rate limit', async () => { let last; for (let i = 0; i < 125; i++) last = await worker.fetch(new Request('https://w.dev/api/news', {headers: {Origin: O, 'CF-Connecting-IP': '9.9.9.9'}}), env); assert.equal(last.status, 429); });
+await import('./phase2.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 console.log(`\n${n} tests passed`);
 // Secrets Store bindings are objects with get()
 {
