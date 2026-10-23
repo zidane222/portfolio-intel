@@ -13,7 +13,7 @@ function init() {
   wireReveal(); wirePages(); wireImport(); wireAsk(); buildChart();
   $('feed-more').onclick = () => { feedLimit += 12; renderFeed(); };
   $('copy-member').onchange = e => runCopyTest(e.target.value);
-  wireLock(); wireAssist(); wirePlaid(); wireAccount();
+  wireLock(); wireAssist(); wirePlaid(); wireAccount(); if (typeof wirePrivate === 'function') wirePrivate();
   wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData(); wireFeedFilters();
   $('cmp-member').onchange = e => { cmpMember = e.target.value; renderAnyMember(); };
   $('share-copy').onclick = shareCopy;

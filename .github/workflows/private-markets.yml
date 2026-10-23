@@ -1,0 +1,64 @@
+name: Private markets (SEC Form D and Form C)
+
+on:
+  schedule:
+    - cron: '30 11 * * *'   # 11:30 UTC daily, after EDGAR publishes the previous day's index
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Rolling window in days'
+        default: '60'
+  push:
+    paths: ['scripts/private_markets.py', '.github/workflows/private-markets.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: private-markets
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet requests
+      - name: Collect Form D and Form C filings
+        run: |
+          # Test pushes on branches fetch a few days only; main keeps the full window
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then DAYS="${{ github.event.inputs.days || '60' }}"; else DAYS=4; rm -f private_markets.json; fi
+          python3 scripts/private_markets.py --days "$DAYS" --out private_markets.json
+      - name: Report stats
+        run: |
+          python3 - <<'PY'
+          import json, collections
+          d = json.load(open('private_markets.json')); r = d['raises']
+          D = [x for x in r if x['f'] == 'D']; C = [x for x in r if x['f'] == 'C']
+          def note(s): print('::notice::' + s.replace('%', '%25').replace('\n', ' ')[:900])
+          note(f"total {len(r)} D {len(D)} C {len(C)} days {d['done']}")
+          note('stages ' + str(collections.Counter(x['stage'] for x in r).most_common()))
+          note('industries ' + str(collections.Counter(x.get('ind') for x in D).most_common(8)))
+          note('C fields ' + str(collections.Counter(k for x in C for k in x).most_common()))
+          note('D fields ' + str(collections.Counter(k for x in D for k in x).most_common()))
+          if D: note('D sample ' + json.dumps(D[0]))
+          if C: note('C sample ' + json.dumps(C[0]))
+          note('austin ' + str([x['n'] for x in r if x.get('st') == 'TX' and 'AUSTIN' in (x.get('city') or '').upper()][:12]))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: private-markets
+          path: private_markets.json
+      - name: Commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add private_markets.json
+          git diff --staged --quiet && exit 0
+          git commit -m "Auto-update private markets $(date -u '+%Y-%m-%d')"
+          for i in 1 2 3; do git pull --rebase -q && git push && break; sleep 5; done

@@ -27,6 +27,7 @@ Render Flask backend (backend/main.py), kept on as fallback
 GitHub Actions
   fetch_trades (daily 06:00 UTC): House + Senate PTRs, prices, Supabase + BigQuery
   deploy-worker (push): services then gateway, Secrets Store bindings
+  private-markets (daily 11:30 UTC): SEC EDGAR Form D + Form C, rolling 60 days → private_markets.json
   security (PR, push, weekly): secrets, dependencies, CodeQL, ZAP
   main_portfolio-intel (backend changes): Azure Web App deploy (CI/CD showcase)
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
@@ -50,7 +51,7 @@ BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS |
 | Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP |
 | Account | Email, passkey public keys | Supabase Auth | Supabase managed |
-| Public | Congressional trades, prices, news | JSON files, Supabase history, BigQuery | Integrity only |
+| Public | Congressional trades, prices, news, SEC Form D and Form C filings | JSON files, Supabase history, BigQuery | Integrity only |
 
 ## In-app agent framework (Phase 2, planned)
 
