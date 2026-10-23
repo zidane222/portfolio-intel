@@ -34,7 +34,8 @@ export async function groqChat(env, system, user, maxTokens, jsonMode = false, o
       });
       d = await r.json();
     } catch (e) { last = String(e); continue; }
-    if (!r.ok || d.error) { last = `${r.status} ${JSON.stringify(d.error || '')}`; console.log('Groq error', model, last); continue; }
+    if (!r.ok || d.error) { // Status and error code only: Groq error bodies (e.g. json_validate_failed.failed_generation) can echo prompt data.
+      last = `${r.status} ${String((d.error && (d.error.code || d.error.type)) || '').slice(0, 40)}`; console.log('Groq error', model, last); continue; }
     const content = d.choices?.[0]?.message?.content || '';
     if (content.trim()) return content;
     last = 'empty answer';

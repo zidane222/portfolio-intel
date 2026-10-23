@@ -68,7 +68,7 @@ export function factcheck(c, now = Date.now()) {
       groups.set(it.key, g);
     }
   }
-  if (dropped.length) console.log('factcheck dropped unparseable', dropped.slice(0, 10).join(',')); // keys only (F7)
+  if (dropped.length) console.log('factcheck dropped unparseable', dropped.length); // count only: keys can hold held tickers (F7)
 
   const facts = [];
   for (const g of groups.values()) {
