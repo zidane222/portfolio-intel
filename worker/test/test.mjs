@@ -24,12 +24,13 @@ const chart = (price, closes) => ({chart: {result: [{meta: {regularMarketPrice: 
   timestamp: [1760054400, 1760140800, 1760313600, 1760400000], indicators: {quote: [{close: closes}]}, events: {dividends: {a: {date: Math.floor(Date.now()/1000) - 86400*30, amount: 0.5}}}}]}});
 globalThis.fetch = async (u, init) => {
   u = String(u);
+  const host = (() => { try { return new URL(u).hostname; } catch (e) { return ''; } })();
   const ok = b => new Response(typeof b === 'string' ? b : JSON.stringify(b), {status: 200});
   if (u.includes('/v8/finance/chart/')) return ok(chart(110, [100, 102, 104, 110]));
   if (u.includes('/v1/finance/search')) return ok({quotes: [{symbol: 'AAPL', quoteType: 'EQUITY', sectorDisp: 'Technology', industryDisp: 'Consumer Electronics'}]});
-  if (u.includes('news.google.com')) return ok('<rss><channel><item><title>Apple rises - Reuters</title><link>https://x.com/a</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><source url="r">Reuters</source></item></channel></rss>');
+  if (host === 'news.google.com') return ok('<rss><channel><item><title>Apple rises - Reuters</title><link>https://x.com/a</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><source url="r">Reuters</source></item></channel></rss>');
   if (u.includes('raw.githubusercontent.com')) return ok({trades: [{ticker: 'NVDA'}], house_count: 1, updated: 'x'});
-  if (u.includes('api.groq.com')) { if (globalThis.__groq) return globalThis.__groq(init); return ok({choices: [{message: {content: '{"holdings":[]}'}}]}); }
+  if (host === 'api.groq.com') { if (globalThis.__groq) return globalThis.__groq(init); return ok({choices: [{message: {content: '{"holdings":[]}'}}]}); }
   if (u.includes('pages.dev')) { if (globalThis.__pages) return globalThis.__pages(u); return new Response(JSON.stringify({updated: new Date().toISOString(), raises: []}), {status: 200, headers: {'Content-Type': 'application/json'}}); }
   if (u.includes('plaid.com/link/token/create')) return ok({link_token: 'link-sandbox-1'});
   if (u.includes('plaid.com/item/public_token/exchange')) return ok({access_token: 'access-sandbox-xyz'});
