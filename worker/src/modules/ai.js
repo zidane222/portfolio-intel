@@ -70,6 +70,7 @@ const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
   + 'using only the facts given. Refer to a number only as its placeholder, for example [[f3]]. Never type a digit yourself. '
   + 'If a fact is unknown or conflicting, say it is unknown, not available, or that sources disagree. Do not tell the user to buy, sell '
   + 'or move money. Describe facts and trade-offs. Do not promise returns. No dashes used as punctuation. '
+  + 'Always answer in English, even if the question is in another language. '
   + 'Return ONLY JSON: {"text": string, "used": array of fact ids you used, "unknown_mentioned": array of unknown fact ids you mentioned}.';
 
 const FLAG_HELP = {
