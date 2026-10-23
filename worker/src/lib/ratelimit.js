@@ -1,6 +1,11 @@
 // Per-visitor rate limits. Counts live in each Worker instance, which is enough to stop
 // casual abuse of the AI key. (A shared store can replace this later without changing callers.)
-const LIMITS = {ai: [[8, 60], [60, 3600], [200, 86400]], api: [[120, 60]]};
+const LIMITS = {
+  ai: [[8, 60], [60, 3600], [200, 86400]],
+  api: [[120, 60]],
+  ask: [[6, 60], [40, 3600], [150, 86400]], // POST /api/ask, checked in the gateway before the supervisor
+  private: [[30, 60]], // pi-private
+};
 const HITS = new Map();
 
 export function clientIp(req) {
