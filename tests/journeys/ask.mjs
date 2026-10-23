@@ -105,6 +105,8 @@ async function run(viewport, label) {
   check(aiHits === ai2 + 1 && last.includes(AI_TEXT) && last.includes('Sources unavailable right now.'), `${label} chat 404 uses /api/ai`);
   const stored = await page.evaluate(() => sessionStorage.getItem('pi.chat') || '');
   check(!stored.includes('Portfolio total value'), `${label} chat sources not kept in sessionStorage`);
+  let parsed = []; try { parsed = JSON.parse(stored); } catch (e) {}
+  check(Array.isArray(parsed) && parsed.length === 3 && parsed.every(m => m.role === 'user') && !stored.includes('$12,345.67') && !stored.includes(AI_TEXT) && !stored.includes('Shown from sources only'), `${label} chat sessionStorage holds no bot text`, stored.slice(0, 120));
   await page.click('#as-close');
 
   // Private markets page with filters (data is the real private_markets.json served by the repo)

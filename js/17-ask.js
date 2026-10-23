@@ -91,7 +91,7 @@ function sourcesItems(sources) {
   return sources.map(s => {
     const st = String(s.status || '').toLowerCase();
     const tag = st === 'unknown' ? '<span class="src-tag unknown">Unknown</span>' : st === 'conflicting' ? '<span class="src-tag conflict">Conflicting</span>' : '';
-    const url = typeof s.url === 'string' && /^https?:\/\//i.test(s.url) ? s.url : null;
+    const url = typeof s.url === 'string' && /^https:\/\//i.test(s.url) ? s.url : null;
     const src = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(s.source || 'Source')}</a>` : esc(s.source || 'Source');
     return `<li><span class="src-l">${esc(s.label || s.fact || 'Fact')}</span>${s.value != null && s.value !== '' ? `: <b>${esc(s.value)}</b>` : ''} ${tag}<span class="src-m">${src}, ${esc(fmtAsof(s.asof))}</span></li>`;
   }).join('');
