@@ -7,5 +7,6 @@ export const OWNERS = [
   [/^\/api\/ai$/, 'ai', 'AI_SVC'],
   [/^\/api\/plaid\//, 'broker', 'BROKER'],
   [/^\/api\/all-trades$/, 'disclosures', 'DISCLOSURES'],
+  [/^\/api\/private(\/stats)?$/, 'private', 'PRIVATE'],
 ];
 export const ownerOf = path => OWNERS.find(([re]) => re.test(path)) || null;

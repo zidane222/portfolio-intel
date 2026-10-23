@@ -1,10 +1,13 @@
 // Portfolio Intel API gateway (Cloudflare Worker).
 // The only public entry point. It handles CORS, the overall rate limit and security headers,
 // then forwards each request to the service that owns it over a private service binding.
-// Services: market, news, rates, ai, broker, disclosures (src/services/*.js).
-import {json, corsHeaders} from './lib/http.js';
+// Services: market, news, rates, ai, broker, disclosures, private (src/services/*.js).
+// POST /api/ask is handled here by the agent supervisor (src/agents/), which reaches the
+// services only through their bindings.
+import {json, corsHeaders, originOk} from './lib/http.js';
 import {rateLimited} from './lib/ratelimit.js';
 import {OWNERS, ownerOf} from './routes.js';
+import {handleAsk} from './agents/supervisor.js';
 
 async function health(env) {
   const checks = await Promise.all(OWNERS.map(async ([, name, binding]) => {
@@ -20,8 +23,19 @@ async function health(env) {
   return json({status: ok ? 'ok' : 'degraded', service: 'Portfolio Intel API gateway', services, updated: new Date().toISOString()});
 }
 
+// Internal headers (X-PI-*) are set only by the gateway itself. Any copy sent by a client is removed
+// before routing, so a public request can never pass as internal.
+export function stripInternal(req) {
+  const drop = [...req.headers.keys()].filter(k => k.toLowerCase().startsWith('x-pi-'));
+  if (!drop.length) return req;
+  const headers = new Headers(req.headers);
+  for (const k of drop) headers.delete(k);
+  return new Request(req, {headers});
+}
+
 export default {
   async fetch(req, env) {
+    req = stripInternal(req);
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});
@@ -30,6 +44,12 @@ export default {
       if (url.pathname === '/' || url.pathname === '/health') res = await health(env);
       else if (!url.pathname.startsWith('/api/')) res = json({error: 'Not found'}, 404);
       else if (rateLimited(req, 'api')) res = json({error: 'Too many requests. Try again in a minute.'}, 429);
+      else if (url.pathname === '/api/ask') {
+        if (req.method !== 'POST') res = json({error: 'Not found'}, 404);
+        else if (!originOk(req, env)) res = json({error: 'Not allowed'}, 403);
+        else if (rateLimited(req, 'ask')) res = json({error: 'You have reached the assistant limit for now. Try again later.'}, 429);
+        else res = await handleAsk(req, env);
+      }
       else {
         const owner = ownerOf(url.pathname);
         const svc = owner && env[owner[2]];

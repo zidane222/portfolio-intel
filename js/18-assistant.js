@@ -1,8 +1,15 @@
 // ─────────────────────────────────────────────
 //  FLOATING ASSISTANT (pop-up chat)
 // ─────────────────────────────────────────────
+// Only the user's own questions are kept in sessionStorage. Bot answers can hold portfolio
+// values, so they live in memory for this tab only and are gone after a reload.
 let chat = [];
-try { chat = JSON.parse(sessionStorage.getItem('pi.chat')) || []; } catch (e) {}
+try {
+  const saved = JSON.parse(sessionStorage.getItem('pi.chat'));
+  if (Array.isArray(saved)) chat = saved.filter(m => m && m.role === 'user' && typeof m.text === 'string').map(m => ({role: 'user', text: m.text}));
+  if (chat.length) chat.restored = true;
+} catch (e) {}
+const chatRole = r => r === 'bot' ? 'bot' : 'user';
 function chatSuggestions() {
   const s = [];
   if (myPortfolio.length) {
@@ -19,18 +26,20 @@ function renderChat() {
       <div class="as-chips">${chatSuggestions().map(q => `<button type="button" class="as-chip">${esc(q)}</button>`).join('')}</div></div>`;
     box.querySelectorAll('.as-chip').forEach(b => b.onclick = () => sendChat(b.textContent));
   } else {
-    box.innerHTML = chat.map(m => `<div class="as-m ${m.role}">${m.role === 'bot' ? '' : ''}<div class="as-b">${esc(m.text)}</div></div>`).join('')
+    box.innerHTML = (chat.restored ? '<p class="as-note" role="note">Answers are not saved after a reload. Your earlier questions are below.</p>' : '')
+      + chat.map(m => `<div class="as-m ${chatRole(m.role)}"><div class="as-b">${m.text ? `<div class="as-t">${esc(m.text)}</div>` : ''}${m.role === 'bot' && m.mode ? `<div class="as-check">${checkHTML(m)}</div>${sourcesBlock(m.sources, m.mode === 'fallback')}` : ''}</div></div>`).join('')
       + (chat.busy ? '<div class="as-m bot"><div class="as-b as-typing" aria-label="Thinking"><span></span><span></span><span></span></div></div>' : '');
   }
   box.scrollTop = box.scrollHeight;
-  try { sessionStorage.setItem('pi.chat', JSON.stringify(chat.slice(-30))); } catch (e) {}
+  // Store only the user's own turns. Bot text and sources stay in memory only.
+  try { sessionStorage.setItem('pi.chat', JSON.stringify(chat.filter(m => m.role === 'user').slice(-30).map(m => ({role: 'user', text: m.text})))); } catch (e) {}
 }
 async function sendChat(q) {
   q = (q || '').trim(); if (!q || chat.busy) return;
   const hist = chat.slice();
   chat.push({role: 'user', text: q}); chat.busy = true; renderChat();
   $('as-in').value = ''; $('as-send').disabled = true;
-  try { chat.push({role: 'bot', text: await askAI(q, hist)}); }
+  try { const r = await askChecked(q, hist); chat.push({role: 'bot', text: r.text, sources: r.sources, mode: r.mode}); }
   catch (e) { chat.push({role: 'bot', text: e.status === 429 ? e.message : 'I can\'t reach the assistant right now. Try again in a minute.'}); }
   chat.busy = false; $('as-send').disabled = false; renderChat();
   if (matchMedia('(hover: hover)').matches) $('as-in').focus();

@@ -44,11 +44,85 @@ async function askAI(question, history) {
   if (d.error) throw new Error(d.error);
   return (d.answer || 'No answer came back. Try rephrasing.').replace(/\*\*|__|^#+\s/gm, '').trim();
 }
+// Structured portfolio summary built on the device for /api/ask (plan 5.1).
+// User-supplied context for this one request only: the server never stores it.
+function buildPortfolio() {
+  if (!myPortfolio.length) return undefined;
+  const list = myPortfolio.slice(0, 60);
+  const tot = myPortfolio.reduce((s, h) => s + valueOf(h), 0);
+  const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+  const cls = {}; myPortfolio.forEach(h => cls[classOf(h)] = (cls[classOf(h)] || 0) + valueOf(h));
+  const allocation = {}; Object.entries(cls).forEach(([k, v]) => allocation[k] = tot ? Math.round(v / tot * 1000) / 10 : 0);
+  return {
+    asof: new Date().toISOString(),
+    total: r2(tot),
+    holdings: list.map(h => ({ticker: String(h.ticker || '').slice(0, 20), shares: h.isCash ? null : (Number(h.shares) || 0), value: r2(valueOf(h)),
+      avgCost: h.avgCost ? r2(h.avgCost) : null, isCash: !!h.isCash, apy: h.apy != null && h.apy !== '' ? Number(h.apy) : null, class: classOf(h)})),
+    allocation,
+    income_annual: r2(myPortfolio.reduce((s, h) => s + incomeOf(h), 0))
+  };
+}
+// Calls the supervisor. Returns {text, sources, check, mode}: mode is 'checked', 'fallback' or 'plain' (old /api/ai path).
+async function askChecked(question, history) {
+  try {
+    const hist = (history || []).filter(m => m && m.text).slice(-6).map(m => ({role: m.role === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 600)}));
+    const body = {question: question.slice(0, 1000), client_asof: new Date().toISOString()};
+    if (hist.length) body.history = hist;
+    const pf = buildPortfolio(); if (pf) body.portfolio = pf;
+    const d = await getJSON(BACKEND_URL + '/api/ask', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    if (!d || d.error || typeof d.answer !== 'string') throw new Error((d && d.error) || 'Bad response');
+    const status = d.check && d.check.status;
+    const sources = Array.isArray(d.sources) ? d.sources : [];
+    if (status === 'PASS') return {text: d.answer.trim(), sources, check: 'PASS', mode: 'checked'};
+    return {text: '', sources, check: status || 'fallback', mode: 'fallback'};
+  } catch (e) {
+    return {text: await askAI(question, history), sources: [], check: null, mode: 'plain'};
+  }
+}
+const FALLBACK_NOTE = 'Shown from sources only, the written answer did not pass our checks.';
+const PLAIN_NOTE = 'Sources unavailable right now.';
+function fmtAsof(a) {
+  if (!a) return 'date unknown';
+  const d = new Date(a);
+  return isNaN(d) ? 'date unknown' : 'as of ' + d.toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'});
+}
+// Sources list HTML. Every server value goes through esc(). Links only for http(s) URLs.
+function sourcesItems(sources) {
+  return sources.map(s => {
+    const st = String(s.status || '').toLowerCase();
+    const tag = st === 'unknown' ? '<span class="src-tag unknown">Unknown</span>' : st === 'conflicting' ? '<span class="src-tag conflict">Conflicting</span>' : '';
+    const url = typeof s.url === 'string' && /^https:\/\//i.test(s.url) ? s.url : null;
+    const src = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(s.source || 'Source')}</a>` : esc(s.source || 'Source');
+    return `<li><span class="src-l">${esc(s.label || s.fact || 'Fact')}</span>${s.value != null && s.value !== '' ? `: <b>${esc(s.value)}</b>` : ''} ${tag}<span class="src-m">${src}, ${esc(fmtAsof(s.asof))}</span></li>`;
+  }).join('');
+}
+function sourcesBlock(sources, open) {
+  if (!sources || !sources.length) return '';
+  return `<details class="sources"${open ? ' open' : ''}><summary>Sources (${sources.length})</summary><ul>${sourcesItems(sources)}</ul></details>`;
+}
+function checkHTML(r) {
+  if (r.mode === 'checked') return '<span class="check-badge" title="Every number was checked against its source">Checked</span>';
+  if (r.mode === 'fallback') return `<span class="check-note">${esc(FALLBACK_NOTE)}</span>`;
+  return `<span class="check-note">${esc(PLAIN_NOTE)}</span>`;
+}
 async function ask(q) {
   q = (q || '').trim(); if (!q) return;
-  const btn = $('ask-go'), out = $('answer');
-  btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = '';
-  try { out.textContent = await askAI(q); }
-  catch (e) { out.textContent = 'The assistant is unavailable right now. Try again in a minute.'; }
+  const btn = $('ask-go'), out = $('answer'), chk = $('answer-check'), src = $('answer-sources');
+  btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = ''; chk.innerHTML = ''; src.hidden = true; src.open = false;
+  $('answer-status').textContent = 'Thinking';
+  try {
+    const r = await askChecked(q);
+    out.textContent = r.text; out.hidden = !r.text;
+    chk.innerHTML = checkHTML(r);
+    if (r.sources.length) {
+      $('answer-sources-n').textContent = `Sources (${r.sources.length})`;
+      $('answer-sources-list').innerHTML = sourcesItems(r.sources);
+      src.hidden = false; src.open = r.mode === 'fallback';
+    }
+    $('answer-status').textContent = r.mode === 'checked' ? 'Answer ready, checked' : r.mode === 'fallback' ? 'Showing sources only' : 'Answer ready';
+  } catch (e) {
+    out.hidden = false; out.textContent = 'The assistant is unavailable right now. Try again in a minute.';
+    $('answer-status').textContent = 'Assistant unavailable';
+  }
   btn.disabled = false; btn.textContent = 'Ask';
 }

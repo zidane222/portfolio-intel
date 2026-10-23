@@ -49,7 +49,7 @@ jobs:
               exit 1
             }
           }
-          for svc in market news rates ai broker disclosures; do
+          for svc in market news rates ai broker disclosures private; do
             deploy -c config/$svc.toml
             echo "::notice::Deployed pi-$svc (private)"
           done

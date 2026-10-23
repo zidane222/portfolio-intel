@@ -22,8 +22,10 @@ const SYSTEM = 'Extract savings and money market account offers from this articl
   + 'Use only offers the article states with a specific APY. Skip national averages, CDs, checking accounts, and duplicates. '
   + 'conditions is a short phrase about caps, minimum balances, promo periods or fees, or "" if none.';
 
-export async function topRates(req, env) {
+export async function topRates(req, env, url) {
   const hit = memGet('rates');
+  // ?cached=1 (used by the /api/ask rates agent): memory only, never a fetch or a Groq call.
+  if (url && url.searchParams.get('cached') === '1') return json(hit || memGet('rates:last') || {cached: false});
   if (hit) return json(hit);
   if (!env.GROQ_API_KEY) return json({error: 'AI not configured'}, 503);
   for (let back = 0; back < 4; back++) {

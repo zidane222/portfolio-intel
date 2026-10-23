@@ -10,6 +10,7 @@ services = [
   { binding = "AI_SVC", service = "pi-ai" },
   { binding = "BROKER", service = "pi-broker" },
   { binding = "DISCLOSURES", service = "pi-disclosures" },
+  { binding = "PRIVATE", service = "pi-private" },
 ]
 
 [vars]
