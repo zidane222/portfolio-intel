@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public by design: the Supabase anon key is meant to be shipped to browsers (RLS protects data)."
+paths = ['''js/01-config\.js''']

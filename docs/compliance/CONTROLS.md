@@ -1,0 +1,74 @@
+# Control map
+
+Status: **In place** (working, evidence exists), **Partial** (some coverage), **Gap** (not yet).
+SOC 2 criteria are the 2017 Trust Services Criteria (revised points of focus 2022). NIST = CSF 2.0 function.
+
+## Common criteria (Security)
+
+| ID | Control | SOC 2 | NIST | Status | Evidence | Gap / next step |
+|---|---|---|---|---|---|---|
+| C-01 | Security owner designated (Hisham) and policies approved | CC1.1, CC1.3 | GV | In place | policies/information-security.md | Annual sign-off |
+| C-02 | Written security policies, reviewed quarterly | CC1.4, CC5.3 | GV | In place | policies/ | Record each review in EVIDENCE.md |
+| C-03 | Risk assessment and register | CC3.1–CC3.4 | ID.RA | In place | RISK_REGISTER.md | Quarterly review |
+| C-04 | Vendor inventory and review | CC9.2 | GV.SC | In place | policies/vendor-management.md | Save vendors' SOC 2 reports yearly |
+| C-05 | Change management: all changes via PR, owner approval, tests | CC8.1 | PR.PS | In place | PR history, CLAUDE.md | Turn on branch protection for main |
+| C-06 | Code review for security (OWASP ASVS) | CC8.1 | PR.PS | In place | .claude/agents/appsec.md, PR reviews | |
+| C-07 | Automated secret scanning | CC6.1, CC7.1 | DE.CM | In place | security.yml (gitleaks), GitHub secret scanning | Enable push protection |
+| C-08 | Dependency vulnerability scanning | CC7.1 | ID.RA | In place | dependabot.yml, security.yml | |
+| C-09 | Static analysis (CodeQL) | CC7.1 | ID.RA | In place | security.yml | |
+| C-10 | Dynamic scan of the live site (OWASP ZAP baseline) | CC7.1 | DE.CM | In place | security.yml weekly | Triage findings monthly |
+| C-11 | Secrets in a vault, never in code | CC6.1 | PR.DS | In place | Cloudflare Secrets Store, GitHub secrets | Rotation schedule (C-12) |
+| C-12 | Key rotation | CC6.1 | PR.AA | Partial | | Rotate Groq, Supabase service role, Plaid keys yearly; log in EVIDENCE.md |
+| C-13 | Keyless cloud auth for CI | CC6.1 | PR.AA | In place | Workload Identity Federation for BigQuery | |
+| C-14 | Least privilege service accounts | CC6.3 | PR.AA | In place | BQ: Data Editor + Job User only; per-service secret bindings | |
+| C-15 | MFA on admin accounts (GitHub, Cloudflare, Supabase, Google, Render, Plaid) | CC6.1 | PR.AA | Partial | | Owner to confirm MFA on each, record in EVIDENCE.md |
+| C-16 | User authentication: email one-time code, passkeys | CC6.1 | PR.AA | In place | 29a-account.js, 29c-passkey.js | |
+| C-17 | Tenant isolation: row level security | CC6.1 | PR.AA | In place | supabase/schema.sql | |
+| C-18 | Encryption at rest of user data (client-side AES-GCM) | CC6.1, C1.1 | PR.DS | In place | 02-state.js vault | |
+| C-19 | Encryption in transit (HTTPS, HSTS) | CC6.7 | PR.DS | In place | _headers | HSTS preload optional |
+| C-20 | Browser hardening: CSP, frame-ancestors, nosniff, COOP | CC6.6 | PR.PS | In place | index.html CSP, _headers | Move CSP to header, drop 'unsafe-inline' styles later |
+| C-21 | CORS allowlist and origin checks | CC6.6 | PR.AA | In place | wrangler.toml ALLOWED_ORIGINS, originOk | |
+| C-22 | Rate limiting on public routes | CC6.6, A1.1 | PR.PS | In place | lib/ratelimit.js | Durable limits if user count grows |
+| C-23 | AI input treated as data, prompts server-side | CC6.6 | PR.PS | In place | modules/ai.js | Validator agent (Phase 2) |
+| C-24 | Logging and monitoring | CC7.2 | DE.CM | Partial | Cloudflare observability, Supabase logs | SOC monitor agent (Phase 2) with daily summary |
+| C-25 | Security alerting | CC7.3 | DE.AE | Gap | | SOC monitor alerts; GitHub security alerts to email |
+| C-26 | Incident response plan | CC7.3–CC7.5 | RS | In place | policies/incident-response.md | Tabletop test yearly |
+| C-27 | Device lock (passcode, 5 minutes away) | CC6.1 | PR.AA | In place | 16-lock.js | |
+
+## Availability
+
+| ID | Control | SOC 2 | NIST | Status | Evidence | Gap / next step |
+|---|---|---|---|---|---|---|
+| A-01 | Redundant hosting: Pages + GitHub mirror, Worker + Render fallback | A1.1 | RC | In place | 01-config.js, 03-helpers.js | |
+| A-02 | Data backup: Supabase 5-year history + BigQuery archive; user data on device and cloud | A1.2 | PR.DS | In place | history_load.py | Test a restore quarterly |
+| A-03 | Business continuity plan | A1.3 | RC | In place | policies/business-continuity.md | |
+| A-04 | Capacity guards (450MB Supabase, 9GB BigQuery, budget alert) | A1.1 | ID.AM | In place | history_load.py, GCP budget | |
+
+## Confidentiality
+
+| ID | Control | SOC 2 | NIST | Status | Evidence | Gap / next step |
+|---|---|---|---|---|---|---|
+| CF-01 | Data classification | C1.1 | ID.AM | In place | ARCHITECTURE.md | |
+| CF-02 | Disposal: delete cloud copy, sign out, forget passcode wipes device | C1.2 | PR.DS | In place | 29a-account.js, 16-lock.js | Account deletion request flow |
+| CF-03 | Statements processed for import never stored server-side | C1.1 | PR.DS | In place | modules/ai.js (stateless) | Document Groq data retention |
+
+## Privacy
+
+| ID | Control | SOC 2 | NIST | Status | Evidence | Gap / next step |
+|---|---|---|---|---|---|---|
+| P-01 | Privacy notice | P1.1 | GV | Gap | | Publish a privacy page in the app |
+| P-02 | Data minimization: no SSN, account numbers stripped from imports | P3.1 | PR.DS | In place | extract prompt | |
+| P-03 | User access and deletion | P5.1, P4.3 | PR.DS | Partial | Delete cloud copy | Full account deletion button |
+| P-04 | Third-party disclosure only to listed vendors | P6.1 | GV.SC | In place | vendor-management.md | |
+
+## Other frameworks
+
+| ID | Requirement | Framework | Status | Gap / next step |
+|---|---|---|---|---|
+| G-01 | Qualified individual oversees the program | GLBA 314.4(a) | In place | Owner |
+| G-02 | Written risk assessment | GLBA 314.4(b) | In place | |
+| G-03 | Encryption, MFA, access controls, change management | GLBA 314.4(c) | Partial | C-15 MFA confirmation |
+| G-04 | Monitoring and annual penetration test, vulnerability scans twice a year | GLBA 314.4(d) | Partial | ZAP weekly; schedule a pen test before Plaid production |
+| G-05 | Report to the owner/board yearly; FTC notice within 30 days for breaches of 500+ people | GLBA 314.4(i), 314.4(j) | In place | incident-response.md |
+| PL-01 | Plaid: security questionnaire, MFA, encryption, access controls, vulnerability management | Plaid | Partial | Same gaps as above |
+| S-01 | No personalized investment advice; strategies simulated and labeled | SEC Advisers Act guardrail | In place | AI prompt, validator in Phase 2 |
