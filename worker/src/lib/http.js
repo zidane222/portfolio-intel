@@ -84,3 +84,23 @@ export function unescapeHtml(s) {
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 }
 export function memClear() { MEM.clear(); } // used by tests
+
+// Reads a body stream and stops as soon as more than max bytes arrive (Content-Length may be
+// missing or wrong, for example with chunked uploads). Returns the text, or null when too large.
+export async function readCapped(body, max) {
+  if (!body) return '';
+  const reader = body.getReader();
+  const parts = [];
+  let n = 0;
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > max) { try { await reader.cancel(); } catch { /* ignore */ } return null; }
+    parts.push(value);
+  }
+  const buf = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { buf.set(p, o); o += p.byteLength; }
+  return new TextDecoder().decode(buf);
+}

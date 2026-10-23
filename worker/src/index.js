@@ -23,8 +23,19 @@ async function health(env) {
   return json({status: ok ? 'ok' : 'degraded', service: 'Portfolio Intel API gateway', services, updated: new Date().toISOString()});
 }
 
+// Internal headers (X-PI-*) are set only by the gateway itself. Any copy sent by a client is removed
+// before routing, so a public request can never pass as internal.
+export function stripInternal(req) {
+  const drop = [...req.headers.keys()].filter(k => k.toLowerCase().startsWith('x-pi-'));
+  if (!drop.length) return req;
+  const headers = new Headers(req.headers);
+  for (const k of drop) headers.delete(k);
+  return new Request(req, {headers});
+}
+
 export default {
   async fetch(req, env) {
+    req = stripInternal(req);
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});

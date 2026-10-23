@@ -1,7 +1,7 @@
 // Private markets module: SEC Form D and Form C raises from private_markets.json on Pages.
 // The file is fetched only from the fixed PRIVATE_DATA_URL var (never from input), parsed once
 // per isolate, and kept as a compact index sorted by filed date (newest first).
-import {json, memGet, memSet} from '../lib/http.js';
+import {json, memGet, memSet, readCapped} from '../lib/http.js';
 import {rateLimited} from '../lib/ratelimit.js';
 
 export const STAGES = ['Pre-seed / seed', 'Seed / Series A', 'Growth', 'Late stage', 'Undisclosed'];
@@ -136,8 +136,8 @@ async function fetchText(env) {
     if (!/^application\/json\b/i.test(ct)) throw new Error('content type ' + ct.slice(0, 40));
     const len = Number(r.headers.get('Content-Length') || 0);
     if (len > MAX_BYTES) throw new Error('too large');
-    const text = await r.text();
-    if (text.length > MAX_BYTES) throw new Error('too large');
+    const text = await readCapped(r.body, MAX_BYTES); // enforced while streaming, Content-Length or not
+    if (text === null) throw new Error('too large');
     try {
       if (cache) await cache.put(url, new Response(text, {headers: {'Content-Type': 'application/json', 'Cache-Control': `max-age=${FRESH_S}`}}));
     } catch { /* best effort */ }

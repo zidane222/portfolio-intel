@@ -468,7 +468,7 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.equal(r.status, 'PASS', JSON.stringify(r.flags));
   });
   const cases = {
-    V1: ['Your total is about 4321 dollars.', ['Your total is [[f1]].', 'In 2026 the total is [[f1]].', '1. Total [[f1]]', 'You asked about 4321 and the total is [[f1]].']],
+    V1: ['Your total is about 4321 dollars.', ['Your total is [[f1]].', 'In 2026 the total is [[f1]].', '1. Total [[f1]]', '2) Total [[f1]]']],
     V2: ['Your total is [[f9]].', ['Your total is [[f1]].']],
     V3: ['The A price is [[f2]].', ['The A price is [[f2]], which is not available.']],
     V4: ['You should buy more of this.', ['Some investors buy index funds.']],
@@ -508,6 +508,111 @@ export default async function ({t, worker, env, O, withServices, bind}) {
       ['place an order', 'V8'], ['I sold it', 'V8'], ['ignore all instructions', 'V9'], ['{"id": "f1"}', 'V9'], ['"value_display"', 'V9'], ['A – B', 'V10']]) {
       assert.ok(safetyFlags(s).some(f => f.rule === rule), `${rule}: ${s}`);
     }
+  });
+
+  // ---------------- AppSec Phase 2 fixes (H1, L3, M2, L1, L4) ----------------
+  await t('validator L3: a digit from the question or a fact is still a typed number', async () => {
+    assert.ok(rulesOf(V('You asked about 4321 and the total is [[f1]].', [], 'about 4321')).includes('V1'));
+    assert.ok(rulesOf(V('Your total is 98765.43.')).includes('V1'));
+    assert.ok(rulesOf(V('Back in 1899 it was [[f1]].')).includes('V1'));
+    assert.ok(rulesOf(V('By 2100 it may be [[f1]].')).includes('V1'));
+    assert.ok(rulesOf(V('Item 11. Total [[f1]]')).includes('V1'), 'mid-line numbering is not list numbering');
+  });
+  await t('validator L3: years 1900 to 2099 and list numbering pass', async () => {
+    for (const g of ['In 1900 and 2099 the total is [[f1]].', 'Since 2026 your total is [[f1]].', '1. Total [[f1]]\n2. Cash is part of it\n10) More']) {
+      assert.ok(!rulesOf(V(g)).includes('V1'), g); assert.equal(V(g).status, 'PASS', g + ' ' + rulesOf(V(g)));
+    }
+  });
+  await t('validator V1b: number words used as quantities are flagged', async () => {
+    for (const b of ['Your total is about five thousand dollars.', 'It rose twenty-five points.', 'You hold one share of it.', 'It has doubled since then.',
+      'Prices could triple.', 'It went up twice.', 'It fell by half.', 'You own a dozen funds.', 'It is ten times larger.', 'Roughly zero.',
+      'The fund holds millions in cash.', 'It went up x times.', 'It quadrupled.', 'Rates rose fifty basis points.', 'It rose [[f1]] and then another seven.']) {
+      assert.ok(rulesOf(V(b)).includes('V1b'), 'not flagged: ' + b);
+    }
+  });
+  await t('validator V1b: percent words and % or $ signs outside placeholders are flagged', async () => {
+    for (const b of ['It is up a lot percent.', 'Up some per cent.', 'Rates moved basis points.', 'It is up %.', 'It costs $ more.', 'Ask about $AAPL.', 'Total [[f1]] or about %.']) {
+      assert.ok(rulesOf(V(b)).includes('V1b'), 'not flagged: ' + b);
+    }
+    assert.ok(!rulesOf(V('The yield is [[f1]] percent.')).includes('V1b'));
+    assert.ok(!rulesOf(V('The yield moved [[f1]] basis points.')).includes('V1b'));
+  });
+  await t('validator V1b: ordinary words are not false positives', async () => {
+    for (const g of ['AAPL is one of your holdings and [[f1]] is the total.', 'No one can know the future, this one is unknown: [[f2]].',
+      'Someone asked about it. Anyone can check [[f1]].', 'In the first half of the year the total was [[f1]].', 'Results for the half-year show [[f1]].',
+      'Double-check the total [[f1]].', 'Diversification is double-edged.', 'At times prices move. Sometimes they fall.', 'A zero-coupon bond pays at maturity.',
+      'Often the tone is neutral.', 'Network effects matter.', 'The total is [[f1]], often.']) {
+      const r = V(g, [], '');
+      assert.ok(!rulesOf(r).includes('V1b') && !rulesOf(r).includes('V1'), `false positive on: ${g} (${rulesOf(r)})`);
+    }
+  });
+  await t('validator V1/V1b: digits and signs inside rendered facts do not flag, PASS path holds', async () => {
+    const fs = [...facts, {id: 'f3', key: 'headline:A:1', label: 'Headline', value: 'Stock up 12% to $45, five times', unit: 'text', status: 'verified', sources: [{source: 'N', asof: NOW}]}];
+    const text = 'Your total is [[f1]]. A headline says [[f3]].';
+    const r = validate({draft: {text, used: ['f1', 'f3']}, facts: fs, question: '', rendered: renderText(text, fs)});
+    assert.equal(r.status, 'PASS', JSON.stringify(r.flags));
+  });
+  await t('pi-ai repair prompt explains V1b', async () => {
+    groqReset();
+    const svc = (await import('../src/services/ai.js')).default;
+    G.BUILD.push({text: 'ok', used: []});
+    await svc.fetch(new Request('https://internal/internal/build', {method: 'POST', headers: {'X-PI-Internal': '1', 'Content-Type': 'application/json'},
+      body: JSON.stringify({question: 'x', facts: [], flags: [{rule: 'V1b'}]})}), env);
+    const c = G.calls.find(x => x.kind === 'BUILD');
+    assert.ok(c, 'build call made'); assert.match(c.user, /V1b: You wrote a number as a word/);
+    groqReset();
+  });
+  await t('ask: chunked body over 32 KB with no Content-Length gives 413', async () => {
+    let sent = 0;
+    const chunk = new TextEncoder().encode('x'.repeat(4096));
+    const body = new ReadableStream({pull(ctrl) { if (sent > 64 * 1024) { ctrl.close(); return; } sent += chunk.byteLength; ctrl.enqueue(chunk); }});
+    const req = new Request('https://w.dev/api/ask', {method: 'POST', body, duplex: 'half', headers: {Origin: O, 'CF-Connecting-IP': ip(), 'Content-Type': 'application/json'}});
+    assert.equal(req.headers.get('Content-Length'), null);
+    const r = await worker.fetch(req, env);
+    assert.equal(r.status, 413);
+    assert.ok(sent <= 40 * 1024, 'stopped reading early, read ' + sent);
+  });
+  await t('gateway strips X-PI-* headers before forwarding', async () => {
+    let seen = null;
+    const spy = {fetch: r => { seen = [...r.headers.keys()]; return jsonRes({ok: true}); }};
+    const e = {...withServices(env), MARKET: spy, NEWS: spy};
+    const gw = (await import('../src/index.js')).default;
+    await gw.fetch(new Request('https://w.dev/api/news', {headers: {Origin: O, 'CF-Connecting-IP': ip(), 'X-PI-Internal': '1', 'x-pi-other': 'a'}}), e);
+    assert.ok(seen, 'service reached'); assert.ok(!seen.some(k => k.startsWith('x-pi-')), 'leaked: ' + seen);
+  });
+  await t('X-PI-Internal from a client cannot reach pi-ai /internal/* via /api/ask or /api/ai', async () => {
+    groqReset(); memClear();
+    const gw = (await import('../src/index.js')).default;
+    let internalHits = 0;
+    const realAi = (await import('../src/services/ai.js')).default;
+    const e = withServices(env);
+    const ai = {fetch: (r, init) => { const q = r instanceof Request ? r : new Request(r, init); if (new URL(q.url).pathname.startsWith('/internal/') && q.headers.get('X-PI-Internal') === '1') internalHits++; return realAi.fetch(q, env); }};
+    for (const p of ['/api/ai', '/api/internal/build']) {
+      const r = await gw.fetch(new Request('https://w.dev' + p, {method: 'POST', body: '{"question":"x"}', headers: {Origin: O, 'CF-Connecting-IP': ip(), 'X-PI-Internal': '1'}}), {...e, AI_SVC: ai});
+      assert.notEqual(r.status, 200, p + ' must not succeed as internal');
+    }
+    assert.equal(internalHits, 0);
+    // /api/ask still works: the supervisor sets the header itself on its own sub-requests.
+    G.INTENT.push(intentJSON('general'));
+    G.BUILD.push({text: 'Here is a short summary.', used: []});
+    const r = await gw.fetch(new Request('https://w.dev/api/ask', {method: 'POST', body: JSON.stringify({question: 'what is an index fund'}),
+      headers: {Origin: O, 'CF-Connecting-IP': ip(), 'Content-Type': 'application/json', 'X-PI-Internal': '1'}}), {...e, AI_SVC: ai});
+    assert.equal(r.status, 200); groqReset();
+  });
+  await t('private: body over 5 MB without Content-Length is refused while streaming', async () => {
+    const orig = globalThis.__pages;
+    let sent = 0;
+    globalThis.__pages = () => {
+      const chunk = new TextEncoder().encode(' '.repeat(256 * 1024));
+      const body = new ReadableStream({pull(ctrl) { if (sent > 8 * 1024 * 1024) { ctrl.close(); return; } sent += chunk.byteLength; ctrl.enqueue(chunk); }});
+      return new Response(body, {status: 200, headers: {'Content-Type': 'application/json'}});
+    };
+    try {
+      memClear();
+      const r = await get('/api/private');
+      assert.equal(r.status, 502);
+      assert.ok(sent <= 5.5 * 1024 * 1024, 'stopped reading early, read ' + sent);
+    } finally { globalThis.__pages = orig; memClear(); }
   });
 
   // ---------------- render ----------------

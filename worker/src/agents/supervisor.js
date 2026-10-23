@@ -2,7 +2,7 @@
 // Groq call cap and the 25 s deadline, and falls back to a code-only answer.
 // The gateway (index.js) has already checked the origin and the ask rate limit.
 // Logging: one line per case with ids, intent, counts, rule IDs and timings. Never user text.
-import {json} from '../lib/http.js';
+import {json, readCapped} from '../lib/http.js';
 import {createCase, applyPatch, trace, remaining, withTimeout, MAX_GROQ_CALLS, TICKER_RE} from './case.js';
 import * as intentAgent from './intent.js';
 import * as builder from './builder.js';
@@ -180,7 +180,11 @@ export async function handleAsk(req, env) {
   const len = Number(req.headers.get('Content-Length') || 0);
   if (len > MAX_BODY) return json({error: 'Request too large'}, 413);
   let input;
-  try { input = parseInput(await req.text()); } catch (e) {
+  try {
+    const text = await readCapped(req.body, MAX_BODY);
+    if (text === null) return json({error: 'Request too large'}, 413);
+    input = parseInput(text);
+  } catch (e) {
     if (e instanceof BadInput) return json({error: e.message}, e.status);
     return json({error: 'Bad request'}, 400);
   }
