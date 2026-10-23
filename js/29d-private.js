@@ -4,7 +4,14 @@
 // Startups raising private rounds (Form D, mostly accredited investors only) and crowdfunding
 // raises anyone can join (Form C). Collected daily by scripts/private_markets.py.
 let pmData = null, pmTab = 'D', pmShow = 40;
-const PM_STATES = {TX: 'Texas', CA: 'California', NY: 'New York', FL: 'Florida', MA: 'Massachusetts', WA: 'Washington', CO: 'Colorado', IL: 'Illinois', DE: 'Delaware'};
+const PM_STATES = {AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', DC: 'Washington DC',
+  FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine',
+  MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada',
+  NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', PR: 'Puerto Rico', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont',
+  VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming'};
+const PM_PREF = 'pi.pm.loc';
+const pmCity = c => String(c || '').trim().toLowerCase().replace(/\b([a-z])/g, x => x.toUpperCase());
 // Exemption codes as filed: 06b and 06c are Rule 506(b) and 506(c)
 const PM_EX = {'06b': '506(b): accredited investors, no public ads', '06c': '506(c): accredited investors, can advertise', '04': '4(a)(2)', '04a5': '4(a)(5)', '3C': 'Investment company exemption 3(c)', '3C.1': '3(c)(1)', '3C.7': '3(c)(7)'};
 const pmMoney = v => v == null ? '' : v >= 1e9 ? '$' + (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? '$' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : '$' + Math.round(v / 1e3) + 'K';
@@ -16,10 +23,10 @@ async function loadPrivate() {
 }
 
 function pmFiltered() {
-  const st = $('pm-state').value, stage = $('pm-stage').value, ind = $('pm-ind').value, q = $('pm-q').value.trim().toLowerCase();
-  const austin = st === 'AUSTIN';
+  const st = $('pm-state').value, city = $('pm-city').value, stage = $('pm-stage').value, ind = $('pm-ind').value, q = $('pm-q').value.trim().toLowerCase();
   return (pmData.raises || []).filter(r => r.f === pmTab
-    && (!st || (austin ? r.st === 'TX' && /austin/i.test(r.city || '') : r.st === st))
+    && (!st || (st === 'INTL' ? !PM_STATES[r.st] : r.st === st))
+    && (!city || pmCity(r.city) === city)
     && (!stage || r.stage === stage)
     && (!ind || r.ind === ind)
     && (!q || (r.n || '').toLowerCase().includes(q) || (r.city || '').toLowerCase().includes(q) || (r.portal || '').toLowerCase().includes(q)));
@@ -36,6 +43,7 @@ function renderPrivate() {
   const inds = [...new Set(pmData.raises.filter(r => r.f === 'D' && r.ind).map(r => r.ind))].sort();
   indSel.innerHTML = '<option value="">All industries</option>' + inds.map(i => `<option${i === cur ? ' selected' : ''}>${esc(i)}</option>`).join('');
   indSel.disabled = pmTab === 'C';
+  pmCities();
   const list = pmFiltered();
   const sort = $('pm-sort').value;
   if (sort === 'big') list.sort((a, b) => (b.amt || 0) - (a.amt || 0));
@@ -67,11 +75,27 @@ function renderPrivate() {
 
 function wirePrivate() {
   if (!$('pm-list')) return;
-  $('pm-state').innerHTML = '<option value="">All states</option><option value="AUSTIN">Austin, TX</option>'
-    + Object.entries(PM_STATES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('pm-state').innerHTML = '<option value="">All states</option>'
+    + Object.entries(PM_STATES).sort((a, b) => a[1].localeCompare(b[1])).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')
+    + '<option value="INTL">Outside the US</option>';
+  try { const p = JSON.parse(localStorage.getItem(PM_PREF) || 'null'); if (p) { $('pm-state').value = p.st || ''; $('pm-city').dataset.want = p.city || ''; } } catch (e) {}
   $('pm-stage').innerHTML = '<option value="">Any size</option>' + ['Pre-seed / seed', 'Seed / Series A', 'Growth', 'Late stage', 'Undisclosed'].map(s => `<option>${s}</option>`).join('');
   $('pm-sort').innerHTML = '<option value="new">Newest</option><option value="big">Largest</option><option value="small">Smallest</option>';
-  ['pm-state', 'pm-stage', 'pm-ind', 'pm-sort'].forEach(id => $(id).onchange = () => { pmShow = 40; renderPrivate(); });
+  $('pm-state').onchange = () => { $('pm-city').dataset.want = ''; pmSaveLoc(); pmShow = 40; renderPrivate(); };
+  $('pm-city').onchange = () => { pmSaveLoc(); pmShow = 40; renderPrivate(); };
+  ['pm-stage', 'pm-ind', 'pm-sort'].forEach(id => $(id).onchange = () => { pmShow = 40; renderPrivate(); });
   let t; $('pm-q').oninput = () => { clearTimeout(t); t = setTimeout(() => { pmShow = 40; renderPrivate(); }, 200); };
   loadPrivate();
 }
+
+// Cities in the chosen state, busiest first, from the data itself
+function pmCities() {
+  const sel = $('pm-city'), st = $('pm-state').value, want = sel.dataset.want || sel.value;
+  if (!st || st === 'INTL') { sel.innerHTML = '<option value="">All cities</option>'; sel.disabled = true; return; }
+  const counts = {};
+  pmData.raises.filter(r => r.st === st && r.city).forEach(r => { const c = pmCity(r.city); counts[c] = (counts[c] || 0) + 1; });
+  const cities = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  sel.innerHTML = '<option value="">All cities</option>' + cities.map(([c, n]) => `<option value="${esc(c)}"${c === want ? ' selected' : ''}>${esc(c)} (${n})</option>`).join('');
+  sel.disabled = false; sel.dataset.want = '';
+}
+function pmSaveLoc() { try { localStorage.setItem(PM_PREF, JSON.stringify({st: $('pm-state').value, city: $('pm-city').value})); } catch (e) {} }
