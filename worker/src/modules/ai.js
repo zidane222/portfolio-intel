@@ -73,7 +73,8 @@ const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
   + 'Return ONLY JSON: {"text": string, "used": array of fact ids you used, "unknown_mentioned": array of unknown fact ids you mentioned}.';
 
 const FLAG_HELP = {
-  V1: 'You typed a number. Use only [[fN]] placeholders for numbers.',
+  V1: 'You typed a number. Use only [[fN]] placeholders for numbers. Typed digits are allowed only for years and list numbering.',
+  V1b: 'You wrote a number as a word or symbol (for example five, a dozen, half, twice, doubled, percent, % or $). Every amount must come from a [[fN]] placeholder. Write percent only right after a placeholder.',
   V2: 'You used a placeholder id that is not in the facts.',
   V3: 'You used an unknown or conflicting fact without saying it is unknown, not available, or that sources disagree.',
   V4: 'You gave personal advice to buy, sell or move money. Describe facts and trade-offs only.',
