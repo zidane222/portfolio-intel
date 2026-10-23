@@ -19,18 +19,19 @@ function renderChat() {
       <div class="as-chips">${chatSuggestions().map(q => `<button type="button" class="as-chip">${esc(q)}</button>`).join('')}</div></div>`;
     box.querySelectorAll('.as-chip').forEach(b => b.onclick = () => sendChat(b.textContent));
   } else {
-    box.innerHTML = chat.map(m => `<div class="as-m ${m.role}">${m.role === 'bot' ? '' : ''}<div class="as-b">${esc(m.text)}</div></div>`).join('')
+    box.innerHTML = chat.map(m => `<div class="as-m ${m.role}"><div class="as-b">${m.text ? `<div class="as-t">${esc(m.text)}</div>` : ''}${m.role === 'bot' && m.mode ? `<div class="as-check">${checkHTML(m)}</div>${sourcesBlock(m.sources, m.mode === 'fallback')}` : ''}</div></div>`).join('')
       + (chat.busy ? '<div class="as-m bot"><div class="as-b as-typing" aria-label="Thinking"><span></span><span></span><span></span></div></div>' : '');
   }
   box.scrollTop = box.scrollHeight;
-  try { sessionStorage.setItem('pi.chat', JSON.stringify(chat.slice(-30))); } catch (e) {}
+  // Sources hold portfolio-derived values: keep them in memory only, never in storage
+  try { sessionStorage.setItem('pi.chat', JSON.stringify(chat.slice(-30).map(m => ({role: m.role, text: m.text || (m.mode === 'fallback' ? FALLBACK_NOTE : '')})))); } catch (e) {}
 }
 async function sendChat(q) {
   q = (q || '').trim(); if (!q || chat.busy) return;
   const hist = chat.slice();
   chat.push({role: 'user', text: q}); chat.busy = true; renderChat();
   $('as-in').value = ''; $('as-send').disabled = true;
-  try { chat.push({role: 'bot', text: await askAI(q, hist)}); }
+  try { const r = await askChecked(q, hist); chat.push({role: 'bot', text: r.text, sources: r.sources, mode: r.mode}); }
   catch (e) { chat.push({role: 'bot', text: e.status === 429 ? e.message : 'I can\'t reach the assistant right now. Try again in a minute.'}); }
   chat.busy = false; $('as-send').disabled = false; renderChat();
   if (matchMedia('(hover: hover)').matches) $('as-in').focus();
