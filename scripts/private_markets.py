@@ -70,6 +70,11 @@ def filing_urls(path):
     return base + 'primary_doc.xml', base + f'{acc}-index.htm', acc
 
 
+def iso_date(v):
+    m = re.fullmatch(r'(\d{2})-(\d{2})-(\d{4})', v or '')
+    return f'{m[3]}-{m[1]}-{m[2]}' if m else v
+
+
 def stage(amount):
     if amount is None: return 'Undisclosed'
     if amount <= 2_000_000: return 'Pre-seed / seed'
@@ -115,7 +120,7 @@ def parse_c(root, day, item, link):
         'city': txt(iss, './/issuerAddress/city'), 'st': txt(iss, './/issuerAddress/stateOrCountry'),
         'web': txt(iss, './/issuerWebsite'), 'portal': txt(iss, 'companyName'),
         'type': txt(off, 'securityOfferedType'), 'price': num(txt(off, 'price')),
-        'amt': target, 'max': mx, 'dl': txt(off, 'deadlineDate'),
+        'amt': target, 'max': mx, 'dl': iso_date(txt(off, 'deadlineDate')),
         'emp': num(txt(root, './/annualReportDisclosureRequirements/currentEmployees')),
         'rev': num(txt(root, './/annualReportDisclosureRequirements/revenueMostRecentFiscalYear')),
         'stage': stage(mx or target), 'u': link,

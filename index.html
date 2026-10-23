@@ -203,6 +203,7 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 
 /* FEED FILTERS, FLAGS, TRACKING */
 .g5{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.pm-search{min-height:44px;border-radius:12px;border:1px solid #C9D6E8;background:#fff;color:var(--dark);font-size:15px;padding:0 14px}
 .picker-sm{min-height:36px;font-size:14px;font-weight:600;padding:0 30px 0 10px;width:100%}
 .adv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 auto 18px;max-width:1100px;align-items:end}
 .adv-f label{display:block;font-size:12px;color:var(--ink-3);margin-bottom:4px}
@@ -769,6 +770,27 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
   </div>
 </section>
 
+<!-- PRIVATE MARKETS -->
+<section id="private" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Private markets.</h2>
+    <p class="lede reveal">Startups raising money before they go public, from SEC filings. Some are open to anyone.</p>
+    <div class="filters reveal"><div class="seg seg-light" id="pm-tabs" role="group" aria-label="Raise type"></div></div>
+    <div class="card-l reveal">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <label class="sr" for="pm-q">Search</label><input id="pm-q" class="pm-search" type="search" placeholder="Search company or city" style="flex:1;min-width:160px">
+        <label class="sr" for="pm-state">Location</label><select id="pm-state" class="picker"></select>
+        <label class="sr" for="pm-stage">Raise size</label><select id="pm-stage" class="picker"></select>
+        <label class="sr" for="pm-ind">Industry</label><select id="pm-ind" class="picker"></select>
+        <label class="sr" for="pm-sort">Sort</label><select id="pm-sort" class="picker"></select>
+      </div>
+      <p class="fine" id="pm-count" aria-live="polite" style="margin-bottom:8px"></p>
+      <div id="pm-list"><div class="empty">Loading…</div></div>
+      <p class="fine" id="pm-note" style="margin-top:12px"></p>
+    </div>
+  </div>
+</section>
+
 <!-- RISK -->
 <section id="risk" class="dark-text">
   <div class="wrap">
@@ -934,7 +956,8 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/29-leaderboard.js?v=10"></script>
 <script src="js/29a-account.js?v=13"></script>
 <script src="js/29c-passkey.js?v=11"></script>
-<script src="js/29b-pages.js?v=10"></script>
-<script src="js/30-init.js?v=10"></script>
+<script src="js/29d-private.js?v=1"></script>
+<script src="js/29b-pages.js?v=11"></script>
+<script src="js/30-init.js?v=11"></script>
 </body>
 </html>
