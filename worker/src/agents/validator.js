@@ -5,7 +5,7 @@ import {DISCLAIMER, PLACEHOLDER, factNumbers, numberTokens} from './render.js';
 const ADVICE = [
   /you should (buy|sell|short|move|put|invest)/i,
   /\bI (recommend|suggest) (buying|selling)/i,
-  /\b(buy|sell) now\b/i,
+  /\b(buy|sell)( \$?[A-Za-z.]{1,6})? now\b/i, // also "buy NVDA now" (plan 15.20)
   /best stock for you/i,
   /allocate \d+(\.\d+)?\s?% to/i,
 ];

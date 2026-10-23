@@ -171,6 +171,7 @@ export async function runCase(input, env, opts = {}) {
     return fallback(c, t0, flags, attempts);
   } finally {
     clearTimeout(timer);
+    ctl.abort(); // cancel any binding or Groq request still in flight once the case is done
   }
 }
 
