@@ -14,7 +14,7 @@ a SOC 2 or SOC for Cybersecurity report can only be issued by a licensed CPA fir
 | Plaid production security review | Before Plaid production | Mapped |
 | OWASP ASVS L2 | Yes | appsec agent reviews each PR |
 | CCPA basics | Voluntary at current size | Privacy policy and delete-my-data in place |
-| SEC investment advice guardrail | Yes | No personalized advice, simulated strategies only |
+| SEC investment advice guardrail | Yes | No personalized advice, simulated strategies only; AI answers checked by the validator (C-28) |
 | SOC 1 | No | No customer financial reporting |
 | SOC for Supply Chain | No | No physical product |
 | PCI DSS | No | No card data handled |

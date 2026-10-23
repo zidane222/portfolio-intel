@@ -28,8 +28,13 @@ SOC 2 criteria are the 2017 Trust Services Criteria (revised points of focus 202
 | C-19 | Encryption in transit (HTTPS, HSTS) | CC6.7 | PR.DS | In place | _headers | HSTS preload optional |
 | C-20 | Browser hardening: CSP, frame-ancestors, nosniff, COOP | CC6.6 | PR.PS | In place | index.html CSP, _headers | Move CSP to header, drop 'unsafe-inline' styles later |
 | C-21 | CORS allowlist and origin checks | CC6.6 | PR.AA | In place | wrangler.toml ALLOWED_ORIGINS, originOk | |
-| C-22 | Rate limiting on public routes | CC6.6, A1.1 | PR.PS | In place | lib/ratelimit.js | Durable limits if user count grows |
-| C-23 | AI input treated as data, prompts server-side | CC6.6 | PR.PS | In place | modules/ai.js | Validator agent (Phase 2) |
+| C-22 | Rate limiting on public routes | CC6.6, A1.1 | PR.PS | In place | lib/ratelimit.js | Per instance only; shared counter and app-wide daily Groq cap (R-11) |
+| C-23 | AI input treated as data, prompts server-side; validator, fact checker, numbers only through fact placeholders | CC6.6 | PR.PS | In place | modules/ai.js, agents/validator.js, agents/factcheck.js, agents/render.js; phase2.mjs (V1 to V12, V1b, L3, F1 to F10, injection headline test) | Shared rate-limit store (later, R-11) |
+| C-28 | AI output validation: V-rules on every draft, one repair, then safe fallback built from verified facts; Groq call budget (max 3 per ask, 4th refused); 25 s deadline with shared abort, in-flight calls aborted when a case ends | CC6.6, CC7.1 | PR.PS, DE.CM | In place | agents/supervisor.js, agents/validator.js, agents/render.js, lib/groq.js; phase2.mjs (FLAG then PASS, FLAG twice fallback and call cap 3, builder error, slow binding deadline, hanging builder cut off, safe answer passes V4 to V11) | Tune V1 false positives from flag counts |
+| C-29 | Chat storage limited to user questions: answers not persisted, session storage keeps the last 30 user questions only; role allowlist; https-only source links | CC6.1, C1.1, P3.1 | PR.DS | In place | js/18-assistant.js, js/17-ask.js; tests/journeys/ask.mjs | |
+| C-30 | Gateway strips client-sent X-PI-* internal headers before forwarding; /internal/* routes give 404 from outside | CC6.6, CC6.1 | PR.AA | In place | lib/http.js, index.js; phase2.mjs (strips X-PI-*, X-PI-Internal cannot reach pi-ai /internal/*, /internal/* 404) | |
+| C-31 | Request body size caps enforced while streaming (32 KB on /api/ask, also with no Content-Length) | CC6.6, A1.1 | PR.PS | In place | lib/http.js; phase2.mjs (body over 32 KB 413, chunked body over 32 KB 413) | |
+| C-32 | pi-private SSRF guard: fetches only the fixed PRIVATE_DATA_URL Pages var, redirect: 'error', 5 MB streamed cap, content type check, last good copy on failure | CC6.6 | PR.DS, PR.PS | In place | modules/private.js; phase2.mjs (only the Pages URL is fetched, bad URL or content type 502, body over 5 MB refused while streaming) | |
 | C-24 | Logging and monitoring | CC7.2 | DE.CM | Partial | Cloudflare observability, Supabase logs | SOC monitor agent (Phase 2) with daily summary |
 | C-25 | Security alerting | CC7.3 | DE.AE | Gap | | SOC monitor alerts; GitHub security alerts to email |
 | C-26 | Incident response plan | CC7.3–CC7.5 | RS | In place | policies/incident-response.md | Tabletop test yearly |
@@ -71,4 +76,4 @@ SOC 2 criteria are the 2017 Trust Services Criteria (revised points of focus 202
 | G-04 | Monitoring and annual penetration test, vulnerability scans twice a year | GLBA 314.4(d) | Partial | ZAP weekly; schedule a pen test before Plaid production |
 | G-05 | Report to the owner/board yearly; FTC notice within 30 days for breaches of 500+ people | GLBA 314.4(i), 314.4(j) | In place | incident-response.md |
 | PL-01 | Plaid: security questionnaire, MFA, encryption, access controls, vulnerability management | Plaid | Partial | Same gaps as above |
-| S-01 | No personalized investment advice; strategies simulated and labeled | SEC Advisers Act guardrail | In place | AI prompt, validator in Phase 2 |
+| S-01 | No personalized investment advice; strategies simulated and labeled | SEC Advisers Act guardrail | In place | AI prompt, validator V4 (advice wording) and V7 (disclaimer), safe fallback (C-28) |
