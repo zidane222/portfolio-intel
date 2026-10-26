@@ -35,7 +35,7 @@ jobs:
           service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
       - name: Load into BigQuery
         env:
-          BQ_PROJECT: ${{ secrets.BQP }}
+          BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
         run: |
           pip install --quiet requests google-cloud-bigquery
           ls trades_*.json
