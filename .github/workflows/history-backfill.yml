@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      HAS_GCP: ${{ secrets.BQP != '' }}
+      HAS_GCP: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -90,7 +90,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SP }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
-          BQ_PROJECT: ${{ secrets.BQP }}
+          BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
         run: |
           pip install --quiet requests google-cloud-bigquery
           ls trades_*.json

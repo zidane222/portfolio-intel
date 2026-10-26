@@ -13,7 +13,7 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     env:
-      HAS_GCP: ${{ secrets.BQP != '' }}
+      HAS_GCP: 'true'
     timeout-minutes: 45
     steps:
       - name: Checkout repo
@@ -68,7 +68,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SP }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
-          BQ_PROJECT: ${{ secrets.BQP }}
+          BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
         run: |
           pip install --quiet google-cloud-bigquery
           python3 scripts/history_load.py --trades trades.json --prices recent

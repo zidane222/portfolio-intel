@@ -144,7 +144,7 @@ REPLACE = []  # chambers to clear before loading (set by --replace-chamber)
 def to_supabase(trades, prices):
     url, key = os.environ.get('SUPABASE_URL', '').strip(), os.environ.get('SUPABASE_SERVICE_KEY', '').strip()
     if not url or not key:
-        notice('Supabase history: not configured, skipped')
+        warn('Supabase history: not configured, skipped')
         return
     sb = Supabase(url, key)
     cutoff = (datetime.date.today() - datetime.timedelta(days=365 * KEEP_YEARS)).isoformat()
@@ -174,7 +174,7 @@ PRICE_SCHEMA = [('ticker', 'STRING', 'REQUIRED'), ('d', 'DATE', 'REQUIRED'), ('c
 def to_bigquery(trades, prices):
     project = os.environ.get('BQ_PROJECT', '').strip()
     if not project:
-        notice('BigQuery history: not configured, skipped')
+        warn('BigQuery history: not configured, skipped')
         return
     from google.cloud import bigquery
     client = bigquery.Client(project=project)
