@@ -35,7 +35,7 @@ jobs:
       - name: npm audit (worker)
         working-directory: worker
         run: npm audit --audit-level=high
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: pip-audit (backend)
