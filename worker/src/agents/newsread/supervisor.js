@@ -130,6 +130,7 @@ export async function runNewsRead(c, deps) {
     Object.assign(rec, {stance: j.stance, confidence: conf, summary: j.summary,
       bull: okB ? clean(b.points) : [], bear: okR ? clean(r.points) : []});
   }
+  rec.status = 'PASS'; // candidate; the whole-record check decides
   const final = validateNewsRead(rec, pack);
   if (final.status !== 'PASS') { for (const f of final.flags) flags.add(f.rule); return done('fallback'); }
   return done('PASS');
