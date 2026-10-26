@@ -710,6 +710,15 @@ export default async function ({t, worker, env, O, withServices, bind}) {
       assert.equal(V(b).status, 'FLAG', 'not flagged: ' + b);
     }
   });
+  await t('UAT bug 1: index and account names cannot carry a quantity', async () => {
+    for (const g of ['Your 401(k) and your 401k are separate.', 'Your 529 plans hold bonds.', 'The Russell 2000 gained.', 'The Dow 30 fell.']) {
+      const r = V(g); assert.equal(r.status, 'PASS', g + ' ' + rulesOf(r));
+    }
+    for (const b of ['Your portfolio is worth 401k.', 'You gained 401K this year.', 'The S&P 500 points lower today.', 'The Dow 30-point drop hurt.',
+      'S&P 500-point rally.', 'The S&P 5000 is high.', 'Nasdaq-100000 fund.', 'Your 401(k)123 balance.', 'You own six figure investments.']) {
+      assert.equal(V(b).status, 'FLAG', 'not flagged: ' + b);
+    }
+  });
   await t('UAT bug 1: builder prompt steers counts and percentages to placeholders', async () => {
     groqReset();
     const svc = (await import('../src/services/ai.js')).default;

@@ -33,7 +33,10 @@ const sentences = s => String(s).split(/(?<=[.!?])\s+|\n+/);
 // placeholders removed, so digits inside rendered facts never count. Typed digits are allowed
 // only as 4-digit years 1900 to 2099 and as list numbering (1. or 1) at the start of a line).
 // Index and account names that contain digits but state no quantity ("VOO tracks the S&P 500").
-const INDEX_NAMES = /\bS&P\s?(?:500|400|600|1500)\b|\bNasdaq[- ]100\b|\bRussell\s(?:1000|2000|3000)\b|\bDow\s(?:Jones\s)?30\b|\b401\s?\(?k\)?|\b529\s(?:plan|account)s?\b/gi;
+// A name followed by a unit ("S&P 500 points", "Dow 30-point") is a quantity, not a name. Bare
+// "401k" counts as the account only after a possessive ("your 401k"); "worth 401k" is an amount.
+const NOT_QTY = String.raw`(?![-\s]*(?:points?|pts|percent|per\s*cent|%|x\b|times|fold|k\b|thousand|million))`;
+const INDEX_NAMES = new RegExp(String.raw`(?:\bS&P\s?(?:500|400|600|1500)\b|\bNasdaq[- ]100\b|\bRussell\s(?:1000|2000|3000)\b|\bDow\s(?:Jones\s)?30\b|\b401\s?\(k\)|(?<=\b(?:your|my|our|their|his|her|a|the)\s)401\s?k\b|\b529\s(?:plan|account)s?\b)` + NOT_QTY, 'gi');
 function strayNumbers(text) {
   const bad = [];
   const n = norm(text).replace(PLACEHOLDER, ' ').replace(INDEX_NAMES, ' ');
@@ -55,7 +58,7 @@ function strayNumbers(text) {
 //   ("one of", "no one", "this one"); "half" is allowed in "first/second half" and "half-year";
 //   "double" is allowed in "double-check" and "double-edged"; "zero" in "zero-coupon".
 const PH = '\u0001';
-const UNIT = '(?:shares?|dollars?|cents?|percent|per\\s+cent|points?|basis|hundred|thousand|million|billion|trillion|dozen|times|years?|months?)';
+const UNIT = '(?:shares?|dollars?|cents?|percent|per\\s+cent|points?|basis|hundred|thousand|million|billion|trillion|dozen|times|years?|months?|figures?)';
 // Count words zero to twenty are fine as a count of things ("three ETFs", "two of your holdings",
 // "one gold fund"): a noun from COUNTED must follow within two words, or "of" plus a determiner.
 // Anything else ("roughly zero", "another seven", "two this year", "five thousand dollars",
