@@ -40,10 +40,33 @@ export function extractTickers(question, held = []) {
   return out.slice(0, 5);
 }
 
+// Common startup cities, so "Austin raises" filters without a state in the question.
+const CITIES = {austin: 'TX', houston: 'TX', dallas: 'TX', 'san antonio': 'TX', 'fort worth': 'TX', 'san francisco': 'CA', 'los angeles': 'CA',
+  'san diego': 'CA', 'palo alto': 'CA', 'san jose': 'CA', boston: 'MA', cambridge: 'MA', seattle: 'WA', denver: 'CO', boulder: 'CO', miami: 'FL',
+  atlanta: 'GA', chicago: 'IL', nashville: 'TN', 'salt lake city': 'UT', phoenix: 'AZ', portland: 'OR', 'new york': 'NY', brooklyn: 'NY', pittsburgh: 'PA', philadelphia: 'PA'};
+
+// Topic words that are not SEC industry groups. Values are pi-private topic keys.
+const TOPIC_WORDS = [[/\b(?:ai|a\.i\.|artificial intelligence|machine learning|ml|llms?|gen(?:erative)? ?ai)\b/i, 'ai'],
+  [/\bfin-?tech\b|\bpayments?\b/i, 'fintech'], [/\bbio-?tech\w*|\bbiotechnology\b|\bpharma\w*/i, 'biotech'],
+  [/\bhealth ?(?:care|tech)?\b|\bmedtech\b/i, 'health'], [/\b(?:clean ?tech|energy|climate ?tech|solar)\b/i, 'energy'], [/\b(?:crypto\w*|web3|blockchain)\b/i, 'crypto']];
+export const topicOf = s => { const t = String(s || ''); for (const [re, k] of TOPIC_WORDS) if (re.test(t)) return k; return null; };
+const TOPIC_KEYS = new Set(TOPIC_WORDS.map(x => x[1]));
+
+// Filed-date window words. pi-private gets a since date computed from this (data/private.js).
+export const PERIODS = ['this_month', '30d', '90d', 'this_year'];
+function periodOf(q) {
+  if (/\bthis month\b|\bmonth to date\b|\bmtd\b/i.test(q)) return 'this_month';
+  if (/\b(?:past|last|1|one) month\b|\b30 days\b|\brecent(?:ly)?\b|\blatest\b/i.test(q)) return '30d';
+  if (/\b(?:3|three|past|last) (?:months|quarter)\b|\bthis quarter\b|\b90 days\b/i.test(q)) return '90d';
+  if (/\bthis year\b|\bytd\b/i.test(q)) return 'this_year';
+  return null;
+}
+
 function rulesFilters(q) {
-  const f = {state: null, city: null, stage: null, industry: null, form: null, q: null};
+  const f = {state: null, city: null, stage: null, industry: null, form: null, q: null, topic: topicOf(q), period: periodOf(q)};
   const lower = q.toLowerCase();
-  for (const [name, code] of Object.entries(STATE_NAMES)) if (new RegExp(`\\b${name}\\b`).test(lower)) { f.state = code; break; }
+  for (const [name, code] of Object.entries(CITIES)) if (new RegExp(`\\b${name}\\b`).test(lower)) { f.city = name; f.state = code; break; }
+  if (!f.state) for (const [name, code] of Object.entries(STATE_NAMES)) if (new RegExp(`\\b${name}\\b`).test(lower)) { f.state = code; break; }
   if (!f.state) { const m = q.match(/\b([A-Z]{2})\b/g); const s = (m || []).find(x => STATES.has(x)); if (s) f.state = s; }
   if (/pre-?seed/i.test(q)) f.stage = 'Pre-seed / seed';
   else if (/\bseed\b|series a\b/i.test(q)) f.stage = 'Seed / Series A';
@@ -93,7 +116,7 @@ export function rulesIntent(question, held = []) {
   };
 }
 
-const emptyFilters = () => ({state: null, city: null, stage: null, industry: null, form: null, q: null});
+const emptyFilters = () => ({state: null, city: null, stage: null, industry: null, form: null, q: null, topic: null, period: null});
 const str = (v, n) => (typeof v === 'string' && v.trim() ? v.replace(/[<>`]/g, '').trim().slice(0, n) : null);
 
 // Check Groq output against allowlists. Anything invalid falls back to the rules value.
@@ -105,12 +128,22 @@ export function normalizeIntent(raw, rules, held = []) {
   const state = typeof pf.state === 'string' && STATES.has(pf.state.toUpperCase()) ? pf.state.toUpperCase() : null;
   const filters = {
     state,
-    city: str(pf.city, 40),
+    city: str(pf.city, 40)?.replace(/,\s*[A-Za-z]{2}$/, '') || null,
     stage: STAGES.includes(pf.stage) ? pf.stage : null,
     industry: str(pf.industry, 60),
     form: pf.form === 'D' || pf.form === 'C' ? pf.form : null,
     q: str(pf.q, 60),
+    topic: TOPIC_KEYS.has(pf.topic) ? pf.topic : null,
+    period: PERIODS.includes(pf.period) ? pf.period : null,
   };
+  // A topic word in industry or q ("AI", "fintech") is not an SEC industry or a company name:
+  // it becomes a topic filter. Topic and period from the question rules fill gaps Groq left.
+  const rf = rules.private_filters || {};
+  for (const k of ['industry', 'q']) { const tp = topicOf(filters[k]); if (tp) { filters.topic = filters.topic || tp; filters[k] = null; } }
+  if (filters.q && filters.city && filters.q.toLowerCase() === filters.city.toLowerCase()) filters.q = null;
+  filters.topic = filters.topic || rf.topic || null;
+  filters.period = filters.period || rf.period || null;
+  if (!filters.city && rf.city) { filters.city = rf.city; filters.state = filters.state || rf.state; }
   const conf = Number(raw.confidence);
   const heldSet = new Set(held);
   return {

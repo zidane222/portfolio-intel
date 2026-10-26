@@ -32,9 +32,14 @@ const sentences = s => String(s).split(/(?<=[.!?])\s+|\n+/);
 // V1 (L3): numbers reach the answer only through [[fN]] placeholders. Checked on the draft with
 // placeholders removed, so digits inside rendered facts never count. Typed digits are allowed
 // only as 4-digit years 1900 to 2099 and as list numbering (1. or 1) at the start of a line).
+// Index and account names that contain digits but state no quantity ("VOO tracks the S&P 500").
+// A name followed by a unit ("S&P 500 points", "Dow 30-point") is a quantity, not a name. Bare
+// "401k" counts as the account only after a possessive ("your 401k"); "worth 401k" is an amount.
+const NOT_QTY = String.raw`(?![-\s]*(?:points?|pts|percent|per\s*cent|%|x\b|times|fold|k\b|thousand|million))`;
+const INDEX_NAMES = new RegExp(String.raw`(?:\bS&P\s?(?:500|400|600|1500)\b|\bNasdaq[- ]100\b|\bRussell\s(?:1000|2000|3000)\b|\bDow\s(?:Jones\s)?30\b|\b401\s?\(k\)|(?<=\b(?:your|my|our|their|his|her|a|the)\s)401\s?k\b|\b529\s(?:plan|account)s?\b)` + NOT_QTY, 'gi');
 function strayNumbers(text) {
   const bad = [];
-  const n = norm(text).replace(PLACEHOLDER, ' ');
+  const n = norm(text).replace(PLACEHOLDER, ' ').replace(INDEX_NAMES, ' ');
   for (const ch of String(text) + n) if (ch > '\x7F' && /\p{N}/u.test(ch)) bad.push(ch);
   for (const line of n.split('\n')) {
     const body = line.replace(/^\s*\d{1,2}[.)]\s/, '');
@@ -53,22 +58,45 @@ function strayNumbers(text) {
 //   ("one of", "no one", "this one"); "half" is allowed in "first/second half" and "half-year";
 //   "double" is allowed in "double-check" and "double-edged"; "zero" in "zero-coupon".
 const PH = '\u0001';
-const UNIT = '(?:shares?|dollars?|cents?|percent|per\\s+cent|points?|basis|hundred|thousand|million|billion|trillion|dozen|times|years?|months?|stocks?|funds?|holdings?)';
+const UNIT = '(?:shares?|dollars?|cents?|percent|per\\s+cent|points?|basis|hundred|thousand|million|billion|trillion|dozen|times|years?|months?|figures?)';
+// Count words zero to twenty are fine as a count of things ("three ETFs", "two of your holdings",
+// "one gold fund"): a noun from COUNTED must follow within two words, or "of" plus a determiner.
+// Anything else ("roughly zero", "another seven", "two this year", "five thousand dollars",
+// "twenty-five", "one share") is a typed quantity. Tens above twenty are always flagged.
+const SMALL = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty';
+const COUNTED = '(?:etfs?|funds?|holdings?|positions?|stocks?|assets?|classes|class|categories|category|sectors?|companies|company|tickers?|accounts?|types?|kinds?|'
+  + 'investments?|securities|security|bonds?|raises?|filings?|startups?|sources?|things?|ways?|options?|areas?|groups?|parts?|regions?|countries|markets?|deposits?|'
+  + 'items?|factors?|risks?|buckets?|pieces?|names?|indexes|indices|index|vehicles?|products?|members?|trades?|rounds?|states?|cities|city|industries|industry|questions?|points\\s+to)';
+const LINK = '(?:[a-z&]+[- ]){0,2}';
+const COUNT_OK = new RegExp(`^(?:\\s+${LINK}${COUNTED}\\b|\\s+of\\s+(?:your|the|these|those|them|its|my|our|it|which|all)\\b)`, 'i');
+const QTY_AFTER = new RegExp(`^(?:-|\\s+${UNIT}\\b|\\s+(?:x|fold)\\b|-?fold\\b)`, 'i');
+const COUNT_RE = new RegExp(`\\b(?:${SMALL})\\b`, 'gi');
 const NUMBER_WORDS = [
-  new RegExp(`\\bone\\s+${UNIT}\\b`, 'i'),
-  /\b(?:zero(?!-coupon)|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i,
+  /\b(?:thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i,
   /\b(?:hundreds?|thousands?|millions?|billions?|trillions?|dozens?)\b/i,
   /\b(?:twice|thrice|tripled?|triples|quadrupled?|quadruples|doubled|doubles)\b/i,
-  /\bdouble\b(?![- ](?:check|checked|checking|edged))/i,
+  /\bdouble\b(?![- ](?:check|checked|checking|edged|digit))/i,
   /(?<!\b(?:first|second|back|front)\s)\bhalf\b(?![- ]?years?\b)/i,
   /\b(?:[0-9]+|x|n)\s*times\b/i,
   /\b[a-z]+-?fold\b/i,
   /\b(?:one|a)[- ](?:third|quarter|fifth|tenth)s?\b/i,
 ];
 const PCT_WORD = /(\S*)\s*\b(?:percent(?:age points?)?|per\s+cent|basis\s+points?|bps)\b/gi;
+function countWords(s) {
+  const hits = [];
+  for (const m of s.matchAll(COUNT_RE)) {
+    const w = m[0].toLowerCase();
+    const after = s.slice(m.index + m[0].length, m.index + m[0].length + 80);
+    const before = s.slice(Math.max(0, m.index - 12), m.index);
+    if (/zero$/.test(w) && /^-coupon/i.test(after)) continue;
+    if (w === 'one' && !QTY_AFTER.test(after)) continue; // pronoun or "one fund": only a unit after makes it a quantity
+    if (/[-]$/.test(before) || QTY_AFTER.test(after) || !COUNT_OK.test(after)) hits.push(w);
+  }
+  return hits;
+}
 function numberWords(text) {
   const s = norm(text).replace(PLACEHOLDER, PH);
-  const hits = [];
+  const hits = countWords(s);
   for (const re of NUMBER_WORDS) { const m = s.match(re); if (m) hits.push(m[0].trim().toLowerCase()); }
   for (const m of s.matchAll(PCT_WORD)) if (!m[1].endsWith(PH)) hits.push(m[0].trim().toLowerCase());
   if (/[%$]/.test(s)) hits.push('% or $ outside a placeholder');
