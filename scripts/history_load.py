@@ -179,13 +179,28 @@ def to_bigquery(trades, prices):
     from google.cloud import bigquery
     client = bigquery.Client(project=project)
     ds_id = f"{project}.{os.environ.get('BQ_DATASET', 'portfolio_intel')}"
-    client.create_dataset(bigquery.Dataset(ds_id), exists_ok=True)
+    ds = client.create_dataset(bigquery.Dataset(ds_id), exists_ok=True)
+    # A dataset created while the project had no billing (BigQuery sandbox) gets 60-day table and
+    # partition expiry, which silently deletes the archive. The archive must never expire.
+    if ds.default_table_expiration_ms or ds.default_partition_expiration_ms:
+        ds.default_table_expiration_ms = None
+        ds.default_partition_expiration_ms = None
+        client.update_dataset(ds, ['default_table_expiration_ms', 'default_partition_expiration_ms'])
+        warn('BigQuery: removed the sandbox 60-day expiry from the dataset')
 
     def ensure(name, schema, part_field):
         t = bigquery.Table(f'{ds_id}.{name}', schema=[bigquery.SchemaField(*s) for s in schema])
         # Monthly partitions keep queries cheap and stay far under BigQuery's partition limit
         t.time_partitioning = bigquery.TimePartitioning(type_=bigquery.TimePartitioningType.MONTH, field=part_field)
-        return client.create_table(t, exists_ok=True)
+        t = client.create_table(t, exists_ok=True)
+        if t.expires or (t.time_partitioning and t.time_partitioning.expiration_ms):
+            t.expires = None
+            tp = t.time_partitioning
+            tp.expiration_ms = None
+            t.time_partitioning = tp
+            t = client.update_table(t, ['expires', 'time_partitioning'])
+            warn(f'BigQuery: removed expiry from table {name}')
+        return t
 
     tables = {'trades': ensure('trades', TRADE_SCHEMA, 'traded'), 'prices': ensure('prices', PRICE_SCHEMA, 'd')}
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
