@@ -58,15 +58,21 @@ jobs:
             names="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/secrets_store/stores/$STORE_ID/secrets?per_page=100" \
               | jq -r '.result[]?.name' 2>/dev/null)" || names=""
-            for n in GROQ_API_KEY SUPABASE_SERVICE_KEY; do
-              printf '%s\n' "$names" | grep -qx "$n" || { newsdesk_skip="Secrets Store has no $n (or the deploy token cannot list the store: add Account > Secrets Store: Read)"; break; }
-            done
+            # The Supabase key may be stored as SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY
+            SB_SECRET=""
+            for n in SUPABASE_SERVICE_KEY SUPABASE_SERVICE_ROLE_KEY; do printf '%s\n' "$names" | grep -qx "$n" && { SB_SECRET=$n; break; }; done
+            if ! printf '%s\n' "$names" | grep -qx GROQ_API_KEY; then
+              newsdesk_skip="Secrets Store has no GROQ_API_KEY (or the deploy token cannot list the store: add Account > Secrets Store: Read)"
+            elif [ -z "$SB_SECRET" ]; then
+              newsdesk_skip="Secrets Store has no SUPABASE_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY (or the deploy token cannot list the store: add Account > Secrets Store: Read)"
+            fi
           fi
           if [ -n "$newsdesk_skip" ]; then
             echo "::warning::Skipping pi-newsdesk: $newsdesk_skip. News reads stay off (503) until setup is done; see docs/plans/phase3-news-agents.md section 16."
             sed -i '/binding = "NEWSDESK"/d' wrangler.toml
           else
-            link config/newsdesk.toml GROQ_API_KEY SUPABASE_SERVICE_KEY
+            link config/newsdesk.toml GROQ_API_KEY
+            printf '\n[[secrets_store_secrets]]\nbinding = "SUPABASE_SERVICE_KEY"\nstore_id = "%s"\nsecret_name = "%s"\n' "$STORE_ID" "$SB_SECRET" >> config/newsdesk.toml
             sed -i "s#__SUPABASE_URL__#$SB_URL#" config/newsdesk.toml
             printf '\n[[kv_namespaces]]\nbinding = "NEWSREADS"\nid = "%s"\n' "$KV_ID" >> config/newsdesk.toml
             SERVICES="$SERVICES newsdesk"
