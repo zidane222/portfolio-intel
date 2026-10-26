@@ -19,15 +19,18 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys;
     data agents, fact checker, builder, validator     │
         │ service bindings                            │
         ▼                                             │
-  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private
-  (prices,   (news,   (savings  (Groq: (Plaid)    (House/Senate   (SEC Form D/C,
-   history,   feeds)   rates)    Ask,             trades)          filters, stats)
-   sectors,                      extract,
-   dividends)                    /internal/intent,
-                                 /internal/build)
+  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private  pi-newsdesk
+  (prices,   (news,   (savings  (Groq: (Plaid)    (House/Senate   (SEC Form D/C,  (news reads:
+   history,   feeds)   rates)    Ask,             trades)          filters, stats) cron batch,
+   sectors,                      extract,                                          on demand,
+   dividends)                    /internal/intent,                                 no public URL)
+                                 /internal/build)                                      │
+                                                                  Workers KV NEWSREADS ┤ Supabase service key
+                                                                  Supabase news tables ┘ (RLS, definer functions)
         ▲
         │ fallback on network or 5xx errors
-Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask)
+Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
+  "no stored reads" and "paused", no Groq, no storage)
 
 GitHub Actions
   fetch_trades (daily 06:00 UTC): House + Senate PTRs, prices, Supabase + BigQuery
@@ -35,8 +38,26 @@ GitHub Actions
   private-markets (daily 11:30 UTC): SEC EDGAR Form D + Form C, rolling 60 days → private_markets.json
   security (PR, push, weekly): secrets, dependencies, CodeQL, ZAP
   main_portfolio-intel (backend changes): Azure Web App deploy (CI/CD showcase)
+  Save to history step (inside fetch_trades): scripts/history_load.py also copies the last 3 days of
+    Supabase news_verdicts into BigQuery (MERGE on id) and purges verdicts over 2 years
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
+
+Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before
+fetch_trades at 06:00): each tick claims at most 2 tickers from Supabase news_jobs, reads headlines,
+runs the news read agents and upserts news_verdicts.
 ```
+
+pi-newsdesk (plan: `docs/plans/phase3-news-agents.md`) is the only service holding
+`SUPABASE_SERVICE_KEY` (with `GROQ_API_KEY`, both from the Secrets Store). It has no public URL; the
+gateway reaches it over the `NEWSDESK` binding. Its two routes return 404 without `X-PI-Internal`.
+Storage:
+- Supabase `news_verdicts` (batch reads, 2 years), `news_jobs` (14 days), `news_budget` (30 days)
+  and view `news_reads_7d`. RLS on, no policies, no grants for anon or authenticated; access only
+  through the service role and SECURITY DEFINER functions with a fixed search_path
+  (`supabase/news.sql`).
+- Workers KV `NEWSREADS`: key `r:{TICKER}:{YYYY-MM-DD}`, 36 h TTL, on-demand reads written only after
+  a Groq read. No user identifier in key or value. The Cache API sits in front (per data center).
+- BigQuery `news_verdicts`: archive copy made by `scripts/history_load.py` (no Groq key in GitHub).
 
 pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pages), with
 `redirect: 'error'`, a 5 MB streamed cap, a 1 h cache, and the last good copy for up to 48 h.
@@ -51,9 +72,15 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/ai` | ai | `{mode: "assistant"|"extract", question, context?}` → `{answer}` |
 | `/api/ask` | gateway (agents/supervisor.js) | `POST {question, history?, portfolio?, client_asof}` → `{answer, sources[], check: {status: PASS|FLAG|fallback, flags, attempts}, intent, case_id, ms}`. Worker only; the app falls back to `/api/ai`. Body at most 32 KB (413) |
 | `/api/private` | private | `GET ?state&city&stage&industry&form&q&limit&offset` → `{updated, total, count, offset, raises[]}` |
+| `/api/newsdesk/reads` | newsdesk (special-cased in `index.js`) | `POST {tickers: [1 to 40]}` → `{updated, window_days: 7, reads: {T: [record...]}}`. Latest batch verdict or today's shared read per ticker. 0 Groq calls, counts against no cap. Body at most 2 KB. Tickers only in the POST body |
+| `/api/newsdesk/read` | newsdesk (special-cased in `index.js`) | `POST {ticker}` → `{status: ok|thin|fallback|limited|busy, cached, groq_calls, quota_left, read, message}`. Gateway order: origin, `api` limit, 1 KB body, ticker regex, pi-market quote check (invalid is 400 with no Groq call), per-visitor quota (`newsread` bucket: 3 a minute, 10 uncached a day; pi-newsdesk gets only `X-PI-Quota: ok|over`, never the IP). pi-newsdesk order: Cache API, KV, today's batch row, then quota, thin check (0 calls), global cap, Groq. 503 when `NEWS_ONDEMAND_ENABLED = "0"` |
 | `/api/private/stats` | private | Same filters → `{updated, count, total_amt, by_stage, by_form, by_state_top, by_industry_top}` |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
 | `/api/all-trades` | disclosures | Congressional trades |
+
+Render fallback: `POST /api/newsdesk/reads` returns empty reads and `POST /api/newsdesk/read` returns
+503 "News reads are paused." with the same origin, size and ticker checks, no Groq call, nothing
+stored, tickers not logged.
 
 `/internal/intent` and `/internal/build` exist only on pi-ai. They are not in `OWNERS`, so the
 gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` with `X-PI-Internal: 1`.
@@ -63,9 +90,10 @@ gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` wit
 | Class | Examples | Where it lives | Protection |
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
-| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP |
+| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
 | Account | Email, passkey public keys | Supabase Auth | Supabase managed |
-| Public | Congressional trades, prices, news, SEC Form D and Form C filings | JSON files, Supabase history, BigQuery | Integrity only |
+| Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |
+| Confidential (user), news list | The user's own ticker list for News "My reads" | Device vault (`state.newsList`), ciphertext when synced | Sent to the gateway as plain tickers in a POST body to get reads, with no user identifier (control C-39, accepted disclosure) |
 
 ## In-app agent framework (in place, Phase 2)
 
@@ -100,13 +128,45 @@ IDs and timings, never user text.
 
 Boundaries: agents never call each other; only the supervisor sequences them. Data reaches agents
 only through service bindings with fixed paths (tickers checked with `^[A-Z.\-]{1,6}$`). Groq is
-called only from pi-ai and pi-rates.
+called only from pi-ai, pi-rates and pi-newsdesk.
+
+### News read agents (in place, Phase 3)
+
+Code: `worker/src/agents/newsread/` (pure modules, bundled into pi-newsdesk) and
+`worker/src/modules/newsdesk.js`. Plan: `docs/plans/phase3-news-agents.md`.
+
+- `pack.js` builds the evidence pack from the last 7 days of headlines (cleaned, deduped by cluster,
+  max 8, ids `e1`..`e8`). `lexicon.js` scores tone and `mode.js` picks the mode in code: `thin` (no
+  Groq call), `collaborate` (one joint brief) or `debate` (bull and bear in parallel on the same
+  frozen pack, then the judge). The mode basis is stored in the record.
+- `roles.js`: `bull`, `bear`, `joint`, `judge` are `(case, deps) => patch` functions over
+  `case.ext.news`; they never call each other and the judge sees only validated points. `deps.groq`
+  and `deps.take` are injected by pi-newsdesk. `supervisor.js` `runNewsRead` sequences them, repairs
+  one failing role once, applies the confidence cap and falls back to the cited headline list.
+- `validator.js` adds V14 to V21 and `validateNewsRead` (cites exist, each side cites, judge adds no
+  facts, stance and confidence enums and cap, code label, advice words, stance words, injection
+  echo). V13 stays reserved for Strategy. `render.js` writes the label "News read, not a
+  recommendation." and the cite text; the front end renders from the same record (`pi/news-verdict/v1`).
+- Ask: intent `news_read` (rules pre-pass, no Groq intent call) runs the data agent
+  `agents/data/newsread.js`, which calls `NEWSDESK /read` with the same quota flag, then renders the
+  record. The chat shows the same read card. The Phase 2 case cap of 3 Groq calls covers the gateway;
+  the read's own calls are counted by pi-newsdesk.
+- Caps: at most 4 Groq calls per ticker; global daily cap in Supabase `news_take` (90 calls, 180000
+  tokens, batch share 50, reserved atomically before each call); per-visitor cap in the gateway
+  (above). Cap reached: batch marks the ticker `skipped`, on-demand answers `busy`.
+- Universe: SPY, QQQ, AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, GLD plus the top 20 congressional
+  tickers of the last 30 days (`news_universe()`), cap 30. Any other valid ticker is read on demand
+  and never stored long term.
+- Per-user list: News "My reads" uses the device list (watchlist plus portfolio tickers, editable),
+  stored in the encrypted vault.
 
 Extension points (not built):
 - `registry.js` maps intent to agents. Research, Strategy and Insights supervisors keep the
   `(case, deps) => patch` shape and a top-level router picks one; `case.ext.<domain>` is reserved.
-- News bull/bear/judge can produce `news` evidence inside the Research supervisor without changing
-  the fact checker or validator.
+- News bull/bear/judge are built (Phase 3, above). A Research supervisor can reuse them as `news`
+  evidence without changing the fact checker or validator.
+- Learning agent: reads `news_verdicts` (or the BigQuery copy) by `run_date` and `ticker`, joins
+  `hist_prices` from `price_ref_date`. Not built.
 - Strategy facts must carry `rules: ["simulated"]`, plus a new validator rule V13 "simulated label present".
 - Data science on BigQuery and the learning agent run in the daily GitHub job, publish JSON to
   Pages, and are read by a data agent like pi-private.
