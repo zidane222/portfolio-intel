@@ -39,6 +39,8 @@ async function openTicker(tk, focusTrack) {
     <div>${tr.length ? tr.slice(0, 12).map(t => { const buy = /purchase/i.test(t.type); const lag = lagOf(t);
       return `<div class="trade"><div><div class="who">${esc(nameOf(t.representative))}</div><div class="what" style="font-size:15px">${buy ? 'Bought' : 'Sold'}<span class="pill ${buy ? 'buy' : 'sell'}">${esc(t.amount)}</span>${lag !== null && lag > LATE_DAYS ? '<span class="pill late">Filed late</span>' : ''}${t.committees && t.committees.length ? '<span class="pill cmte">Committee overlap</span>' : ''}</div></div><div><div class="when">Traded ${esc(t.date)}</div><div class="when">Filed ${esc(t.filed || '')}</div></div></div>`; }).join('')
       : '<div class="muted-d" style="font-size:14px;padding:8px 0">No congressional trades in this stock this year.</div>'}</div>
+    <h3>News read</h3>
+    <div id="tk-read" aria-live="polite"><div class="muted-d" style="font-size:14px;padding:8px 0">Loading news read…</div></div>
     <h3>News</h3>
     <div id="tk-news"><div class="muted-d" style="font-size:14px;padding:8px 0">Loading headlines…</div></div>`;
   $('tk-close').onclick = () => dlg.close();
@@ -56,6 +58,7 @@ async function openTicker(tk, focusTrack) {
   $('tk-star').onclick = () => { toggleWatch(tk); const on = watchlist.includes(tk); $('tk-star').setAttribute('aria-pressed', on); $('tk-star').querySelector('svg').setAttribute('fill', on ? 'currentColor' : 'none'); };
   if (!dlg.open) { dlg.showModal(); }
   sheetChart && sheetChart.remove(); sheetChart = null;
+  tickerRead(tk);
   // chart
   try {
     const d = await getJSON(`${BACKEND_URL}/api/history/${tk}?range=6mo`);
@@ -77,6 +80,28 @@ async function openTicker(tk, focusTrack) {
     const items = (d.articles || []).slice(0, 5);
     $('tk-news').innerHTML = items.length ? items.map(newsItem).join('') : '<div class="muted-d" style="font-size:14px;padding:8px 0">No recent headlines.</div>';
   } catch (e) { if (sheetTicker === tk) $('tk-news').innerHTML = '<div class="muted-d" style="font-size:14px;padding:8px 0">Headlines unavailable right now.</div>'; }
+}
+// News read section: stored read if any (0 Groq calls), else an on-demand button
+async function tickerRead(tk) {
+  const box = () => sheetTicker === tk ? $('tk-read') : null;
+  const show = (msg) => {
+    const b = box(); if (!b) return;
+    const r = readOf(tk);
+    if (r) { b.innerHTML = readCard(r, {dark: true}); return; }
+    const note = NR.state[tk] === 'thin' ? READ_MSG.thin : NR.state[tk] === 'invalid' ? READ_MSG.invalid : '';
+    const off = NR.blocked || NR.busy || NR.quotaLeft === 0;
+    b.innerHTML = `<p class="muted-d tk-read-msg">${esc(msg || note || 'No news read for ' + tk + ' yet.')}${quotaText() ? ' ' + esc(quotaText()) : ''}</p>`
+      + (note ? '' : `<button type="button" class="btn small" id="tk-read-get"${off ? ' disabled' : ''}>Get a news read</button>`);
+    const g = $('tk-read-get');
+    if (g) g.onclick = async () => {
+      g.disabled = true; g.textContent = 'Getting a news read…';
+      const res = await requestRead(tk);
+      show(res.status === 'ok' ? '' : res.message);
+      if (newsTab === 'reads') renderMyReads();
+    };
+  };
+  if (!NEWS_TK.test(tk)) { const b = box(); if (b) b.innerHTML = `<p class="muted-d tk-read-msg">${esc(READ_MSG.invalid)}</p>`; return; }
+  try { await loadReads([tk]); show(); } catch (e) { show(readOf(tk) ? '' : READ_MSG.error); }
 }
 function wireTickerLinks() {
   document.addEventListener('click', e => {

@@ -39,6 +39,7 @@ function newsTabs() {
   const hot = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
   return [
     ['mine', 'Your stocks', f.slice(0, 12)],
+    ['reads', 'My reads', getNewsList()],
     ['market', 'Top stories', null],
     ['social', 'Reddit', null],
     ['pelosi', 'Pelosi', pel],
@@ -62,6 +63,7 @@ async function loadNews() {
   $('news-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { newsTab = b.dataset.n; loadNews(); });
   const el = $('news-list');
   const [, , tickers] = tabs.find(t => t[0] === newsTab);
+  if (newsTab === 'reads') { renderMyReads(); return; }
   if (newsTab === 'mine' && !tickers.length) { el.innerHTML = '<div class="empty">Add your portfolio or a watchlist to see news about your stocks.</div>'; return; }
   if (newsCache[newsTab]) { el.innerHTML = newsCache[newsTab]; return; }
   el.innerHTML = '<div class="empty">Loading headlines…</div>';
@@ -83,4 +85,63 @@ async function loadNews() {
     return;
   }
   if (tab === newsTab) el.innerHTML = newsCache[tab];
+  if (['pelosi', 'trump', 'congress'].includes(tab) && tickers && tickers.length) universeReads(tab, tickers);
+}
+// Read cards above the headlines for tickers that have a stored read (public universe)
+async function universeReads(tab, tickers) {
+  try { await loadReads(tickers); } catch (e) { return; }
+  const cards = tickers.map(readOf).filter(Boolean).slice(0, 4);
+  if (tab !== newsTab || !cards.length || $('news-list').querySelector('.nr-uni')) return;
+  $('news-list').insertAdjacentHTML('afterbegin', `<div class="nr-uni"><h3 class="nr-h">News reads</h3>${cards.map(r => readCard(r, {title: true})).join('')}</div>`);
+}
+
+// ── My reads tab: editable list on this device ──
+let nrMsg = '';
+function renderMyReads() {
+  const el = $('news-list');
+  const list = getNewsList();
+  // keep what the user is typing across re-renders
+  const prev = $('nr-in'), typed = prev ? prev.value : '', hadFocus = prev && document.activeElement === prev;
+  const chips = list.length ? list.map(t => `<span class="chip-l nr-chip"><button type="button" class="nr-tkb" data-tk="${esc(t)}">${esc(t)}</button><button type="button" class="nr-x" aria-label="Remove ${esc(t)} from my reads" data-nr-rm="${esc(t)}"><svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button></span>`).join('')
+    : '<span class="fine">No tickers yet. Add one below.</span>';
+  const rows = list.map(t => {
+    const r = readOf(t), st = NR.state[t];
+    if (r) return readCard(r, {title: true});
+    const note = st === 'thin' ? READ_MSG.thin : st === 'invalid' ? READ_MSG.invalid : '';
+    const off = NR.blocked || NR.busy || NR.quotaLeft === 0;
+    return `<div class="nr-row"><button type="button" class="nr-tk" data-tk="${esc(t)}">${esc(t)}</button>${note ? `<span class="nr-note">${esc(note)}</span>` : `<button type="button" class="btn small nr-get" data-nr-get="${esc(t)}"${off ? ' disabled' : ''}>Get a news read</button>`}</div>`;
+  }).join('');
+  el.innerHTML = `<div class="nr-edit">
+      <p class="fine">Your watchlist and portfolio tickers by default. This list stays on this device. Each read says what the news says, not what to do.</p>
+      <div class="chips" id="nr-chips">${chips}</div>
+      <form class="watch-form nr-form" id="nr-form"><label class="sr" for="nr-in">Add a ticker to my reads</label><input id="nr-in" placeholder="Add ticker, e.g. PLTR" autocapitalize="characters" autocomplete="off" maxlength="6"><button class="btn small" type="submit">Add</button></form>
+      ${newsListIsDefault() ? '' : '<button type="button" class="btn small ghost nr-reset" id="nr-reset">Reset to watchlist and portfolio</button>'}
+      <p class="nr-status" id="nr-status" role="status" aria-live="polite">${esc([nrMsg, quotaText()].filter(Boolean).join(' '))}</p>
+    </div><div id="nr-rows">${rows || ''}</div>`;
+  if (typed) $('nr-in').value = typed;
+  if (hadFocus) $('nr-in').focus();
+  el.querySelectorAll('[data-nr-rm]').forEach(b => b.onclick = () => { const t = b.dataset.nrRm; saveNewsList(getNewsList().filter(x => x !== t)); nrMsg = `Removed ${t}.`; renderMyReads(); });
+  el.querySelectorAll('[data-nr-get]').forEach(b => b.onclick = () => getReadFor(b.dataset.nrGet));
+  $('nr-form').onsubmit = e => {
+    e.preventDefault();
+    const t = $('nr-in').value.toUpperCase().trim();
+    if (!NEWS_TK.test(t)) { nrMsg = 'Enter a ticker of 1 to 6 letters, like NVDA.'; renderMyReads(); $('nr-in').focus(); return; }
+    const cur = getNewsList();
+    if (cur.includes(t)) nrMsg = `${t} is already in your list.`;
+    else if (cur.length >= NEWSLIST_MAX) nrMsg = `Your list can hold ${NEWSLIST_MAX} tickers.`;
+    else { saveNewsList([...cur, t]); nrMsg = `Added ${t}.`; }
+    $('nr-in').value = ''; renderMyReads(); $('nr-in').focus();
+    loadReads(getNewsList()).then(() => newsTab === 'reads' && renderMyReads()).catch(() => {});
+  };
+  if ($('nr-reset')) $('nr-reset').onclick = () => { saveNewsList(null); nrMsg = 'List reset to your watchlist and portfolio.'; renderMyReads(); loadReads(getNewsList()).then(() => newsTab === 'reads' && renderMyReads()).catch(() => {}); };
+  if (list.length && !renderMyReads.asked) {
+    renderMyReads.asked = true;
+    loadReads(list).then(() => { if (newsTab === 'reads') renderMyReads(); }).catch(() => { nrMsg = READ_MSG.error; if (newsTab === 'reads') renderMyReads(); });
+  }
+}
+async function getReadFor(t) {
+  nrMsg = `Getting a news read for ${t}.`; NR.busy = true; renderMyReads(); NR.busy = false;
+  const r = await requestRead(t);
+  nrMsg = r.status === 'ok' ? `News read for ${t} is ready.` : r.message;
+  if (newsTab === 'reads') renderMyReads();
 }
