@@ -248,7 +248,7 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.equal(rb.status, 'skipped'); assert.equal(rb.origin, 'batch'); assert.equal(b.log.length, 2); shape(rb);
   });
   await t('p3 fallback: Groq error on bull, on judge, on all; invalid JSON; timeout', async () => {
-    let m = mockDeps({bull: [new Error('500'), new Error('500')], bear: [BEAR], judge: [JUDGE]});
+    let m = mockDeps({bull: [new Error('500'), new Error('500')], bear: [BEAR], judge: [{summary: 'The probe weighs on the outlook [[e2]].', stance: 'negative', confidence: 'low', weighed: ['e2', 'e4']}]});
     let r = await runNewsRead(debateCase(), m.deps);
     assert.equal(r.status, 'PASS'); assert.equal(r.bull.length, 0); assert.ok(renderRead(r).includes(MESSAGES.no_side));
     m = mockDeps({bull: [BULL], bear: [BEAR], judge: [new Error('500'), new Error('500')]});
