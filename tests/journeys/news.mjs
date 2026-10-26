@@ -61,7 +61,7 @@ async function run(viewport, label) {
   page.on('console', m => { if (m.type() === 'error' && !expected(m)) errors.push(m.text() + ' @ ' + ((m.location() && m.location().url) || '')); });
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   page.on('dialog', d => { errors.push('dialog opened: ' + d.message()); d.dismiss(); });
-  let readMode = 'ok', quota = 9, readsBodies = [];
+  let readMode = 'ok', httpFail = 0, quota = 9, readsBodies = [];
   await page.route(u => !u.href.startsWith(BASE), async route => {
     const req = route.request(), u = req.url();
     const json = (status, o) => route.fulfill({status, contentType: 'application/json', body: JSON.stringify(o)});
@@ -72,6 +72,7 @@ async function run(viewport, label) {
     }
     if (u === API + '/api/newsdesk/read') {
       const t = JSON.parse(req.postData() || '{}').ticker;
+      if (httpFail) return json(httpFail, {error: 'x'});
       if (t === 'ZZZZ') return json(400, {error: 'Unknown ticker'});
       if (t === 'THIN') return json(200, {status: 'thin', cached: false, groq_calls: 0, quota_left: quota, read: null, message: MSG.thin});
       if (readMode === 'limited') return json(200, {status: 'limited', cached: false, groq_calls: 0, quota_left: 0, read: null, message: MSG.limited});
@@ -135,11 +136,23 @@ async function run(viewport, label) {
   await page.click('[data-nr-get="IBM"]');
   await page.waitForFunction(m => document.getElementById('nr-status').textContent.includes(m), MSG.busy);
   check(await page.$eval('[data-nr-get="META"]', b => b.disabled), `${label} busy shows cap message and disables buttons`);
-  await openReads(); readMode = 'limited';
+  await openReads(); readMode = 'limited'; httpFail = 0;
   await page.waitForSelector('[data-nr-get="META"]:not([disabled])');
   await page.click('[data-nr-get="META"]');
   await page.waitForFunction(m => document.getElementById('nr-status').textContent.includes(m), MSG.limited);
   check((await page.textContent('#nr-status')).includes('0 new reads left today.'), `${label} limited shows message and 0 left`);
+
+  // HTTP 429 (rate) and 503 (paused)
+  await openReads(); readMode = 'ok';
+  await page.waitForSelector('[data-nr-get="IBM"]:not([disabled])');
+  httpFail = 429; await page.click('[data-nr-get="IBM"]');
+  await page.waitForFunction(m => document.getElementById('nr-status').textContent.includes(m), 'Too many requests');
+  check((await page.textContent('#nr-rows')).includes('Too many requests') || (await page.textContent('#nr-status')).includes('Wait a minute'), `${label} 429 shows wait message`);
+  await page.waitForSelector('[data-nr-get="IBM"]:not([disabled])');
+  httpFail = 503; await page.click('[data-nr-get="IBM"]');
+  await page.waitForFunction(() => document.getElementById('nr-status').textContent.includes('News reads are paused'));
+  check(await page.$eval('[data-nr-get="META"]', b => b.disabled), `${label} 503 shows paused and disables buttons`);
+  httpFail = 0;
 
   // touch targets
   const small = await page.$$eval('#news-list button, #news-list input', els => els.filter(e => e.offsetParent && e.getBoundingClientRect().height < 44).map(e => e.outerHTML.slice(0, 60)));
@@ -165,6 +178,14 @@ async function run(viewport, label) {
   await page.fill('#ask-q', 'what is the news saying about NVDA'); await page.click('#ask-go');
   await page.waitForSelector('#answer-read .read-card');
   check((await page.textContent('#answer-read')).includes(LABEL) && (await page.textContent('#answer-read')).includes('Case against'), `${label} Ask renders the news read card`);
+
+  // floating chat shows the read card
+  await page.click('#as-fab');
+  await page.fill('#as-in', 'what is the news saying about NVDA'); await page.click('#as-send');
+  await page.waitForSelector('#as-panel .read-card');
+  const ct = await page.textContent('#as-panel .read-card');
+  check(ct.includes(LABEL) && ct.includes('Case against'), `${label} floating chat renders the news read card`);
+  check(await page.$eval('#as-panel .read-card', e => e.getBoundingClientRect().right <= innerWidth + 1), `${label} chat card fits the screen`);
 
   const body = await page.evaluate(() => document.body.innerText);
   check(!/[–—]/.test(body), `${label} no em or en dash in rendered text`, (body.match(/.{0,30}[–—].{0,30}/) || [''])[0]);

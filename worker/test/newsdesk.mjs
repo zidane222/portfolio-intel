@@ -354,4 +354,50 @@ export default async function ({t}) {
       assert.equal(d.read && d.read.origin, 'on_demand');
     });
   }
+
+  // ── QA additions: global cap shared by batch and on-demand, shared KV, no-user keys ──
+  await t('newsdesk QA: one global daily cap is shared by batch and on-demand', async () => {
+    // Budget of 6 calls total: a batch debate (4) then an on-demand debate (needs 4) is refused mid-way.
+    let w = world({budget: {calls: 6, tokens: 180000, batch: 50}});
+    await withFetch(w, async () => {
+      await nd.tick(ENV, deps(ENV), NOW.getTime());                      // 2 batch debates compete for 6 calls
+      assert.ok(w.spent.calls <= 6 && w.groq <= 6, `batch spent ${w.spent.calls}`);
+      const left = 6 - w.spent.calls; const before = w.groq;
+      const d = await (await nd.read(req('/read', {ticker: 'PLTR'}, {...INT, 'X-PI-Quota': 'ok'}), ENV, deps(ENV))).json();
+      assert.ok(w.spent.calls <= 6 && w.groq <= 6, 'on-demand cannot pass the shared cap');
+      if (left < 4) assert.ok(['busy', 'fallback'].includes(d.status), d.status);
+      assert.ok(w.groq - before <= left);
+    });
+    // On-demand first uses the budget, then the batch is held back by the same counter.
+    w = world({budget: {calls: 4, tokens: 180000, batch: 50}});
+    await withFetch(w, async () => {
+      const d = await (await nd.read(req('/read', {ticker: 'PLTR'}, {...INT, 'X-PI-Quota': 'ok'}), ENV, deps(ENV))).json();
+      assert.equal(d.status, 'ok'); assert.equal(w.spent.calls, 4);
+      await nd.tick(ENV, deps(ENV), NOW.getTime());
+      assert.equal(w.spent.calls, 4, 'batch gets nothing once on-demand used the cap'); assert.equal(w.groq, 4);
+      assert.ok([...w.jobs.values()].some(j => j.status === 'skipped'));
+      const d2 = await (await nd.read(req('/read', {ticker: 'AMD'}, {...INT, 'X-PI-Quota': 'ok'}), ENV, deps(ENV))).json();
+      assert.equal(d2.status, 'busy'); assert.equal(w.groq, 4);
+    });
+    // The batch-only cap never blocks on-demand.
+    w = world({budget: {calls: 90, tokens: 180000, batch: 0}});
+    await withFetch(w, async () => {
+      const d = await (await nd.read(req('/read', {ticker: 'PLTR'}, {...INT, 'X-PI-Quota': 'ok'}), ENV, deps(ENV))).json();
+      assert.equal(d.status, 'ok');
+    });
+  });
+
+  await t('newsdesk QA: KV cache is shared by ticker, whoever asks, and keys carry no user id', async () => {
+    const w = world(); const kv = memKV();
+    await withFetch(w, async () => {
+      const a = await (await nd.read(req('/read', {ticker: 'PLTR'}, {...INT, 'X-PI-Quota': 'ok', 'CF-Connecting-IP': '9.9.9.9', 'X-PI-User': 'alice'}), ENV, deps(ENV, {kv, cache: memCache()}))).json();
+      assert.equal(a.cached, false); const g = w.groq; assert.ok(g > 0);
+      // another visitor, cold Cache API (other colo): KV answers, 0 Groq calls
+      const b = await (await nd.read(req('/read', {ticker: 'pltr'}, {...INT, 'X-PI-Quota': 'ok', 'CF-Connecting-IP': '8.8.8.8'}), ENV, deps(ENV, {kv, cache: memCache()}))).json();
+      assert.equal(b.cached, true); assert.equal(b.groq_calls, 0); assert.equal(w.groq, g);
+      assert.equal(b.read.id, a.read.id);
+      for (const [k, v] of kv.m) { assert.match(k, /^r:[A-Z.\-]{1,6}:\d{4}-\d{2}-\d{2}$/); assert.ok(!/9\.9\.9\.9|8\.8\.8\.8|alice/.test(k + v.v)); }
+      assert.equal(kv.m.size, 1);
+    });
+  });
 }

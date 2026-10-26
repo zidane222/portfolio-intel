@@ -71,7 +71,7 @@ grant select on public.news_reads_7d to service_role;
 
 -- Top tickers by congressional trade count in the last `days` days.
 create or replace function public.news_universe(days int default 30, n int default 20)
-returns setof text language sql stable security definer set search_path = public as $$
+returns setof text language sql stable security definer set search_path = public, pg_temp as $$
   select ticker from public.hist_trades
   where traded >= current_date - days and ticker ~ '^[A-Z.-]{1,6}$'
   group by ticker
@@ -82,7 +82,7 @@ $$;
 -- Seeds the day's jobs: fixed list first, then the universe, deduped, cap 30.
 -- No-op (returns 0) when the day is already seeded. Also deletes jobs older than 14 days.
 create or replace function public.news_seed(d date, fixed text[])
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
 declare added int;
 begin
   if exists (select 1 from public.news_jobs where run_date = d) then return 0; end if;
@@ -103,7 +103,7 @@ end $$;
 -- Claims up to k jobs: pending ones, or running ones stuck over 10 minutes with attempts left.
 -- Stuck jobs that used all 3 attempts become 'error'. Safe under concurrent ticks (skip locked).
 create or replace function public.news_claim(d date, k int)
-returns table (ticker text, attempts int) language plpgsql security definer set search_path = public as $$
+returns table (ticker text, attempts int) language plpgsql security definer set search_path = public, pg_temp as $$
 #variable_conflict use_column
 begin
   update public.news_jobs j set status = 'error'
@@ -127,13 +127,14 @@ end $$;
 -- Atomically reserves Groq budget. Returns false (and changes nothing) when it would pass a cap.
 create or replace function public.news_take(d date, calls int, tokens int, batch boolean,
                                             cap_calls int, cap_tokens int, cap_batch int)
-returns boolean language plpgsql security definer set search_path = public as $$
+returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
 declare ok boolean;
 begin
   if calls < 0 or tokens < 0 then return false; end if;
   insert into public.news_budget as b (day, calls, tokens, batch_calls)
   select d, calls, tokens, case when batch then calls else 0 end
    where calls <= cap_calls and tokens <= cap_tokens and (not batch or calls <= cap_batch)
+     and (batch or calls <= cap_calls - cap_batch)
   on conflict (day) do update
      set calls = b.calls + excluded.calls,
          tokens = b.tokens + excluded.tokens,
@@ -141,13 +142,15 @@ begin
    where b.calls + excluded.calls <= cap_calls
      and b.tokens + excluded.tokens <= cap_tokens
      and (not batch or b.batch_calls + excluded.batch_calls <= cap_batch)
+     -- on-demand reads may only use the share not reserved for the batch, so they can't starve it
+     and (batch or (b.calls - b.batch_calls) + excluded.calls <= cap_calls - cap_batch)
   returning true into ok;
   return coalesce(ok, false);
 end $$;
 
 -- Retention: verdicts over 2 years (already archived in BigQuery), budget rows over 30 days.
 create or replace function public.news_purge()
-returns json language plpgsql security definer set search_path = public as $$
+returns json language plpgsql security definer set search_path = public, pg_temp as $$
 declare v int; b int;
 begin
   delete from public.news_verdicts where run_date < current_date - interval '2 years';
