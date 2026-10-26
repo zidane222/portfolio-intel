@@ -210,8 +210,13 @@ def to_bigquery(trades, prices):
 
     merge('trades', trades, TRADE_SCHEMA, ['id'])
     merge('prices', prices, PRICE_SCHEMA, ['ticker', 'd'])
+    # Count what is actually stored (metadata count, no bytes scanned), so a silent miss shows up
+    counts = {n: list(client.query(f'SELECT COUNT(*) AS c FROM `{ds_id}.{n}`').result())[0].c for n in tables}
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
-    notice(f'BigQuery history: {len(trades)} trades and {len(prices)} prices merged; {used / 1e6:.1f} MB used of 9 GB')
+    notice(f'BigQuery history: {len(trades)} trades and {len(prices)} prices merged; stored now {counts["trades"]} trades and '
+           f'{counts["prices"]} prices; {used / 1e6:.1f} MB used of 9 GB')
+    if prices and not counts['prices']:
+        raise RuntimeError('BigQuery prices table is empty after the merge')
 
 
 def main():
