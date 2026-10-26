@@ -639,4 +639,146 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.equal(validate({draft: {text: 'It was the third quarter of 2025.', used: []}, facts: []}).status, 'PASS');
   });
 
+
+  // ---------------- UAT regressions (fix/ask-uat) ----------------
+  // Bug 1: "How diversified am I?" with cash plus three ETFs ended in fallback, and the evidence
+  // lacked allocation facts. Prices in the mock are 110 for every symbol, so values are shares x 110.
+  const UAT = {asof: NOW, total: 232000, holdings: [
+    {ticker: 'TMCXX', shares: null, value: 80000, avgCost: null, isCash: true, apy: 4.2, class: 'Cash'},
+    {ticker: 'Preferred Deposit', shares: null, value: 53000, avgCost: null, isCash: true, apy: null, class: 'Cash'},
+    {ticker: 'QQQM', shares: 300, value: 33000, avgCost: 95.5, isCash: false, apy: null, class: 'ETF'},
+    {ticker: 'GLD', shares: 200, value: 22000, avgCost: 101, isCash: false, apy: null, class: 'ETF'},
+    {ticker: 'VOO', shares: 400, value: 44000, avgCost: 99, isCash: false, apy: null, class: 'ETF'},
+  ], allocation: {}, income_annual: 3360};
+  // Drafts written the way gpt-oss-120b answers this question.
+  const uatDrafts = [
+    u => `Your portfolio of [[${idOf(u, 'Portfolio total value')}]] is spread across three ETFs (QQQM, GLD and VOO) and two cash holdings, TMCXX and Preferred Deposit. `
+      + `Cash makes up [[${idOf(u, 'Cash share of portfolio')}]] of the total and ETFs make up [[${idOf(u, 'ETF share of portfolio')}]]. `
+      + `VOO, which tracks the S&P 500, is your largest fund at [[${idOf(u, 'VOO share of portfolio')}]], QQQM follows the Nasdaq-100 at [[${idOf(u, 'QQQM share of portfolio')}]], `
+      + `and GLD adds one gold fund at [[${idOf(u, 'GLD share of portfolio')}]]. You hold no bonds or international stock funds, so the mix leans on cash and US large caps.`,
+    u => `You have [[${idOf(u, 'Number of holdings')}]] holdings. Two of them are cash and three are ETFs. One of your biggest exposures is cash at [[${idOf(u, 'Cash share of portfolio')}]], `
+      + `while the three ETFs together are [[${idOf(u, 'ETF share of portfolio')}]]. Each ETF covers a different area: US large caps, tech heavy growth and gold. `
+      + `Diversification also depends on asset classes you do not hold, such as bonds. No one mix fits everyone.`,
+    u => `Diversification overview: your [[${idOf(u, 'Portfolio total value')}]] portfolio has two main buckets, cash and equity ETFs. TMCXX is [[${idOf(u, 'TMCXX share of portfolio')}]] `
+      + `and Preferred Deposit is [[${idOf(u, 'PREFERRED DEPOSIT share of portfolio')}]]. Among the ETFs, VOO is [[${idOf(u, 'VOO share of portfolio')}]]. `
+      + `Gold through GLD is [[${idOf(u, 'GLD share of portfolio')}]], which can behave differently from stocks.`,
+  ];
+  await t('UAT bug 1: realistic diversification drafts PASS first try', async () => {
+    for (const draft of uatDrafts) {
+      groqReset(); memClear();
+      G.INTENT.push(intentJSON('holdings'));
+      let seen = null;
+      G.BUILD.push(u => { seen = factsIn(u); return {text: draft(u), used: []}; });
+      const d = await (await ask({question: 'How diversified am I?', portfolio: UAT, client_asof: NOW})).json();
+      assert.equal(d.check.status, 'PASS', JSON.stringify(d.check) + ' ' + d.answer);
+      assert.equal(d.check.attempts, 1);
+      assert.ok(!/\[\[/.test(d.answer));
+      const first = seen.slice(0, 10).map(f => f.label);
+      for (const l of ['Portfolio total value', 'Cash share of portfolio', 'ETF share of portfolio', 'Number of holdings', 'QQQM share of portfolio', 'TMCXX share of portfolio'])
+        assert.ok(first.includes(l), 'not in first ten facts: ' + l + ' ' + first);
+      assert.equal(G.calls.length, 2);
+    }
+  });
+  await t('UAT bug 1: fallback answer shows allocation facts, not per-share details', async () => {
+    groqReset(); memClear();
+    G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500});
+    const d = await (await ask({question: 'How diversified am I?', portfolio: UAT})).json();
+    assert.equal(d.check.status, 'fallback');
+    const labels = d.sources.map(s => s.label);
+    for (const l of ['Portfolio total value', 'Cash share of portfolio', 'ETF share of portfolio', 'Number of holdings', 'VOO share of portfolio'])
+      assert.ok(labels.includes(l), 'missing ' + l + ': ' + labels);
+    assert.ok(!labels.some(l => /average cost|shares held/.test(l)), labels.join('|'));
+    assert.ok(d.answer.includes('Cash share of portfolio: 57.33%'), d.answer);
+    assert.equal(validateFinal(d.answer).status, 'PASS');
+  });
+  await t('UAT bug 1: client allocation is used and not duplicated by derived class shares', async () => {
+    const input = parseInput(JSON.stringify({question: 'x', portfolio: {...UAT, allocation: {ETF: 42.67, Cash: 57.33}}}));
+    const ev = (await holdingsAgent.run({input, intent: {type: 'holdings', tickers: []}})).evidence;
+    const fc = factcheck({input, evidence: ev, intent: {type: 'holdings'}});
+    assert.equal(fc.facts.filter(f => f.label === 'Cash share of portfolio').length, 1);
+    assert.equal(fc.facts.find(f => f.label === 'Number of holdings').value, 5);
+  });
+  await t('UAT bug 1: count words as counts of things pass, quantities in words still FLAG', async () => {
+    for (const g of ['You hold three ETFs and two cash holdings.', 'Two of your holdings are cash.', 'GLD is one gold fund.', 'There are four asset classes you do not hold.',
+      'Your five positions cover two main areas.', 'VOO tracks the S&P 500 and QQQM tracks the Nasdaq-100.', 'Zero bonds are in the mix.', 'Twenty startups filed.']) {
+      const r = V(g); assert.equal(r.status, 'PASS', g + ' ' + rulesOf(r));
+    }
+    for (const b of ['Cash is about half of your portfolio.', 'QQQM is two times VOO.', 'You have five thousand dollars in cash.', 'Roughly twenty-five holdings.',
+      'Your cash is three percent.', 'QQQM doubled.', 'It rose two this year.', 'GLD rose tenfold.', 'Cash is one third of it.', 'You own seven shares of QQQM.',
+      'It is up five points.', 'Rates rose two basis points.', 'Your gain is ten.', 'There are thirty holdings.',
+      'VOO tracks the S&P 500, up 12 today.', 'You hold two ETFs worth $5.', 'Cash rose two fold.', 'It is a two-thirds cash mix.']) {
+      assert.equal(V(b).status, 'FLAG', 'not flagged: ' + b);
+    }
+  });
+  await t('UAT bug 1: builder prompt steers counts and percentages to placeholders', async () => {
+    groqReset();
+    const svc = (await import('../src/services/ai.js')).default;
+    G.BUILD.push({text: 'ok', used: []});
+    await svc.fetch(new Request('https://internal/internal/build', {method: 'POST', headers: {'X-PI-Internal': '1', 'Content-Type': 'application/json'},
+      body: JSON.stringify({question: 'x', facts: []})}), env);
+    const c = G.calls.find(x => x.kind === 'BUILD');
+    assert.ok(c, 'build call made');
+    groqReset();
+    const src = readFileSync(fileURLToPath(new URL('../src/modules/ai.js', import.meta.url)), 'utf8');
+    assert.match(src, /share of the portfolio/); assert.match(src, /three ETFs/); assert.match(src, /Filters relaxed/);
+  });
+
+  // Bug 2: "Any Austin AI pre-seed raises this month" said none exist.
+  await t('UAT bug 2: rules intent reads city, topic, stage and period', async () => {
+    const r = rulesIntent('Any Austin AI pre-seed raises this month');
+    assert.equal(r.type, 'private');
+    const pf = r.private_filters;
+    assert.deepEqual({city: pf.city, state: pf.state, stage: pf.stage, topic: pf.topic, period: pf.period},
+      {city: 'austin', state: 'TX', stage: 'Pre-seed / seed', topic: 'ai', period: 'this_month'});
+    const n = normalizeIntent({type: 'private', private_filters: {state: 'TX', city: 'Austin, TX', stage: 'Pre-seed / seed', industry: 'AI', q: 'artificial intelligence'}}, r);
+    assert.equal(n.private_filters.industry, null); assert.equal(n.private_filters.q, null);
+    assert.equal(n.private_filters.topic, 'ai'); assert.equal(n.private_filters.period, 'this_month'); assert.equal(n.private_filters.city, 'Austin');
+    const bad = normalizeIntent({type: 'private', private_filters: {topic: 'evil', period: '1900d'}}, rulesIntent('seed rounds in Texas'));
+    assert.equal(bad.private_filters.topic, null); assert.equal(bad.private_filters.period, null);
+  });
+  await t('UAT bug 2: pi-private since and topic params are validated and filter the real data', async () => {
+    pagesData = REAL; memClear();
+    for (const q of ['since=2026-13-01', 'since=yesterday', 'since=2026-02-30', 'since=2999-01-01', 'since=1999-01-01', 'topic=evil', 'topic=__proto__', 'topic=constructor'])
+      assert.equal((await get('/api/private?' + q)).status, 400, q);
+    const all = await (await get('/api/private/stats?state=TX&city=austin')).json();
+    const recent = await (await get('/api/private/stats?state=TX&city=austin&since=2026-10-01')).json();
+    assert.ok(recent.count > 0 && recent.count < all.count, `${recent.count} of ${all.count}`);
+    const ai = await (await get('/api/private?state=TX&city=austin&topic=ai&limit=100')).json();
+    assert.ok(ai.raises.some(r => /Stelmo AI/.test(r.n)), 'Stelmo AI missing');
+    const since = await (await get('/api/private?since=2026-10-20&limit=100')).json();
+    assert.ok(since.raises.length && since.raises.every(r => r.d >= '2026-10-20'));
+    pagesData = FIX; memClear();
+  });
+  const atData = async fn => { const real = Date.now; const at = Date.parse(REAL.updated); Date.now = () => at; try { return await fn(); } finally { Date.now = real; } };
+  await t('UAT bug 2: Austin AI pre-seed this month finds Stelmo AI end to end (real data)', async () => atData(async () => {
+    groqReset(); pagesData = REAL; memClear();
+    G.INTENT.push(intentJSON('private', {private_filters: {state: 'TX', city: 'Austin', stage: 'Pre-seed / seed', industry: 'AI', form: null, q: null}}));
+    let seen = null;
+    G.BUILD.push(u => { seen = factsIn(u); const r = seen.find(f => f.label === 'Private raise');
+      return {text: `Yes. There are [[${idOf(u, 'Matching filings')}]] matching filings, including [[${r.id}]].`, used: []}; });
+    const d = await (await ask({question: 'Any Austin AI pre-seed raises this month'})).json();
+    assert.equal(d.check.status, 'PASS', JSON.stringify(d.check));
+    assert.ok(/Stelmo AI/.test(d.answer), d.answer);
+    assert.ok(!seen.some(f => f.label === 'Filters relaxed'));
+    assert.match(seen.find(f => f.label === 'Filters applied').value_display, /topic AI.*Pre-seed.*filed on or after 2026-10-01/);
+    pagesData = FIX; memClear();
+  }));
+  await t('UAT bug 2: zero matches relax topic then stage and say so in the facts', async () => atData(async () => {
+    groqReset(); pagesData = REAL; memClear();
+    G.INTENT.push(intentJSON('private', {private_filters: {state: 'TX', city: 'Austin', stage: 'Pre-seed / seed', topic: 'crypto', period: 'this_month'}}));
+    let seen = null;
+    G.BUILD.push(u => { seen = factsIn(u); return {text: `[[${idOf(u, 'Filters relaxed')}]] There are [[${idOf(u, 'Matching filings')}]] filings.`, used: []}; });
+    const d = await (await ask({question: 'Any Austin crypto pre-seed raises this month'})).json();
+    assert.equal(d.check.status, 'PASS', JSON.stringify(d.check));
+    assert.match(seen.find(f => f.label === 'Filters relaxed').value_display, /No filings matched every filter/);
+    assert.ok(Number(seen.find(f => f.label === 'Matching filings').value_display) > 0);
+    assert.ok(seen.filter(f => f.label === 'Private raise').length > 0);
+    assert.ok(!/[–—]/.test(d.answer));
+    const {relaxSteps} = await import('../src/agents/data/private.js');
+    const steps = relaxSteps({city: 'austin', state: 'TX', stage: 'Growth', topic: 'ai', period: 'this_month'});
+    assert.deepEqual(steps.map(s => [s.f.topic || null, s.f.industry || null, s.f.stage || null]),
+      [['ai', null, 'Growth'], [null, 'other technology', 'Growth'], [null, null, 'Growth'], [null, null, null]]);
+    assert.ok(steps.every(s => s.f.city === 'austin' && s.f.period === 'this_month'));
+    pagesData = FIX; memClear();
+  }));
 }

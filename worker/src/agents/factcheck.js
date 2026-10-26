@@ -114,9 +114,16 @@ export function factcheck(c, now = Date.now()) {
       derived.push({key: `share:${m[1]}`, label: `${m[1]} share of portfolio`, unit: 'pct', value: Math.round(f.value / total.value * 10000) / 100,
         status: 'verified', sources: [...f.sources, ...total.sources], rules: ['derived', 'F10']});
     }
+    // Share of the total per asset class, unless the device already sent that allocation.
+    for (const f of facts) {
+      const m = f.key.match(/^class:(.+):value$/);
+      if (!m || f.status !== 'verified' || byKey.has(`alloc:${m[1]}`)) continue;
+      derived.push({key: `share_class:${m[1]}`, label: `${m[1]} share of portfolio`, unit: 'pct', value: Math.round(f.value / total.value * 10000) / 100,
+        status: 'verified', sources: [...f.sources, ...total.sources], rules: ['derived', 'F10']});
+    }
   }
   const held = facts.filter(f => /^holding:.+:value$/.test(f.key) && f.status === 'verified');
-  if (held.length) derived.push({key: 'derived:holdings_count', label: 'Holdings counted', unit: 'count', value: held.length, status: 'verified', sources: held.map(f => f.sources[0]), rules: ['derived', 'F10']});
+  if (held.length) derived.push({key: 'derived:holdings_count', label: 'Number of holdings', unit: 'count', value: held.length, status: 'verified', sources: held.map(f => f.sources[0]), rules: ['derived', 'F10']});
   const trades = facts.filter(f => /^trade:/.test(f.key) && f.status === 'verified');
   if (trades.length) derived.push({key: 'derived:trades_shown', label: 'Disclosed trades shown', unit: 'count', value: trades.length, status: 'verified', sources: [trades[0].sources[0]], rules: ['derived', 'F10']});
   for (const d of derived) if (!byKey.has(d.key)) { facts.push(d); byKey.set(d.key, d); }
@@ -130,10 +137,23 @@ export function factcheck(c, now = Date.now()) {
     facts.push(f); byKey.set(k, f);
   }
 
-  // F9: intent keys first, cap 60, ids f1..fN.
+  // F9: intent keys first, cap 60, ids f1..fN. For portfolio questions the allocation facts
+  // (share per holding and per class, holdings count, values) come before per-share details,
+  // so neither the cap, the builder payload cut nor the safe answer drops them.
   const tick = c.intent?.tickers || [];
-  const prio = f => (need.includes(f.key) ? 0 : tick.some(t => f.key.includes(':' + t)) ? 1 : 2);
-  const ordered = facts.map((f, i) => [f, i]).sort((a, b) => prio(a[0]) - prio(b[0]) || a[1] - b[1]).map(([f]) => f).slice(0, MAX_FACTS);
+  const holdingsQ = c.intent?.type === 'holdings';
+  const prio = f => {
+    if (need.includes(f.key)) return 0;
+    if (holdingsQ) {
+      if (/^(alloc|share_class):|^derived:holdings_count$/.test(f.key)) return 1;
+      if (/^share:/.test(f.key)) return 2;
+      if (/^(holding:.+:value|class:.+:value)$/.test(f.key)) return 3;
+      if (/^(cash:.+:apy|holding:.+:gain_pct|portfolio:income_annual)$/.test(f.key)) return 4;
+      return 5;
+    }
+    return tick.some(t => f.key.includes(':' + t)) ? 1 : 2;
+  };
+  const ordered = facts.map((f, i) => [f, i]).sort((a, b) => prio(a[0]) - prio(b[0]) || (holdingsQ && /^share:/.test(a[0].key) ? b[0].value - a[0].value : 0) || a[1] - b[1]).map(([f]) => f).slice(0, MAX_FACTS);
   return {facts: ordered.map((f, i) => ({id: 'f' + (i + 1), ...f}))};
 }
 

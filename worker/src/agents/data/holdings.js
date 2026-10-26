@@ -30,6 +30,16 @@ export async function run(c) {
     if (cost && num(h.value) !== null) add(`holding:${t}:gain_pct`, `${t} gain since purchase`, Math.round((h.value / cost - 1) * 10000) / 100, 'pct');
   }
   if (type !== 'ticker') {
+    // Value per asset class (cash rows count as Cash), so factcheck can derive each class's share.
+    const byClass = {};
+    for (const h of p.holdings || []) {
+      if (type === 'rates' && !h.isCash) continue;
+      const v = num(h.value);
+      if (v === null) continue;
+      const cls = h.isCash ? 'Cash' : (h.class || 'Other');
+      byClass[cls] = (byClass[cls] || 0) + v;
+    }
+    for (const [k, v] of Object.entries(byClass)) add(`class:${k}:value`, `${k} total value`, Math.round(v * 100) / 100, 'usd');
     for (const [k, v] of Object.entries(p.allocation || {})) add(`alloc:${k}`, `${k} share of portfolio`, num(v), 'pct');
     if (type !== 'rates') add('portfolio:income_annual', 'Estimated annual income', num(p.income_annual), 'usd');
   }

@@ -11,6 +11,19 @@ const MAX_BYTES = 5 * 1024 * 1024; // size cap for the data file
 const FETCH_MS = 10000;
 const LIMIT_MAX = 100, LIMIT_DEFAULT = 25, OFFSET_MAX = 5000;
 
+// Topic words people use that are not SEC industry groups. Matched against the company name
+// (SEC has no "AI" industry), and optionally against industry groups. Keys are the only accepted
+// values for the topic param.
+export const TOPICS = {
+  ai: {name: /(?:^|[^a-z])(?:ai|a\.i\.)(?:[^a-z]|$)|\.ai\b|intelligen|\blabs?\b|neural|machine learning|\bgpt\b|\bllm\b/, ind: []},
+  fintech: {name: /fintech|\bpay(?:ments?)?\b|\blend|\bcredit\b|\bbanking\b|\bwallet/, ind: ['banking', 'insurance']},
+  biotech: {name: /\bbio|thera|pharma|genom|\bmedic/, ind: ['biotechnology', 'pharmaceuticals']},
+  health: {name: /health|medic|clinic|care\b|thera/, ind: ['health', 'hospital', 'biotechnology', 'pharmaceuticals']},
+  energy: {name: /energy|solar|power|battery|\bgrid\b|hydrogen/, ind: ['energy', 'oil and gas', 'coal', 'electric']},
+  crypto: {name: /crypto|\bchain\b|blockchain|\btoken|bitcoin|web3/, ind: []},
+};
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 // Builds the in-memory index from the parsed file. Exported for tests.
 export function buildIndex(data) {
   if (!data || !Array.isArray(data.raises)) throw new Error('bad data shape');
@@ -66,6 +79,19 @@ export function parseFilters(params) {
     if (u !== 'D' && u !== 'C') throw err('form must be D or C');
     f.form = u;
   }
+  const topic = get('topic');
+  if (topic !== undefined) {
+    const k = topic.trim().toLowerCase();
+    if (!Object.hasOwn(TOPICS, k)) throw err('topic must be one of: ' + Object.keys(TOPICS).join(', '));
+    f.topic = k;
+  }
+  const since = get('since');
+  if (since !== undefined) {
+    const m = since.trim().match(DATE_RE);
+    const d = m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (!m || +m[1] < 2000 || d.getUTCMonth() !== +m[2] - 1 || d.getUTCDate() !== +m[3] || d.getTime() > Date.now() + 86400000) throw err('since must be a date YYYY-MM-DD, not in the future');
+    f.since = since.trim();
+  }
   const q = get('q'); if (q !== undefined) f.q = cleanText(q, 60, 'q')?.toLowerCase();
   const limit = get('limit'); if (limit !== undefined) f.limit = int(limit, 1, LIMIT_MAX, 'limit');
   const offset = get('offset'); if (offset !== undefined) f.offset = int(offset, 0, OFFSET_MAX, 'offset');
@@ -84,6 +110,8 @@ function matches(index, f) {
     if (f.city && x.city !== f.city) continue;
     if (f.industry && !x.ind.includes(f.industry)) continue;
     if (f.q && !x.n.includes(f.q) && !x.city.includes(f.q)) continue;
+    if (f.since && String(r.d || '') < f.since) continue;
+    if (f.topic) { const tp = TOPICS[f.topic]; if (!tp.name.test(x.n) && !tp.ind.some(i => x.ind.includes(i))) continue; }
     out.push(r);
   }
   return out;

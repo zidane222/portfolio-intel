@@ -59,7 +59,9 @@ const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
   + '"people": array of up to 3 politician surnames, '
   + '"private_filters": {"state": two letter US state code or null, "city": string or null, '
   + '"stage": one of "Pre-seed / seed","Seed / Series A","Growth","Late stage","Undisclosed" or null, '
-  + '"industry": string or null, "form": "D" or "C" or null, "q": short company name search or null}, '
+  + '"industry": SEC industry group or null, "form": "D" or "C" or null, "q": short company name search or null, '
+  + '"topic": one of "ai","fintech","biotech","health","energy","crypto" or null (topic words like AI go here, never in industry or q), '
+  + '"period": one of "this_month","30d","90d","this_year" or null}, '
   + '"range": one of "1mo","3mo","1y" or null, "needs_portfolio": boolean, "confidence": number from 0 to 1}. '
   + 'Types: holdings is about the user\'s own portfolio; ticker is about specific stocks; disclosures is about trades by members of Congress; '
   + 'rates is about savings or cash yields; private is about startup fundraising (SEC Form D or C filings); general is an investing concept; '
@@ -68,6 +70,13 @@ const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
 const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
   + 'You write the answer for Portfolio Intel, an investing dashboard. Write a short answer (at most 150 words, plain text, no headers) '
   + 'using only the facts given. Refer to a number only as its placeholder, for example [[f3]]. Never type a digit yourself. '
+  + 'Every amount, percentage, share of the portfolio, count from the data and multiple must be a placeholder: write "[[f4]] of your portfolio", '
+  + 'not "half" or "about 35 percent", and "[[f9]] holdings", not "nine holdings". A placeholder already shows its own % or $ sign, so never add '
+  + 'percent, % or $ next to it. Never write number words for amounts (five thousand, twice, doubled, half, a third). Short counts of things you '
+  + 'name yourself are fine, like "three ETFs" or "two cash holdings". Name indexes without numbers when you can (for example "the S&P index"). '
+  + 'For diversification or allocation questions, use the share of portfolio facts (per holding and per asset class, cash share, number of '
+  + 'holdings) rather than share counts or average costs. For startup raises, if a "Filters relaxed" fact is present, say that no filing matched '
+  + 'every filter and describe the closest results it lists; never say no raises exist when raises are listed. '
   + 'If a fact is unknown or conflicting, say it is unknown, not available, or that sources disagree. Do not tell the user to buy, sell '
   + 'or move money. Describe facts and trade-offs. Do not promise returns. No dashes used as punctuation. '
   + 'Always answer in English, even if the question is in another language. '
@@ -75,7 +84,7 @@ const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
 
 const FLAG_HELP = {
   V1: 'You typed a number. Use only [[fN]] placeholders for numbers. Typed digits are allowed only for years and list numbering.',
-  V1b: 'You wrote a number as a word or symbol (for example five, a dozen, half, twice, doubled, percent, % or $). Every amount must come from a [[fN]] placeholder. Write percent only right after a placeholder.',
+  V1b: 'You wrote a number as a word or symbol (for example five thousand, a dozen, half, twice, doubled, percent, % or $). Every amount, percentage or share must come from a [[fN]] placeholder, and a placeholder already includes its % or $ sign. Counts of things like "three ETFs" are fine.',
   V2: 'You used a placeholder id that is not in the facts.',
   V3: 'You used an unknown or conflicting fact without saying it is unknown, not available, or that sources disagree.',
   V4: 'You gave personal advice to buy, sell or move money. Describe facts and trade-offs only.',
