@@ -27,7 +27,7 @@ function renderChat() {
     box.querySelectorAll('.as-chip').forEach(b => b.onclick = () => sendChat(b.textContent));
   } else {
     box.innerHTML = (chat.restored ? '<p class="as-note" role="note">Answers are not saved after a reload. Your earlier questions are below.</p>' : '')
-      + chat.map(m => `<div class="as-m ${chatRole(m.role)}"><div class="as-b">${m.text ? `<div class="as-t">${esc(m.text)}</div>` : ''}${m.role === 'bot' && m.mode ? `<div class="as-check">${checkHTML(m)}</div>${sourcesBlock(m.sources, m.mode === 'fallback')}` : ''}</div></div>`).join('')
+      + chat.map(m => `<div class="as-m ${chatRole(m.role)}"><div class="as-b">${m.text ? `<div class="as-t">${esc(m.text)}</div>` : ''}${m.role === 'bot' && m.mode ? `<div class="as-check">${checkHTML(m)}</div>${sourcesBlock(m.sources, m.mode === 'fallback')}` : ''}${m.role === 'bot' && m.read ? readCard(m.read, {title: true}) : ''}</div></div>`).join('')
       + (chat.busy ? '<div class="as-m bot"><div class="as-b as-typing" aria-label="Thinking"><span></span><span></span><span></span></div></div>' : '');
   }
   box.scrollTop = box.scrollHeight;
@@ -39,7 +39,7 @@ async function sendChat(q) {
   const hist = chat.slice();
   chat.push({role: 'user', text: q}); chat.busy = true; renderChat();
   $('as-in').value = ''; $('as-send').disabled = true;
-  try { const r = await askChecked(q, hist); chat.push({role: 'bot', text: r.text, sources: r.sources, mode: r.mode}); }
+  try { const r = await askChecked(q, hist); chat.push({role: 'bot', text: r.text, sources: r.sources, mode: r.mode, read: r.read}); }
   catch (e) { chat.push({role: 'bot', text: e.status === 429 ? e.message : 'I can\'t reach the assistant right now. Try again in a minute.'}); }
   chat.busy = false; $('as-send').disabled = false; renderChat();
   if (matchMedia('(hover: hover)').matches) $('as-in').focus();

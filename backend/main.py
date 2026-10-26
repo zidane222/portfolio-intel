@@ -794,6 +794,47 @@ def plaid_remove():
         print('Plaid remove:', e)
     return jsonify({'ok': True})
 
+# ── NEWS READS (fallback only) ──
+# The news reads live in pi-newsdesk (Cloudflare). When the gateway is down the app falls back
+# here: /reads answers with no stored reads, /read says reads are paused. No Groq call, no storage,
+# and tickers are never logged.
+_NEWS_TICKER = re.compile(r'[A-Z.\-]{1,6}')
+
+def _news_body(max_bytes):
+    if not origin_allowed():
+        return None, (jsonify({'error': 'Not allowed'}), 403)
+    if (flask_request.content_length or 0) > max_bytes or len(flask_request.get_data(cache=True) or b'') > max_bytes:
+        return None, (jsonify({'error': 'Request too large'}), 413)
+    body = flask_request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return None, (jsonify({'error': 'Bad request'}), 400)
+    return body, None
+
+@app.route('/api/newsdesk/reads', methods=['POST'])
+def newsdesk_reads():
+    body, err = _news_body(2048)
+    if err: return err
+    raw = body.get('tickers')
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 40:
+        return jsonify({'error': 'Send 1 to 40 tickers.'}), 400
+    out = {}
+    for t in raw:
+        t = t.strip().upper() if isinstance(t, str) else ''
+        if not _NEWS_TICKER.fullmatch(t):
+            return jsonify({'error': 'Unknown ticker'}), 400
+        out[t] = []
+    return jsonify({'updated': datetime.utcnow().isoformat() + 'Z', 'window_days': 7, 'reads': out})
+
+@app.route('/api/newsdesk/read', methods=['POST'])
+def newsdesk_read():
+    body, err = _news_body(1024)
+    if err: return err
+    t = body.get('ticker')
+    t = t.strip().upper() if isinstance(t, str) else ''
+    if not _NEWS_TICKER.fullmatch(t):
+        return jsonify({'error': 'Unknown ticker'}), 400
+    return jsonify({'error': 'News reads are paused.'}), 503
+
 # ── HEALTH CHECK ──
 @app.route('/')
 @app.route('/health')

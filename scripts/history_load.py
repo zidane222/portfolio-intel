@@ -2,6 +2,8 @@
 
   Supabase  - rolling 5 years, read by the app. Writes stop at 450 MB.
   BigQuery  - full archive, never pruned. Writes stop at 9 GB.
+  News verdicts (pi-newsdesk, supabase/news.sql) - last 3 days copied from Supabase to BigQuery
+            news_verdicts (MERGE on id); then Supabase rows over 2 years are purged.
 
 Either store is skipped if its settings are missing, so this is safe to run anywhere.
 
@@ -171,11 +173,11 @@ TRADE_SCHEMA = [('id', 'STRING', 'REQUIRED'), ('chamber', 'STRING', 'NULLABLE'),
 PRICE_SCHEMA = [('ticker', 'STRING', 'REQUIRED'), ('d', 'DATE', 'REQUIRED'), ('close', 'FLOAT64', 'REQUIRED')]
 
 
-def to_bigquery(trades, prices):
+def bq_dataset():
+    """BigQuery client and dataset id with the sandbox expiry removed, or (None, None) when not configured."""
     project = os.environ.get('BQ_PROJECT', '').strip()
     if not project:
-        warn('BigQuery history: not configured, skipped')
-        return
+        return None, None
     from google.cloud import bigquery
     client = bigquery.Client(project=project)
     ds_id = f"{project}.{os.environ.get('BQ_DATASET', 'portfolio_intel')}"
@@ -187,61 +189,143 @@ def to_bigquery(trades, prices):
         ds.default_partition_expiration_ms = None
         client.update_dataset(ds, ['default_table_expiration_ms', 'default_partition_expiration_ms'])
         warn('BigQuery: removed the sandbox 60-day expiry from the dataset')
+    return client, ds_id
 
-    def ensure(name, schema, part_field):
-        t = bigquery.Table(f'{ds_id}.{name}', schema=[bigquery.SchemaField(*s) for s in schema])
-        # Monthly partitions keep queries cheap and stay far under BigQuery's partition limit
-        t.time_partitioning = bigquery.TimePartitioning(type_=bigquery.TimePartitioningType.MONTH, field=part_field)
-        t = client.create_table(t, exists_ok=True)
-        if t.expires or (t.time_partitioning and t.time_partitioning.expiration_ms):
-            t.expires = None
-            tp = t.time_partitioning
-            tp.expiration_ms = None
-            t.time_partitioning = tp
-            t = client.update_table(t, ['expires', 'time_partitioning'])
-            warn(f'BigQuery: removed expiry from table {name}')
-        return t
 
-    tables = {'trades': ensure('trades', TRADE_SCHEMA, 'traded'), 'prices': ensure('prices', PRICE_SCHEMA, 'd')}
+def bq_ensure(client, ds_id, name, schema, part_field):
+    from google.cloud import bigquery
+    t = bigquery.Table(f'{ds_id}.{name}', schema=[bigquery.SchemaField(*s) for s in schema])
+    # Monthly partitions keep queries cheap and stay far under BigQuery's partition limit
+    t.time_partitioning = bigquery.TimePartitioning(type_=bigquery.TimePartitioningType.MONTH, field=part_field)
+    t = client.create_table(t, exists_ok=True)
+    if t.expires or (t.time_partitioning and t.time_partitioning.expiration_ms):
+        t.expires = None
+        tp = t.time_partitioning
+        tp.expiration_ms = None
+        t.time_partitioning = tp
+        t = client.update_table(t, ['expires', 'time_partitioning'])
+        warn(f'BigQuery: removed expiry from table {name}')
+    return t
+
+
+def bq_merge(client, ds_id, name, rows, schema, keys):
+    if not rows:
+        return
+    from google.cloud import bigquery
+    stage = f'{ds_id}._stage_{name}'
+    job = client.load_table_from_json(rows, stage, job_config=bigquery.LoadJobConfig(
+        schema=[bigquery.SchemaField(*s) for s in schema], write_disposition='WRITE_TRUNCATE'))
+    job.result()
+    cols = [s[0] for s in schema]
+    on = ' AND '.join(f'T.{k} = S.{k}' for k in keys)
+    sets = ', '.join(f'{c} = S.{c}' for c in cols if c not in keys)
+    client.query(f"""MERGE `{ds_id}.{name}` T USING `{stage}` S ON {on}
+        WHEN MATCHED THEN UPDATE SET {sets}
+        WHEN NOT MATCHED THEN INSERT ({', '.join(cols)}) VALUES ({', '.join('S.' + c for c in cols)})""").result()
+    client.delete_table(stage, not_found_ok=True)
+
+
+def bq_dedupe(client, ds_id, name, keys, part):
+    # Remove duplicate rows (left behind when sandbox expiry hid old partitions during earlier merges).
+    # Checked each run; only rewrites a table when duplicates exist.
+    k = ', '.join(keys)
+    row = list(client.query(f'SELECT COUNT(*) AS n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({k}))) AS u FROM `{ds_id}.{name}`').result())[0]
+    if row.n > row.u:
+        client.query(f'''CREATE OR REPLACE TABLE `{ds_id}.{name}` PARTITION BY DATE_TRUNC({part}, MONTH) AS
+            SELECT * FROM `{ds_id}.{name}` WHERE TRUE QUALIFY ROW_NUMBER() OVER (PARTITION BY {k}) = 1''').result()
+        warn(f'BigQuery: removed {row.n - row.u} duplicate rows from {name}')
+
+
+def bq_count(client, ds_id, name):
+    return list(client.query(f'SELECT COUNT(*) AS c FROM `{ds_id}.{name}`').result())[0].c
+
+
+def to_bigquery(trades, prices):
+    client, ds_id = bq_dataset()
+    if not client:
+        warn('BigQuery history: not configured, skipped')
+        return
+    tables = {'trades': bq_ensure(client, ds_id, 'trades', TRADE_SCHEMA, 'traded'),
+              'prices': bq_ensure(client, ds_id, 'prices', PRICE_SCHEMA, 'd')}
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
     if used >= BIGQUERY_LIMIT:
         warn(f'BigQuery history is at {used / 1e9:.2f} GB (limit 9 GB). Writes skipped.')
         return
 
-    def merge(name, rows, schema, keys):
-        if not rows:
-            return
-        stage = f'{ds_id}._stage_{name}'
-        job = client.load_table_from_json(rows, stage, job_config=bigquery.LoadJobConfig(
-            schema=[bigquery.SchemaField(*s) for s in schema], write_disposition='WRITE_TRUNCATE'))
-        job.result()
-        cols = [s[0] for s in schema]
-        on = ' AND '.join(f'T.{k} = S.{k}' for k in keys)
-        sets = ', '.join(f'{c} = S.{c}' for c in cols if c not in keys)
-        client.query(f"""MERGE `{ds_id}.{name}` T USING `{stage}` S ON {on}
-            WHEN MATCHED THEN UPDATE SET {sets}
-            WHEN NOT MATCHED THEN INSERT ({', '.join(cols)}) VALUES ({', '.join('S.' + c for c in cols)})""").result()
-        client.delete_table(stage, not_found_ok=True)
-
-    merge('trades', trades, TRADE_SCHEMA, ['id'])
-    merge('prices', prices, PRICE_SCHEMA, ['ticker', 'd'])
-    # Remove duplicate rows (left behind when sandbox expiry hid old partitions during earlier merges).
-    # Checked each run; only rewrites a table when duplicates exist.
+    bq_merge(client, ds_id, 'trades', trades, TRADE_SCHEMA, ['id'])
+    bq_merge(client, ds_id, 'prices', prices, PRICE_SCHEMA, ['ticker', 'd'])
     for name, keys, part in (('trades', ['id'], 'traded'), ('prices', ['ticker', 'd'], 'd')):
-        k = ', '.join(keys)
-        row = list(client.query(f'SELECT COUNT(*) AS n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({k}))) AS u FROM `{ds_id}.{name}`').result())[0]
-        if row.n > row.u:
-            client.query(f'''CREATE OR REPLACE TABLE `{ds_id}.{name}` PARTITION BY DATE_TRUNC({part}, MONTH) AS
-                SELECT * FROM `{ds_id}.{name}` WHERE TRUE QUALIFY ROW_NUMBER() OVER (PARTITION BY {k}) = 1''').result()
-            warn(f'BigQuery: removed {row.n - row.u} duplicate rows from {name}')
+        bq_dedupe(client, ds_id, name, keys, part)
 
     # Count what is actually stored (metadata count, no bytes scanned), so a silent miss shows up
-    counts = {n: list(client.query(f'SELECT COUNT(*) AS c FROM `{ds_id}.{n}`').result())[0].c for n in tables}
+    counts = {n: bq_count(client, ds_id, n) for n in tables}
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
     notice(f'BigQuery history: {len(trades)} trades and {len(prices)} prices merged; stored now {counts["trades"]} trades and '
            f'{counts["prices"]} prices; {used / 1e6:.1f} MB used of 9 GB')
     if prices and not counts['prices']:
         raise RuntimeError('BigQuery prices table is empty after the merge')
+
+
+# ── News verdicts (Supabase -> BigQuery archive) ────────
+# Batch news reads written by the pi-newsdesk Worker (supabase/news.sql). Supabase keeps 2 years;
+# BigQuery keeps everything. The last NEWS_DAYS days are re-copied each run so late rows are caught.
+NEWS_DAYS = 3
+NEWS_SCHEMA = [('id', 'STRING', 'REQUIRED'), ('run_date', 'DATE', 'REQUIRED'), ('created', 'TIMESTAMP', 'NULLABLE'),
+               ('ticker', 'STRING', 'REQUIRED'), ('origin', 'STRING', 'NULLABLE'), ('mode', 'STRING', 'NULLABLE'),
+               ('stance', 'STRING', 'NULLABLE'), ('confidence', 'STRING', 'NULLABLE'), ('status', 'STRING', 'NULLABLE'),
+               ('groq_calls', 'INT64', 'NULLABLE'), ('tokens', 'INT64', 'NULLABLE'), ('model', 'STRING', 'NULLABLE'),
+               ('prompt_version', 'STRING', 'NULLABLE'), ('price_ref_date', 'DATE', 'NULLABLE'), ('record', 'STRING', 'NULLABLE')]
+
+
+def news_rows(sb, since):
+    cols = ','.join(c for c, _, _ in NEWS_SCHEMA)
+    out, step = [], 1000
+    while True:
+        r = requests.get(f'{sb.url}/rest/v1/news_verdicts?select={cols}&run_date=gte.{since}&order=id&limit={step}&offset={len(out)}',
+                         headers=sb.h, timeout=60)
+        if r.status_code >= 300:
+            raise RuntimeError(f'news_verdicts read failed: {r.status_code}')  # no body: rows hold model text
+        page = r.json()
+        for row in page:
+            row['record'] = json.dumps(row.get('record'), separators=(',', ':'), sort_keys=True)
+        out.extend(page)
+        if len(page) < step:
+            return out
+
+
+def to_bigquery_news(*_):
+    url, key = os.environ.get('SUPABASE_URL', '').strip(), os.environ.get('SUPABASE_SERVICE_KEY', '').strip()
+    if not url or not key:
+        warn('News verdicts archive: Supabase not configured, skipped')
+        return
+    client, ds_id = bq_dataset()
+    if not client:
+        warn('News verdicts archive: BigQuery not configured, skipped (Supabase rows are not purged)')
+        return
+    sb = Supabase(url, key)
+    since = (datetime.date.today() - datetime.timedelta(days=NEWS_DAYS)).isoformat()
+    try:
+        rows = news_rows(sb, since)
+    except RuntimeError as e:
+        if ' 404' in str(e):  # supabase/news.sql not run yet
+            warn('News verdicts archive: table news_verdicts not found (run supabase/news.sql), skipped')
+            return
+        raise
+    rows = list({r['id']: r for r in rows}.values())
+    table = bq_ensure(client, ds_id, 'news_verdicts', NEWS_SCHEMA, 'run_date')
+    bq_merge(client, ds_id, 'news_verdicts', rows, NEWS_SCHEMA, ['id'])
+    bq_dedupe(client, ds_id, 'news_verdicts', ['id'], 'run_date')
+    stored = bq_count(client, ds_id, 'news_verdicts')
+    used = client.get_table(table.reference).num_bytes or 0
+    if rows and not stored:
+        raise RuntimeError('BigQuery news_verdicts table is empty after the merge')
+    # Purge Supabase rows over 2 years only after the archive merge succeeded
+    r = requests.post(f'{sb.url}/rest/v1/rpc/news_purge', headers=sb.h, json={}, timeout=60)
+    purged = r.json() if r.status_code < 300 else None
+    if purged is None:
+        warn(f'News verdicts: Supabase purge failed: {r.status_code}')
+    notice(f'News verdicts archive: {len(rows)} rows since {since} merged; stored now {stored} rows; {used / 1e6:.1f} MB; '
+           f'Supabase purged {(purged or {}).get("verdicts", 0)} verdicts over 2 years')
 
 
 def main():
@@ -256,7 +340,7 @@ def main():
     prices = [] if a.prices == 'none' else load_prices(tickers, {'recent': '1mo', '5y': '5y', 'max': 'max'}[a.prices])
     notice(f'History: {len(trades)} trades, {len(tickers)} tickers, {len(prices)} daily prices')
     ok = True
-    for name, fn in (('Supabase', to_supabase), ('BigQuery', to_bigquery)):
+    for name, fn in (('Supabase', to_supabase), ('BigQuery', to_bigquery), ('News verdicts', to_bigquery_news)):
         try:
             fn(trades, prices)
         except Exception as e:

@@ -16,7 +16,9 @@ import {previousClose} from '../src/modules/market.js';
 const env = {ALLOWED_ORIGINS: 'https://portfolio-intel-279.pages.dev', PLAID_SECRET: 'testsecret', PLAID_CLIENT_ID: 'cid', PLAID_ENV: 'sandbox', GROQ_API_KEY: 'k', PRIVATE_DATA_URL: 'https://portfolio-intel-279.pages.dev/private_markets.json'};
 const O = 'https://portfolio-intel-279.pages.dev';
 const bind = (svc, e) => ({fetch: (r, init) => svc.fetch(r instanceof Request ? r : new Request(r, init), e)});
-const withServices = e => ({...e, MARKET: bind(market, e), NEWS: bind(newsSvc, e), RATES: bind(ratesSvc, e), AI_SVC: bind(aiSvc, e), BROKER: bind(brokerSvc, e), DISCLOSURES: bind(disclosuresSvc, e), PRIVATE: bind(privateSvc, e)});
+// pi-newsdesk stand-in (health only); phase3.mjs passes its own NEWSDESK mock in env.
+const newsdeskStub = {fetch: async r => new Response(JSON.stringify({service: 'newsdesk', status: 'ok'}), {status: new URL(typeof r === 'string' ? r : r.url).pathname === '/health' ? 200 : 404})};
+const withServices = e => ({NEWSDESK: newsdeskStub, ...e, MARKET: bind(market, e), NEWS: bind(newsSvc, e), RATES: bind(ratesSvc, e), AI_SVC: bind(aiSvc, e), BROKER: bind(brokerSvc, e), DISCLOSURES: bind(disclosuresSvc, e), PRIVATE: bind(privateSvc, e)});
 const worker = {fetch: (req, e) => gateway.fetch(req, withServices(e))};
 const call = (path, init = {}) => worker.fetch(new Request('https://w.dev' + path, {...init, headers: {Origin: O, 'CF-Connecting-IP': '1.2.3.4', ...(init.headers || {})}}), env);
 
@@ -40,7 +42,7 @@ globalThis.fetch = async (u, init) => {
 
 let n = 0; const t = async (name, fn) => { await fn(); n++; console.log('ok', name); };
 
-await t('health checks every service', async () => { const d = await (await call('/health')).json(); assert.equal(d.status, 'ok'); assert.deepEqual(Object.keys(d.services).sort(), ['ai','broker','disclosures','market','news','private','rates']); assert.equal(Object.keys(d.services).length, 7); });
+await t('health checks every service', async () => { const d = await (await call('/health')).json(); assert.equal(d.status, 'ok'); assert.deepEqual(Object.keys(d.services).sort(), ['ai','broker','disclosures','market','news','newsdesk','private','rates']); assert.equal(Object.keys(d.services).length, 8); });
 await t('missing service gives 503 (app falls back to Render)', async () => { const r = await gateway.fetch(new Request('https://w.dev/api/prices/AAPL', {headers: {Origin: O, 'CF-Connecting-IP': '5.5.5.5'}}), env); assert.equal(r.status, 503); });
 await t('services keep the visitor IP and origin', async () => { const r = await call('/api/ai', {method: 'POST', headers: {Origin: 'https://evil.com'}, body: '{}'}); assert.equal(r.status, 403); });
 await t('CORS allowed origin', async () => { const r = await call('/api/prices/AAPL'); assert.equal(r.headers.get('Access-Control-Allow-Origin'), O); });
@@ -64,6 +66,8 @@ await t('feed parser rss + atom', async () => { const a = parseFeed('X', '<rss><
 await t('404', async () => { assert.equal((await call('/api/nope')).status, 404); });
 await t('rate limit', async () => { let last; for (let i = 0; i < 125; i++) last = await worker.fetch(new Request('https://w.dev/api/news', {headers: {Origin: O, 'CF-Connecting-IP': '9.9.9.9'}}), env); assert.equal(last.status, 429); });
 await import('./phase2.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
+await import('./phase3.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
+await import('./newsdesk.mjs').then(m => m.default({t}));
 console.log(`\n${n} tests passed`);
 // Secrets Store bindings are objects with get()
 {

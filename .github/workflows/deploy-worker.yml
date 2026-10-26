@@ -43,13 +43,42 @@ jobs:
           link config/rates.toml GROQ_API_KEY
           link config/broker.toml PLAID_CLIENT_ID PLAID_SECRET
 
+          # pi-newsdesk needs owner setup first (KV namespace, Secrets Store entries, Supabase URL).
+          # Until all of it is in place it is skipped with a warning, and the gateway is deployed
+          # without its NEWSDESK binding (news-read routes answer 503), so other deploys keep working.
+          SERVICES="market news rates ai broker disclosures private"
+          KV_ID="$(printf '%s' "$CF_KV_NEWSREADS_RAW" | tr -d '[:space:]')"
+          SB_URL="$(printf '%s' "$SB_URL_RAW" | tr -d '[:space:]' | sed -E 's#/+$##; s#/rest/v1$##')"
+          newsdesk_skip=""
+          if ! printf '%s' "$KV_ID" | grep -qE '^[0-9a-f]{32}$'; then
+            newsdesk_skip="repository variable CF_KV_NEWSREADS is missing or is not a 32-character hex KV namespace id"
+          elif ! printf '%s' "$SB_URL" | grep -qE '^https://[a-z0-9-]+\.supabase\.co$'; then
+            newsdesk_skip="GitHub secret SP is missing or is not an https://<project>.supabase.co URL"
+          else
+            names="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/secrets_store/stores/$STORE_ID/secrets?per_page=100" \
+              | jq -r '.result[]?.name' 2>/dev/null)" || names=""
+            for n in GROQ_API_KEY SUPABASE_SERVICE_KEY; do
+              printf '%s\n' "$names" | grep -qx "$n" || { newsdesk_skip="Secrets Store has no $n (or the deploy token cannot list the store: add Account > Secrets Store: Read)"; break; }
+            done
+          fi
+          if [ -n "$newsdesk_skip" ]; then
+            echo "::warning::Skipping pi-newsdesk: $newsdesk_skip. News reads stay off (503) until setup is done; see docs/plans/phase3-news-agents.md section 16."
+            sed -i '/binding = "NEWSDESK"/d' wrangler.toml
+          else
+            link config/newsdesk.toml GROQ_API_KEY SUPABASE_SERVICE_KEY
+            sed -i "s#__SUPABASE_URL__#$SB_URL#" config/newsdesk.toml
+            printf '\n[[kv_namespaces]]\nbinding = "NEWSREADS"\nid = "%s"\n' "$KV_ID" >> config/newsdesk.toml
+            SERVICES="$SERVICES newsdesk"
+          fi
+
           deploy() {
             npx wrangler deploy "$@" 2>&1 | tee deploy.log || {
               grep -iE "error|✘|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -6 | sed "s/^/::error::[$*] /"
               exit 1
             }
           }
-          for svc in market news rates ai broker disclosures private; do
+          for svc in $SERVICES; do
             deploy -c config/$svc.toml
             echo "::notice::Deployed pi-$svc (private)"
           done
@@ -59,3 +88,5 @@ jobs:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
           CF_ACCOUNT_RAW: ${{ secrets.cfkd }}
           CF_STORE_RAW: ${{ secrets.cfks }}
+          CF_KV_NEWSREADS_RAW: ${{ vars.CF_KV_NEWSREADS }}
+          SB_URL_RAW: ${{ secrets.SP }}

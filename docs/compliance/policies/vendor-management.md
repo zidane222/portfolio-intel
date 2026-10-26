@@ -2,7 +2,7 @@
 
 | Vendor | Purpose | Data shared | Assurance to collect |
 |---|---|---|---|
-| Cloudflare | Pages hosting, Workers, Secrets Store | Requests, ciphertext in transit | SOC 2 Type II, ISO 27001 |
+| Cloudflare | Pages hosting, Workers, Secrets Store, Workers KV (news read cache, keyed by ticker and day, no user data), Cron Triggers | Requests, ciphertext in transit, public news reads | SOC 2 Type II, ISO 27001 |
 | Supabase | Auth, encrypted sync, history | Email, ciphertext, public data | SOC 2 Type II |
 | Google Cloud | BigQuery archive | Public data only | SOC 2 Type II, ISO 27001 |
 | GitHub | Code, CI, Pages mirror | Code, public data | SOC 2 Type II |

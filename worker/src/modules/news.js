@@ -103,6 +103,26 @@ export async function tickerNews(req, env, url, raw) {
   return json({articles, updated: nowIso()});
 }
 
+// Up to n headlines for one ticker from the last 7 days (Google News, then the Render backup).
+// Used by pi-newsdesk as a library. Returns [{title, link, published, source}]; never throws.
+// Subrequests: 1, or 2 when Google News returns nothing.
+export async function fetchTickerHeadlines(t, n = 8, env = {}) {
+  const ticker = String(t || '').toUpperCase();
+  if (!/^[A-Z.-]{1,6}$/.test(ticker)) return [];
+  const lim = Math.max(1, Math.min(n | 0 || 8, 12));
+  const key = `tnh:${ticker}:${lim}`;
+  const hit = memGet(key);
+  if (hit) return hit;
+  let items = await googleNews(`"${ticker}" stock when:7d`, lim);
+  if (!items.length && env && env.FALLBACK_API) {
+    const d = await grab(`${env.FALLBACK_API}/api/news/tickers/${ticker}?per=${Math.min(lim, 6)}`, {timeout: 12000});
+    items = (d && Array.isArray(d.articles) ? d.articles : []).filter(a => a && a.title && a.link)
+      .slice(0, lim).map(a => ({title: String(a.title), link: String(a.link), published: String(a.published || ''), source: String(a.source || '')}));
+  }
+  if (items.length) memSet(key, items, 1200);
+  return items;
+}
+
 export async function news(req, env) {
   let data = memGet('news');
   if (!data) {

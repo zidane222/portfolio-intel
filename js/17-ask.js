@@ -73,10 +73,13 @@ async function askChecked(question, history) {
     if (!d || d.error || typeof d.answer !== 'string') throw new Error((d && d.error) || 'Bad response');
     const status = d.check && d.check.status;
     const sources = Array.isArray(d.sources) ? d.sources : [];
-    if (status === 'PASS') return {text: d.answer.trim(), sources, check: 'PASS', mode: 'checked'};
-    return {text: '', sources, check: status || 'fallback', mode: 'fallback'};
+    // intent news_read: the gateway adds the read record (contract 6.4); it is rendered by readCard()
+    const read = d.intent === 'news_read' && d.read && typeof d.read === 'object' ? d.read : null;
+    if (read) keepRead(read);
+    if (status === 'PASS') return {text: d.answer.trim(), sources, check: 'PASS', mode: 'checked', read};
+    return {text: '', sources, check: status || 'fallback', mode: 'fallback', read};
   } catch (e) {
-    return {text: await askAI(question, history), sources: [], check: null, mode: 'plain'};
+    return {text: await askAI(question, history), sources: [], check: null, mode: 'plain', read: null};
   }
 }
 const FALLBACK_NOTE = 'Shown from sources only, the written answer did not pass our checks.';
@@ -108,12 +111,13 @@ function checkHTML(r) {
 async function ask(q) {
   q = (q || '').trim(); if (!q) return;
   const btn = $('ask-go'), out = $('answer'), chk = $('answer-check'), src = $('answer-sources');
-  btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = ''; chk.innerHTML = ''; src.hidden = true; src.open = false;
+  btn.disabled = true; btn.textContent = 'Thinking…'; out.textContent = ''; chk.innerHTML = ''; src.hidden = true; src.open = false; $('answer-read').innerHTML = '';
   $('answer-status').textContent = 'Thinking';
   try {
     const r = await askChecked(q);
     out.textContent = r.text; out.hidden = !r.text;
     chk.innerHTML = checkHTML(r);
+    if (r.read) $('answer-read').innerHTML = readCard(r.read, {title: true});
     if (r.sources.length) {
       $('answer-sources-n').textContent = `Sources (${r.sources.length})`;
       $('answer-sources-list').innerHTML = sourcesItems(r.sources);
