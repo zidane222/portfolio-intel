@@ -94,5 +94,5 @@ jobs:
           CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
           CF_ACCOUNT_RAW: ${{ secrets.cfkd }}
           CF_STORE_RAW: ${{ secrets.cfks }}
-          CF_KV_NEWSREADS_RAW: ${{ vars.CF_KV_NEWSREADS }}
+          CF_KV_NEWSREADS_RAW: ${{ vars.CF_KV_NEWSREADS || 'addea482de704c589301b70f09787a68' }}  # KV id is not secret; a repo variable overrides it
           SB_URL_RAW: ${{ secrets.SP }}
