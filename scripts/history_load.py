@@ -225,6 +225,16 @@ def to_bigquery(trades, prices):
 
     merge('trades', trades, TRADE_SCHEMA, ['id'])
     merge('prices', prices, PRICE_SCHEMA, ['ticker', 'd'])
+    # Remove duplicate rows (left behind when sandbox expiry hid old partitions during earlier merges).
+    # Checked each run; only rewrites a table when duplicates exist.
+    for name, keys, part in (('trades', ['id'], 'traded'), ('prices', ['ticker', 'd'], 'd')):
+        k = ', '.join(keys)
+        row = list(client.query(f'SELECT COUNT(*) AS n, COUNT(DISTINCT TO_JSON_STRING(STRUCT({k}))) AS u FROM `{ds_id}.{name}`').result())[0]
+        if row.n > row.u:
+            client.query(f'''CREATE OR REPLACE TABLE `{ds_id}.{name}` PARTITION BY DATE_TRUNC({part}, MONTH) AS
+                SELECT * FROM `{ds_id}.{name}` WHERE TRUE QUALIFY ROW_NUMBER() OVER (PARTITION BY {k}) = 1''').result()
+            warn(f'BigQuery: removed {row.n - row.u} duplicate rows from {name}')
+
     # Count what is actually stored (metadata count, no bytes scanned), so a silent miss shows up
     counts = {n: list(client.query(f'SELECT COUNT(*) AS c FROM `{ds_id}.{n}`').result())[0].c for n in tables}
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
