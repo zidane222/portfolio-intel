@@ -344,3 +344,9 @@ Rollback overall: revert the PR; `news_reads.json` and the table are additive an
    holdings plus about 10 large caps you name.
 3. **On-demand for your own tickers:** keep it (5 a day, ticker only, never stored), or batch only
    so no user ticker ever reaches the server for this feature?
+
+## Owner decisions (2026-10-26)
+
+1. **No Groq key in GitHub.** The daily batch runs as a **Cloudflare Cron Trigger** on a Worker (free plan), so the Groq key stays in the Cloudflare Secrets Store. The batch writes verdicts to Supabase (service role key also from the Secrets Store) and publishes the 7-day app view through a Worker route, not a GitHub-committed file. Revise the batch design accordingly.
+2. **Default watch list:** SPY, QQQ, AAPL, MSFT, NVDA, AMZN, GOOGL, META, TSLA, GLD, plus the top 20 congressional tickers.
+3. **On-demand reads stay,** and the watch list must be **customizable per user**: each user's own reads cover their **watchlist plus portfolio tickers** (from the device), editable on the News page. Because holdings and the watchlist live on the device, the client requests reads for its own tickers. Reads are cached **by ticker for the day in a shared cache with no user identifier** (so two users asking about the same ticker share one Groq read, and nothing links a ticker to a person), and are not written to the long-term verdict store unless the ticker is in the public universe. Per-visitor cap on uncached reads (start at 10 a day), plus the global daily Groq cap.
