@@ -8,8 +8,9 @@ import * as news from './data/news.js';
 import * as disclosures from './data/disclosures.js';
 import * as rates from './data/rates.js';
 import * as privateAgent from './data/private.js';
+import * as newsread from './data/newsread.js';
 
-export const AGENTS = {holdings, market, news, disclosures, rates, private: privateAgent};
+export const AGENTS = {holdings, market, news, disclosures, rates, private: privateAgent, newsread};
 
 const hasPortfolio = c => !!(c.input.portfolio && Array.isArray(c.input.portfolio.holdings) && c.input.portfolio.holdings.length);
 const heldTickers = c => new Set((c.input.portfolio?.holdings || []).map(h => h.ticker));
@@ -21,6 +22,7 @@ export const REGISTRY = {
   disclosures: {agents: [['disclosures', 1], ['holdings', 1, hasPortfolio], ['market', 2]], needs: c => []},
   rates: {agents: [['rates', 1], ['holdings', 1, hasPortfolio]], needs: c => []},
   private: {agents: [['private', 1]], needs: c => ['stats:count']},
+  news_read: {agents: [['newsread', 1]], needs: c => []},
   general: {agents: [], needs: c => []},
   out_of_scope: {agents: [], needs: c => []},
 };

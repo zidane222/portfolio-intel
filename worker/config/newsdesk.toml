@@ -1,0 +1,30 @@
+# Private service: reachable only through the gateway (no public URL).
+# Daily news-read batch (Cron Trigger) plus on-demand and 7-day reads. Plan: docs/plans/phase3-news-agents.md
+# The deploy workflow adds at deploy time (never committed):
+#   [[secrets_store_secrets]] GROQ_API_KEY, SUPABASE_SERVICE_KEY  (Cloudflare Secrets Store)
+#   SUPABASE_URL                                                   (from the GitHub secret SP)
+#   [[kv_namespaces]] id                                           (from repository variable CF_KV_NEWSREADS)
+name = "pi-newsdesk"
+main = "../src/services/newsdesk.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+# 40 ticks between 04:00 and 05:57 UTC, before fetch_trades at 06:00. Each tick handles 2 tickers.
+[triggers]
+crons = ["*/3 4,5 * * *"]
+
+[vars]
+SERVICE = "newsdesk"
+GROQ_MODEL = "openai/gpt-oss-120b"
+FALLBACK_API = "https://portfolio-intel-escf.onrender.com"
+# Replaced at deploy from the GitHub secret SP; the placeholder fails the https://*.supabase.co check.
+SUPABASE_URL = "__SUPABASE_URL__"
+NEWS_CALLS_DAY = "90"
+NEWS_TOKENS_DAY = "180000"
+NEWS_BATCH_CALLS = "50"
+NEWS_BATCH_ENABLED = "1"
+NEWS_ONDEMAND_ENABLED = "1"
+
+[observability]
+enabled = true

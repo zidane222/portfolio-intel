@@ -11,6 +11,7 @@ services = [
   { binding = "BROKER", service = "pi-broker" },
   { binding = "DISCLOSURES", service = "pi-disclosures" },
   { binding = "PRIVATE", service = "pi-private" },
+  { binding = "NEWSDESK", service = "pi-newsdesk" },
 ]
 
 [vars]

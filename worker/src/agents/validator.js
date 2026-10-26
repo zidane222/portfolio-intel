@@ -157,3 +157,179 @@ export function validateFinal(text) {
   const flags = safetyFlags(text, {rendered: true});
   return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings: []};
 }
+
+// ---------------- Phase 3 news reads: V14 to V21 (plan section 9) ----------------
+// validateNewsRead(record, pack) checks a pi/news-verdict/v1 record. validateRole() checks one
+// role output inside runNewsRead before the next role sees it. validateRenderedRead() checks the
+// code-rendered text (V18 plus V4 to V11 and V19 to V21). V17 lowers an over-cap confidence in
+// code and is a warning, never a FLAG.
+import {NEWS_LABEL} from './newsread/render.js';
+import {confidenceCap} from './newsread/mode.js';
+
+export const STANCES = ['positive', 'negative', 'mixed', 'unclear'];
+export const CONFIDENCES = ['low', 'medium', 'high'];
+const CITE = /\[\[(e\d{1,2})\]\]/g;
+const LIMITS_NEWS = {bull: [3, 220], bear: [3, 220], joint: [4, 220]};
+const SUMMARY_MAX = {joint: 400, judge: 500};
+const ADVICE_NEWS = [/\b(buy|sell|hold)(s|ing)?\b/i, /\bprice targets?\b/i, /\bupside\b/i, /\bdownside target\b/i, /\boverweight\b/i,
+  /\bunderweight\b/i, /\boutperform\w*\b/i, /\baccumulat\w*\b/i, /\bentry points?\b/i, /\btime to\b/i];
+const STANCE_WORDS = [/\bbullish\b/i, /\bbearish\b/i, /\bstrong buy\b/i, /\byou should\b/i];
+const INSTRUCTION = /\b(ignore|disregard)\b|\bas an ai\b/i;
+const MONTHS = 'January February March April May June July August September October November December Jan Feb Mar Apr Jun Jul Aug Sep Sept Oct Nov Dec';
+const CAP_OK = new Set(('The A An This These That Those Both Neither Either It Its Their They Bull Bear Case News Headlines Headline Overall '
+  + 'On In Of And But Or While However Still Together Most Some Several One Other Another No Yet So Also Even For Taken '
+  + MONTHS).split(' '));
+
+const ranks = {low: 0, medium: 1, high: 2};
+const strip = s => String(s || '').replace(CITE, ' ');
+const citesIn = s => [...String(s || '').matchAll(CITE)].map(m => m[1]);
+
+// V1, V1b and V4 to V11 on one role text, with [[eN]] cites removed first (their digits are ids).
+function baseFlags(text) {
+  const t = strip(text);
+  const out = [];
+  if (strayNumbers(t).length) out.push({rule: 'V1', detail: 'typed number'});
+  if (numberWords(t).length) out.push({rule: 'V1b', detail: 'number word or sign'});
+  return out.concat(safetyFlags(t));
+}
+
+// V19 to V21 on any text (role text or rendered text). pack titles feed the copy-run check.
+export function newsWordFlags(text, pack) {
+  const s = norm(text);
+  const flags = [];
+  if (ADVICE_NEWS.some(re => re.test(s))) flags.push({rule: 'V19', detail: 'advice or rating word'});
+  if (STANCE_WORDS.some(re => re.test(s))) flags.push({rule: 'V20', detail: 'stance word'});
+  let inj = /https?:\/\/|\bwww\./i.test(s) || /[<>`]/.test(s) || /\bsystem\b|\bassistant\s*:|\buser\s*:/i.test(s) || INSTRUCTION.test(s);
+  if (!inj && pack) {
+    const body = ' ' + strip(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ') + ' ';
+    for (const it of pack.items || []) {
+      if (!INSTRUCTION.test(norm(it.title))) continue;
+      const w = norm(it.title).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(Boolean);
+      for (let i = 0; i + 6 <= w.length; i++) if (body.includes(' ' + w.slice(i, i + 6).join(' ') + ' ')) { inj = true; break; }
+      if (inj) break;
+    }
+  }
+  if (inj) flags.push({rule: 'V21', detail: 'link, markup, role word or copied instruction'});
+  return flags;
+}
+
+const add = (flags, more) => { for (const f of more) if (!flags.some(x => x.rule === f.rule)) flags.push(f); };
+
+// V14 on a list of points. Returns flags.
+function pointFlags(role, points, ids) {
+  const [maxPts, maxLen] = LIMITS_NEWS[role];
+  const flags = [];
+  if (!Array.isArray(points) || points.length > maxPts) return [{rule: 'V14', detail: 'too many points'}];
+  for (const p of points) {
+    const cites = Array.isArray(p && p.cites) ? p.cites : [];
+    const inline = citesIn(p && p.text);
+    if (typeof (p && p.text) !== 'string' || !p.text.trim() || p.text.length > maxLen) { flags.push({rule: 'V14', detail: 'point text missing or too long'}); break; }
+    if (cites.length < 1 || cites.length > 3) { flags.push({rule: 'V14', detail: 'point needs 1 to 3 cites'}); break; }
+    if ([...cites, ...inline].some(id => !ids.has(id))) { flags.push({rule: 'V14', detail: 'cite not in pack'}); break; }
+  }
+  return flags;
+}
+
+function textFlags(texts, pack) {
+  const flags = [];
+  for (const t of texts) { add(flags, baseFlags(t)); add(flags, newsWordFlags(t, pack)); }
+  return flags;
+}
+
+// V16: capitalized words and ticker-like tokens in judge text must come from the pack.
+function introducesFacts(text, pack) {
+  const titles = (pack.items || []).map(i => `${i.title} ${i.source}`).join(' ').toLowerCase();
+  const known = new Set(titles.match(/[a-z0-9.&'-]+/g) || []);
+  for (const sent of sentences(strip(text))) {
+    const toks = sent.match(/[A-Za-z][A-Za-z0-9.&'-]*/g) || [];
+    for (let i = 0; i < toks.length; i++) {
+      const tok = toks[i].replace(/[.'-]+$/, '');
+      if (!/^[A-Z]/.test(tok)) continue;
+      if (i === 0 || CAP_OK.has(tok) || tok === pack.ticker) continue;
+      const low = tok.toLowerCase().replace(/'s$/, '');
+      if (known.has(low) || known.has(low + 's') || known.has(low + "'s")) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+// One role output inside runNewsRead. ctx = {mode, bull, bear} (validated sides, for the judge).
+export function validateRole(role, out, pack, ctx = {}) {
+  const ids = new Set((pack.items || []).map(i => i.id));
+  const flags = [], warnings = [];
+  if (role === 'bull' || role === 'bear') {
+    const pts = out && Array.isArray(out.points) ? out.points : [];
+    add(flags, pointFlags(role, pts, ids));
+    if (pts.length && !pts.some(p => (p.cites || []).length)) add(flags, [{rule: 'V15', detail: 'side cites no headline'}]);
+    add(flags, textFlags(pts.map(p => p.text), pack));
+  } else if (role === 'joint' || role === 'judge') {
+    const summary = out && typeof out.summary === 'string' ? out.summary : '';
+    if (!summary.trim() || summary.length > SUMMARY_MAX[role]) add(flags, [{rule: 'V11', detail: 'summary missing or too long'}]);
+    if (citesIn(summary).some(id => !ids.has(id))) add(flags, [{rule: role === 'judge' ? 'V16' : 'V14', detail: 'cite not in pack'}]);
+    if (!STANCES.includes(out && out.stance) || !CONFIDENCES.includes(out && out.confidence)) add(flags, [{rule: 'V17', detail: 'stance or confidence not allowed'}]);
+    let texts = [summary];
+    if (role === 'joint') {
+      const pts = Array.isArray(out && out.points) ? out.points : [];
+      if (!pts.length) add(flags, [{rule: 'V14', detail: 'joint needs points'}]);
+      add(flags, pointFlags('joint', pts, ids));
+      texts = texts.concat(pts.map(p => p.text));
+    } else {
+      const sideIds = new Set([...(ctx.bull?.status === 'ok' ? ctx.bull.points : []), ...(ctx.bear?.status === 'ok' ? ctx.bear.points : [])].flatMap(p => p.cites));
+      const weighed = Array.isArray(out && out.weighed) ? out.weighed : [];
+      if (weighed.some(id => !ids.has(id) || !sideIds.has(id)) || citesIn(summary).some(id => !sideIds.has(id))) add(flags, [{rule: 'V16', detail: 'weighs an id neither side cited'}]);
+      if (introducesFacts(summary, pack)) add(flags, [{rule: 'V16', detail: 'name not in any headline'}]);
+    }
+    add(flags, textFlags(texts, pack));
+    const cap = confidenceCap(pack, ctx.mode);
+    if (CONFIDENCES.includes(out && out.confidence) && ranks[out.confidence] > ranks[cap]) warnings.push({rule: 'V17', detail: `confidence lowered to ${cap}`});
+  }
+  return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings};
+}
+
+// Code-side V17: lower an over-cap confidence. Returns [confidence, warned].
+export function capConfidence(conf, pack, mode) {
+  const cap = confidenceCap(pack, mode);
+  if (!CONFIDENCES.includes(conf)) return [null, false];
+  return ranks[conf] > ranks[cap] ? [cap, true] : [conf, false];
+}
+
+// Whole record check (V14 to V17, V19 to V21 and the base rules on every model text).
+export function validateNewsRead(record, pack) {
+  const flags = [], warnings = [];
+  if (!record || record.schema !== 'pi/news-verdict/v1') return {status: 'FLAG', flags: [{rule: 'V14', detail: 'bad record'}], warnings};
+  const ids = new Set((pack.items || []).map(i => i.id));
+  const mode = record.mode;
+  if (record.status !== 'PASS') {
+    // thin, fallback, skipped, error carry no model text and no stance
+    if (record.stance != null || record.confidence != null || record.summary != null || [record.bull, record.bear, record.joint].some(a => a && a.length)) flags.push({rule: 'V17', detail: 'non PASS record carries model output'});
+    return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings};
+  }
+  if (mode === 'debate') {
+    add(flags, pointFlags('bull', record.bull || [], ids));
+    add(flags, pointFlags('bear', record.bear || [], ids));
+    if (!(record.bull || []).length && !(record.bear || []).length) add(flags, [{rule: 'V15', detail: 'both sides empty in a debate'}]);
+    const sideIds = new Set([...(record.bull || []), ...(record.bear || [])].flatMap(p => p.cites || []));
+    if (citesIn(record.summary).some(id => !sideIds.has(id))) add(flags, [{rule: 'V16', detail: 'summary cites an id neither side cited'}]);
+    if (introducesFacts(record.summary || '', pack)) add(flags, [{rule: 'V16', detail: 'name not in any headline'}]);
+  } else if (mode === 'collaborate') {
+    if (!(record.joint || []).length) add(flags, [{rule: 'V14', detail: 'joint needs points'}]);
+    add(flags, pointFlags('joint', record.joint || [], ids));
+  } else add(flags, [{rule: 'V15', detail: 'PASS record in thin mode'}]);
+  if (citesIn(record.summary).some(id => !ids.has(id))) add(flags, [{rule: 'V16', detail: 'cite not in pack'}]);
+  if (!STANCES.includes(record.stance) || !CONFIDENCES.includes(record.confidence)) add(flags, [{rule: 'V17', detail: 'stance or confidence not allowed'}]);
+  else if (ranks[record.confidence] > ranks[confidenceCap(pack, mode)]) add(flags, [{rule: 'V17', detail: 'confidence over cap'}]);
+  const texts = [record.summary || '', ...[...(record.bull || []), ...(record.bear || []), ...(record.joint || [])].map(p => p.text)];
+  add(flags, textFlags(texts, pack));
+  return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings};
+}
+
+// V18 plus the rendered checks. Text must start with the code label and end with the disclaimer.
+export function validateRenderedRead(text, pack = null) {
+  const s = String(text || '');
+  const flags = [];
+  if (!s.startsWith(NEWS_LABEL) || !s.trimEnd().endsWith(DISCLAIMER)) flags.push({rule: 'V18', detail: 'label or disclaimer missing'});
+  add(flags, safetyFlags(s, {rendered: true}));
+  add(flags, newsWordFlags(s.replace(DISCLAIMER, ''), pack));
+  return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings: []};
+}

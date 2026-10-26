@@ -10,8 +10,9 @@ export function matchRoute(routes, req, url) {
   return [hit[2], raw ? decodeURIComponent(raw) : raw];
 }
 
-export function makeService(name, routes) {
-  return {
+// opts.scheduled(event, env, ctx) is an optional Cron Trigger handler; it gets env with secrets resolved.
+export function makeService(name, routes, opts = {}) {
+  const svc = {
     async fetch(req, rawEnv) {
       const env = await resolveSecrets(rawEnv);
       const url = new URL(req.url);
@@ -26,4 +27,8 @@ export function makeService(name, routes) {
       }
     },
   };
+  if (typeof opts.scheduled === 'function') {
+    svc.scheduled = async (event, rawEnv, ctx) => opts.scheduled(event, await resolveSecrets(rawEnv), ctx);
+  }
+  return svc;
 }

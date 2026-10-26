@@ -10,6 +10,9 @@ import {run as factcheckRun} from './factcheck.js';
 import {validate, validateFinal, lineSafe} from './validator.js';
 import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor} from './render.js';
 import {AGENTS, plan} from './registry.js';
+import {validateRenderedRead} from './validator.js';
+import {renderRead, NEWS_LABEL, MESSAGES} from './newsread/render.js';
+import {DISCLAIMER} from './render.js';
 
 export const MAX_BODY = 32 * 1024;
 const AGENT_MS = 6000, DATA_STEP_MS = 7000, BUILD_MS = 8000, REPAIR_MS = 6000;
@@ -119,6 +122,33 @@ function fallback(c, t0, flags, attempts) {
   return finish(c, t0, {answer: safe.text, ids: safe.shown, status: 'fallback', flags, attempts});
 }
 
+// news_read (plan 3.4): data agent newsread (pi-newsdesk /read, its own 20 s deadline inside
+// Ask's 25 s), then code rendering, then V18 to V21 on the rendered text. No builder call: the
+// read's Groq calls are counted by pi-newsdesk under the global cap, not in this case's budget.
+async function newsReadAnswer(c, deps, t0) {
+  const mod = AGENTS.newsread;
+  try {
+    applyPatch(c, 'data', 'newsread', await timed(c, 'newsread', () => withTimeout(mod.run(c, deps), Math.max(0, remaining(c) - 250))));
+  } catch (e) {
+    applyPatch(c, 'data', 'newsread', {evidence: [{agent: 'newsread', source: mod.SOURCE, url: null, asof: null, status: e && e.message === 'timeout' ? 'timeout' : 'error', items: [], newsdesk: {status: 'unavailable'}}]});
+  }
+  const ev = c.evidence.find(e => e.agent === 'newsread') || {};
+  const nd = ev.newsdesk || {status: 'unavailable'};
+  const read = ev.read || null;
+  const status = read ? read.status : nd.status;
+  let answer = renderRead(read, status === 'ok' ? 'unavailable' : status);
+  let check = validateRenderedRead(answer, read ? {ticker: read.ticker, items: read.evidence} : null);
+  trace(c, 'validator', 0, check.status === 'PASS', check.flags.map(f => f.rule).join(',') || 'PASS');
+  // PASS for a checked read and for the fixed code messages (thin, limited, busy); fallback otherwise
+  const outStatus = check.status === 'PASS' && (!read || read.status === 'PASS' || read.status === 'thin') && !['fallback', 'unavailable', 'error', 'skipped'].includes(status) ? 'PASS' : 'fallback';
+  if (check.status !== 'PASS') answer = `${NEWS_LABEL}\n${read ? read.ticker + ': ' : ''}${MESSAGES.fallback}\n\n${DISCLAIMER}`;
+  const result = finish(c, t0, {answer, ids: [], status: outStatus, flags: check.flags, attempts: 0});
+  result.sources = (read ? read.evidence : []).map(e => ({fact: e.id, label: e.title, value: e.title, status: 'verified', source: e.source, asof: e.date, url: e.url}));
+  result.read = check.status === 'PASS' ? read : (read ? {...read, status: 'fallback', stance: null, confidence: null, summary: null, bull: [], bear: [], joint: []} : null);
+  result.news = {status: nd.status, cached: !!nd.cached, quota_left: nd.quota_left ?? null};
+  return result;
+}
+
 // Runs one case end to end. Exposed for tests: deps.bindings defaults to env.
 export async function runCase(input, env, opts = {}) {
   const t0 = Date.now();
@@ -138,6 +168,7 @@ export async function runCase(input, env, opts = {}) {
     if (c.intent.type === 'out_of_scope') {
       return finish(c, t0, {answer: outOfScopeAnswer(), ids: [], status: 'PASS', flags: [], attempts: 0});
     }
+    if (c.intent.type === 'news_read') return await newsReadAnswer(c, deps, t0);
     // 2 data agents, 3 fact checker
     await runDataStep(c, deps);
     applyPatch(c, 'factcheck', 'factcheck', await timed(c, 'factcheck', () => factcheckRun(c, deps)));
