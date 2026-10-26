@@ -199,7 +199,8 @@ export function newsWordFlags(text, pack) {
   const flags = [];
   if (ADVICE_NEWS.some(re => re.test(s))) flags.push({rule: 'V19', detail: 'advice or rating word'});
   if (STANCE_WORDS.some(re => re.test(s))) flags.push({rule: 'V20', detail: 'stance word'});
-  let inj = /https?:\/\/|\bwww\./i.test(s) || /[<>`]/.test(s) || /\bsystem\b|\bassistant\s*:|\buser\s*:/i.test(s) || INSTRUCTION.test(s);
+  // Look-alike letters (Cyrillic, Greek) survive NFKC and would slip past the word lists above, so any letter outside Latin is a V21 flag.
+  let inj = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u.test(s) || /https?:\/\/|\bwww\./i.test(s) || /[<>`]/.test(s) || /\bsystem\b|\bassistant\s*:|\buser\s*:/i.test(s) || INSTRUCTION.test(s);
   if (!inj && pack) {
     const body = ' ' + strip(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ') + ' ';
     for (const it of pack.items || []) {
