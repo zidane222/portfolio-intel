@@ -19,8 +19,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from senate_ptr import classify_fund, tx_type  # noqa: E402
 
 API = 'https://financialmodelingprep.com/stable/'
-PAGE_LIMIT = 100
-MAX_PAGES = 40  # about 4,000 filings; well under the free plan's 250 calls a day
 
 
 def key():
@@ -46,16 +44,9 @@ def get(path, params, k):
 
 
 def fetch_latest(path, since, k):
-    """Page through a *-latest feed (newest disclosures first) until filings are older than since."""
-    rows = []
-    for page in range(MAX_PAGES):
-        batch = get(path, {'page': page, 'limit': PAGE_LIMIT}, k)
-        if not batch:
-            break
-        rows.extend(batch)
-        if min((r.get('disclosureDate') or '9999') for r in batch) < since:
-            break
-        time.sleep(0.3)
+    """The free plan serves only the newest page (about 100 filings, roughly two months of Senate
+    disclosures) and rejects page and limit parameters. The daily job adds these to the saved copy."""
+    rows = get(path, {'page': 0}, k)
     return [r for r in rows if (r.get('disclosureDate') or '') >= since]
 
 
