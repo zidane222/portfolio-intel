@@ -128,3 +128,18 @@ class Scrub(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Senate(unittest.TestCase):
+    def test_missing_senate_alerts(self):
+        self.assertEqual(variant(lambda d: d.update(senate={"count": 0, "stale": False, "age_days": 0}))[0], m.ALERT)
+
+    def test_stale_senate_alerts(self):
+        self.assertEqual(variant(lambda d: d.update(senate={"count": 1585, "stale": True, "age_days": 8}))[0], m.ALERT)
+
+    def test_fresh_senate_ok(self):
+        self.assertEqual(variant(lambda d: d.update(senate={"count": 1585, "stale": False, "age_days": 1}))[0], m.OK)
+
+    def test_fmp_low_match_warns(self):
+        self.assertEqual(variant(lambda d: d.update(senate={"count": 1600, "stale": False, "age_days": 0,
+                         "house_check": {"ours_checked": 40, "ours_found_in_fmp": 30, "checked": 40, "matched": 40, "rate": 1.0}}))[0], m.WARN)
