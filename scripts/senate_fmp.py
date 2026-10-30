@@ -108,15 +108,20 @@ def house_check(trades_path, k, days=21):
     have = {(last(t.get('representative', '')), (t.get('ticker') or '').upper(), t.get('date'), (t.get('type') or '')[:4])
             for t in ours if t.get('source', 'house') == 'house'}
     checked = matched = 0
+    misses = []
     for r in fmp:
         sym = str(r.get('symbol') or '').upper()
         date = (r.get('transactionDate') or '')[:10]
         if not sym or not date:
             continue
         checked += 1
-        if (str(r.get('lastName') or '').strip().lower(), sym, date, tx_type(str(r.get('type') or ''))[:4]) in have:
+        k2 = (str(r.get('lastName') or '').strip().lower(), sym, date, tx_type(str(r.get('type') or ''))[:4])
+        if k2 in have:
             matched += 1
-    return {'checked': checked, 'matched': matched, 'rate': round(matched / checked, 3) if checked else None, 'window_days': days}
+        elif len(misses) < 8:
+            near = sorted(h for h in have if h[0] == k2[0] and h[1] == sym)[:2]
+            misses.append({'fmp': list(k2), 'filed': (r.get('disclosureDate') or '')[:10], 'ours_same_member_ticker': [list(x) for x in near]})
+    return {'checked': checked, 'matched': matched, 'rate': round(matched / checked, 3) if checked else None, 'window_days': days, 'misses': misses}
 
 
 if __name__ == '__main__':
@@ -131,6 +136,8 @@ if __name__ == '__main__':
         res = house_check(a.house_check, k)
         print(json.dumps(res))
         print(f"::notice::FMP House cross-check: {res['matched']} of {res['checked']} recent FMP House trades match the official House scrape")
+        for m in res['misses']:
+            print('::notice::miss ' + json.dumps(m))
     else:
         known = []
         if a.known and os.path.exists(a.known):
