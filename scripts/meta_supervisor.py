@@ -13,6 +13,7 @@ Exit 0 always (alerts go through a GitHub issue). Exit 1 only on a crash.
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -281,8 +282,9 @@ def main():
     now = dt.datetime.now(dt.timezone.utc)
     yesterday = (now - dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
-    supabase_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    # Same cleanup as soc_monitor: the secrets may carry quotes, spaces or a trailing /rest/v1
+    supabase_url = re.sub(r"(/rest/v1)?/*$", "", os.environ.get("SUPABASE_URL", "").strip().strip('"').strip("'"))
+    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip().strip('"').strip("'")
     github_token = os.environ.get("GITHUB_TOKEN", "")
     github_repo = os.environ.get("GITHUB_REPOSITORY", "")
 
