@@ -24,6 +24,21 @@ const OUT_HIGH = /\b(poem|poetry|song|lyrics|joke|recipe|haiku|limerick|essay|be
 // news_read: matched by rules only (with a ticker), so the Groq intent call is skipped (plan D15).
 export const NEWS_READ_RE = /\bnews read\b|\bbull(?:ish)? (?:and|or|vs\.?|versus) bear(?:ish)?\b|\bbear(?:ish)? (?:and|or|vs\.?|versus) bull(?:ish)?\b|\b(?:bull|bear) case\b|\bcase (?:for|against)\b|\bwhat(?: is|'s) the news saying\b|\bwhat does the news say\b/i;
 
+// insights: weekly analysis of disclosed trades and simulated strategy backtests. Rules only (no Groq call #1 when it matches).
+// Plain phrases only: a bare "strategy" or "beat the market" stays a general question.
+export const INSIGHTS_RE = new RegExp([
+  String.raw`\bback-?test\w*`,
+  String.raw`\bcopy(?:ing)?[- ](?:congress\w*|senators?|the senate|the house|house members?|politicians?|lawmakers?|pelosi)\b`,
+  String.raw`\b(?:congress(?:ional)?|senate|senators?|politicians?|lawmakers?|copy)[- ](?:trading[- ])?strateg(?:y|ies)\b`,
+  String.raw`\b(?:congress\w*|senat\w*|politicians?|lawmakers?|representatives?|house members?|pelosi)\b.{0,50}\b(?:beat|beats|beating|outperform\w*|underperform\w*)\b`,
+  String.raw`\b(?:beat|beats|beating|outperform\w*)\b.{0,50}\b(?:congress\w*|senat\w*|politicians?|lawmakers?)\b`,
+  String.raw`\b(?:congress\w*|senat\w*|politicians?|lawmakers?|house members?)\b.{0,50}\b(?:vs\.?|versus|against|compared (?:to|with))\b.{0,20}\b(?:spy|s&p|the market|the index)\b`,
+  String.raw`\b(?:copy-senate-buys|copy-house-buys|copy-top-members|momentum-sectors|dividend-basket|tbill-proxy|balanced-(?:annual|never|band))\b`,
+  String.raw`\b(?:filing|disclosure|reporting) delays?\b`,
+  String.raw`\b60\/40 (?:strategy|backtest|portfolio rebalanc\w*)`,
+  String.raw`\b(?:weekly analysis|insights page|data science)\b`,
+].join('|'), 'i');
+
 const KW = {
   private: /\b(pre-?seed|seed round|seed rounds|series a|series b|startup|startups|fund ?rais\w*|funding round|raises?|raised|form d|form c|crowdfund\w*|venture|private (market|companies|company|raise))/i,
   disclosures: /\b(congress\w*|senator|senators|senate|house member|representative|politician\w*|pelosi|ptr|disclos\w*|lawmaker\w*)/i,
@@ -101,6 +116,7 @@ export function rulesIntent(question, held = []) {
   let type = 'general';
   if (clearlyOutOfScope(q)) type = 'out_of_scope';
   else if (NEWS_READ_RE.test(q) && tickers.length) type = 'news_read';
+  else if (INSIGHTS_RE.test(q)) type = 'insights';
   else if (KW.private.test(q)) type = 'private';
   else if (KW.disclosures.test(q)) type = 'disclosures';
   else if (KW.rates.test(q)) type = 'rates';
@@ -110,12 +126,12 @@ export function rulesIntent(question, held = []) {
   const heldSet = new Set(held);
   return {
     type,
-    tickers: type === 'private' || type === 'out_of_scope' ? [] : type === 'news_read' ? tickers.slice(0, 1) : tickers,
+    tickers: type === 'private' || type === 'out_of_scope' || type === 'insights' ? [] : type === 'news_read' ? tickers.slice(0, 1) : tickers,
     people: type === 'disclosures' ? rulesPeople(q) : [],
     private_filters: type === 'private' ? rulesFilters(q) : emptyFilters(),
     range: rulesRange(q),
     needs_portfolio: type === 'holdings' || type === 'rates' || tickers.some(t => heldSet.has(t)),
-    confidence: type === 'out_of_scope' && clearlyOutOfScope(q) ? 0.95 : type === 'news_read' ? 0.9 : 0.6,
+    confidence: type === 'out_of_scope' && clearlyOutOfScope(q) ? 0.95 : type === 'news_read' || type === 'insights' ? 0.9 : 0.6,
     via: 'rules',
   };
 }
@@ -167,7 +183,7 @@ export const isNewsRead = (q, held = []) => rulesIntent(q, held).type === 'news_
 export async function run(c, deps) {
   const held = (c.input.portfolio?.holdings || []).map(h => h.ticker).filter(t => TICKER_RE.test(t));
   const rules = rulesIntent(c.input.question, held);
-  if (rules.type === 'news_read') return {intent: rules}; // rules pre-pass: no Groq call #1
+  if (rules.type === 'news_read' || rules.type === 'insights') return {intent: rules}; // rules pre-pass: no Groq call #1
   try {
     const out = await deps.ai('/internal/intent', {question: c.input.question, history: c.input.history.slice(-2), tickers: held}, 5000);
     return {intent: normalizeIntent(out && out.intent, rules, held)};

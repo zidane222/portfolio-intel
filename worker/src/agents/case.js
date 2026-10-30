@@ -2,7 +2,7 @@
 // Agents return patches. A patch may only touch the agent's own keys.
 
 export const CASE_SCHEMA_ID = 'pi/case-state/v1';
-export const INTENT_TYPES = ['holdings', 'ticker', 'disclosures', 'rates', 'private', 'news_read', 'general', 'out_of_scope'];
+export const INTENT_TYPES = ['holdings', 'ticker', 'disclosures', 'rates', 'private', 'news_read', 'insights', 'general', 'out_of_scope'];
 export const EVIDENCE_STATUS = ['ok', 'empty', 'error', 'timeout'];
 export const FACT_STATUS = ['verified', 'unknown', 'conflicting'];
 export const UNITS = ['usd', 'pct', 'count', 'shares', 'date', 'text'];
@@ -25,7 +25,10 @@ export const OWN_KEYS = {
   judge: ['ext.news.judge'],
   newsvalidator: ['ext.news.validation'],
   newsread: ['ext.news.read'],
+  // Phase 4 insights: the selected findings and runs the supervisor may record for the case.
+  insights: ['ext.insights.items'],
 };
+const EXT_INSIGHTS = new Set(['ext.insights.items']);
 const EXT_NEWS = new Set(['ext.news.pack', 'ext.news.mode', 'ext.news.bull', 'ext.news.bear', 'ext.news.joint', 'ext.news.judge', 'ext.news.validation', 'ext.news.read']);
 
 export function createCase(input, now = Date.now()) {
@@ -63,6 +66,7 @@ export function applyPatch(c, role, agent, patch) {
   for (const k of keys) {
     if (k === 'evidence') c.evidence.push(...(Array.isArray(patch.evidence) ? patch.evidence : []));
     else if (k.startsWith('ext.')) {
+      if (EXT_INSIGHTS.has(k)) { c.ext = c.ext || {}; c.ext.insights = c.ext.insights || {}; c.ext.insights.items = patch[k]; continue; }
       if (!EXT_NEWS.has(k)) { trace(c, agent, 0, false, 'patch rejected: unknown ext path'); return false; }
       c.ext = c.ext || {};
       c.ext.news = c.ext.news || {};
