@@ -21,6 +21,8 @@ import requests
 KEEP_YEARS = 5
 SUPABASE_LIMIT = 450 * 1024 * 1024
 BIGQUERY_LIMIT = 9 * 1024 * 1024 * 1024
+# Always loaded, whatever Congress traded: market, rates, bonds, sector ETFs, dividend ETFs.
+BENCHMARKS = ('SPY QQQ SHV IEF AGG XLK XLF XLV XLY XLP XLE XLI XLB XLU XLRE XLC SCHD VYM DGRO VIG').split()
 UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
 
 
@@ -94,8 +96,11 @@ def fetch_prices(ticker, rng):
                 return []
             res = (r.json().get('chart', {}).get('result') or [{}])[0]
             closes = ((res.get('indicators', {}).get('quote') or [{}])[0].get('close')) or []
-            return [{'ticker': ticker, 'd': datetime.datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'), 'close': round(c, 4)}
-                    for ts, c in zip(res.get('timestamp') or [], closes) if c is not None]
+            adj = ((res.get('indicators', {}).get('adjclose') or [{}])[0].get('adjclose')) or []
+            adj += [None] * (len(closes) - len(adj))  # adjclose missing or short: leave adj_close null
+            return [{'ticker': ticker, 'd': datetime.datetime.utcfromtimestamp(ts).strftime('%Y-%m-%d'), 'close': round(c, 4),
+                     'adj_close': round(a, 4) if a is not None else None}
+                    for ts, c, a in zip(res.get('timestamp') or [], closes, adj) if c is not None]
         except Exception:
             time.sleep(1)
     return []
@@ -159,7 +164,8 @@ def to_supabase(trades, prices):
         warn(f'Supabase history is at {used / 1e6:.0f} MB (limit 450 MB). Writes skipped; switch reads to BigQuery.')
         return
     t = [r for r in trades if r['traded'] >= cutoff]
-    p = [r for r in prices if r['d'] >= cutoff]
+    # hist_prices has no adj_close column and PostgREST rejects unknown keys (adj_close is BigQuery only)
+    p = [{k: v for k, v in r.items() if k != 'adj_close'} for r in prices if r['d'] >= cutoff]
     sb.upsert('hist_trades', t, 'id')
     sb.upsert('hist_prices', p, 'ticker,d')
     notice(f'Supabase history: {len(t)} trades and {len(p)} prices written; {sb.size() / 1e6:.1f} MB used of 450 MB')
@@ -170,7 +176,8 @@ TRADE_SCHEMA = [('id', 'STRING', 'REQUIRED'), ('chamber', 'STRING', 'NULLABLE'),
                 ('ticker', 'STRING', 'NULLABLE'), ('asset', 'STRING', 'NULLABLE'), ('kind', 'STRING', 'NULLABLE'),
                 ('tx_type', 'STRING', 'NULLABLE'), ('amount', 'STRING', 'NULLABLE'), ('amount_low', 'INT64', 'NULLABLE'),
                 ('amount_high', 'INT64', 'NULLABLE'), ('traded', 'DATE', 'NULLABLE'), ('filed', 'DATE', 'NULLABLE')]
-PRICE_SCHEMA = [('ticker', 'STRING', 'REQUIRED'), ('d', 'DATE', 'REQUIRED'), ('close', 'FLOAT64', 'REQUIRED')]
+PRICE_SCHEMA = [('ticker', 'STRING', 'REQUIRED'), ('d', 'DATE', 'REQUIRED'), ('close', 'FLOAT64', 'REQUIRED'),
+                ('adj_close', 'FLOAT64', 'NULLABLE')]
 
 
 def bq_dataset():
@@ -247,6 +254,8 @@ def to_bigquery(trades, prices):
         return
     tables = {'trades': bq_ensure(client, ds_id, 'trades', TRADE_SCHEMA, 'traded'),
               'prices': bq_ensure(client, ds_id, 'prices', PRICE_SCHEMA, 'd')}
+    # bq_ensure does not alter an existing table, so add adj_close to prices created before it existed
+    client.query(f'ALTER TABLE `{ds_id}.prices` ADD COLUMN IF NOT EXISTS adj_close FLOAT64').result()
     used = sum(client.get_table(t.reference).num_bytes or 0 for t in tables.values())
     if used >= BIGQUERY_LIMIT:
         warn(f'BigQuery history is at {used / 1e9:.2f} GB (limit 9 GB). Writes skipped.')
@@ -336,7 +345,7 @@ def main():
     a = ap.parse_args()
     REPLACE.extend(a.replace_chamber)
     trades = load_trades(a.trades)
-    tickers = {t['ticker'] for t in trades if t['ticker'] and re.fullmatch(r'[A-Z][A-Z.]{0,6}', t['ticker'])}
+    tickers = {t['ticker'] for t in trades if t['ticker'] and re.fullmatch(r'[A-Z][A-Z.]{0,6}', t['ticker'])} | set(BENCHMARKS)
     prices = [] if a.prices == 'none' else load_prices(tickers, {'recent': '1mo', '5y': '5y', 'max': 'max'}[a.prices])
     notice(f'History: {len(trades)} trades, {len(tickers)} tickers, {len(prices)} daily prices')
     ok = True
