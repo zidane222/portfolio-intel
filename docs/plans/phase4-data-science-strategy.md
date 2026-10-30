@@ -27,9 +27,9 @@ in the weekly job.
 
 | # | Decision | Reason |
 |---|---|---|
-| D1 | Weekly GitHub Actions job (`insights.yml`, Sunday 07:30 UTC, after the 06:00 daily load), plus manual dispatch. Python runner, SQL in `analytics/sql/*.sql`. | Data changes daily but findings do not need daily refresh; weekly keeps BigQuery bytes and the multiple-testing count small and stable. |
+| D1 | Weekly GitHub Actions job (`insights.yml`, Sunday 07:30 UTC, after the 06:00 daily load), plus manual dispatch. Python runner, SQL in `scripts/analytics/sql/*.sql`. | Data changes daily but findings do not need daily refresh; weekly keeps BigQuery bytes and the multiple-testing count small and stable. |
 | D2 | BigQuery does joins and window lookups. Python (numpy, pandas, scipy) does statistics and backtests on the returned frames. | Event table is about 30K rows per horizon, panel is under 100 MB. Python is testable with synthetic frames and no BigQuery. |
-| D3 | **No Groq in the job. Plain-language text comes from fixed templates** (`analytics/narrate.py`). | Numbers in text must equal the numbers in the JSON; templates guarantee it and are unit-testable. No Groq key in GitHub (owner decision 2026-10-26). Value of AI wording over templates is low. Ask already has the builder (placeholders, validator) for conversational wording, so no new Groq call anywhere. |
+| D3 | **No Groq in the job. Plain-language text comes from fixed templates** (`scripts/analytics/narrate.py`). | Numbers in text must equal the numbers in the JSON; templates guarantee it and are unit-testable. No Groq key in GitHub (owner decision 2026-10-26). Value of AI wording over templates is low. Ask already has the builder (placeholders, validator) for conversational wording, so no new Groq call anywhere. |
 | D4 | Output files `insights.json` and `strategies.json` committed to the repo root on `main` by the job (same pattern as `private_markets.json`), served by Pages. | Existing pattern, free, no new storage. Equity curves are monthly so files stay small (budget in section 12). |
 | D5 | New private service **pi-insights** reads the Pages files (like pi-private) and serves them through the gateway. The app and the Ask data agent both use it. | Keeps "front end talks only to the gateway" and "agents reach data only through bindings". The app may fall back to the same-origin static file if the gateway is down. |
 | D6 | Confirmatory and exploratory test families (section 5.3). Exploratory findings must replicate on a fixed hold-out. | Honest handling of scans over members and sectors. |
@@ -43,16 +43,16 @@ No decision adds cost. See section 12.
 ## 3. Architecture
 
 ```
-GitHub Actions: insights.yml (Sun 07:30 UTC, workflow_dispatch; push on analytics/** runs a dry run)
-  1. pytest analytics/tests (synthetic known-effect and null tests). Fail stops the job.
+GitHub Actions: insights.yml (Sun 07:30 UTC, workflow_dispatch; push on scripts/analytics/** runs a dry run)
+  1. pytest scripts/analytics/tests (synthetic known-effect and null tests). Fail stops the job.
   2. auth with Workload Identity Federation (same provider as fetch_trades), BQ_PROJECT
-  3. analytics/run.py
+  3. scripts/analytics/run.py
        preflight   : coverage + required tickers + dry-run bytes per query (abort over budget)
-       sql stage   : analytics/sql/*.sql, parameterized, return DataFrames
-       ds stage    : analytics/ds/*.py  (A1..A7)  -> findings, tested, scan summaries
-       strat stage : analytics/strategies/*.py (S1..S6) -> runs, metrics, curves
-       narrate     : analytics/narrate.py templates -> summary strings
-       lint        : analytics/lint.py (advice words, labels, dashes, schema) ; failure = no publish
+       sql stage   : scripts/analytics/sql/*.sql, parameterized, return DataFrames
+       ds stage    : scripts/analytics/ds/*.py  (A1..A7)  -> findings, tested, scan summaries
+       strat stage : scripts/analytics/strategies/*.py (S1..S6) -> runs, metrics, curves
+       narrate     : scripts/analytics/narrate.py templates -> summary strings
+       lint        : scripts/analytics/lint.py (advice words, labels, dashes, schema) ; failure = no publish
        write       : out/insights.json, out/strategies.json
   4. upload artifact; on main only: commit the two files (retry rebase, like private-markets)
 
@@ -69,10 +69,10 @@ Boundaries kept: the weekly job never calls a Worker; Workers never call BigQuer
 only to the gateway (static fallback is same origin); the data agent reaches pi-insights only
 through the `INSIGHTS` binding with `X-PI-Internal: 1`; agents in the app still never call each other.
 
-### 3.1 Files in `analytics/`
+### 3.1 Files in `scripts/analytics/`
 
 ```
-analytics/
+scripts/analytics/
   config.py            pre-declared constants (section 5.1), one place, versioned (method_version)
   run.py               orchestrator and budget guard
   sql/00_coverage.sql  row counts, date ranges, null shares, required-ticker coverage
@@ -309,8 +309,8 @@ New page "Insights" next to Private in the page switcher.
 
 | Path | Change |
 |---|---|
-| `analytics/**` | New, as in section 3.1. |
-| `.github/workflows/insights.yml` | New. Triggers: weekly cron, `workflow_dispatch`, push on `analytics/**` (dry run, no commit). `permissions: contents: write, id-token: write`. `concurrency: insights`. Steps: checkout, Python 3.12, `pip install` pinned `google-cloud-bigquery pandas numpy scipy pyarrow pytest`, pytest, WIF auth, run, lint, artifact, commit on main only. `timeout-minutes: 30`. |
+| `scripts/analytics/**` | New, as in section 3.1. |
+| `.github/workflows/insights.yml` | New. Triggers: weekly cron, `workflow_dispatch`, push on `scripts/analytics/**` (dry run, no commit). Two jobs: `insights` with `contents: read, id-token: write`, `commit` with `contents: write` on main only. `concurrency: insights`. Steps: checkout, Python 3.12, `pip install` pinned `google-cloud-bigquery pandas numpy scipy pyarrow pytest`, pytest, WIF auth, run, lint, artifact, commit on main only. `timeout-minutes: 30`. |
 | `scripts/history_load.py` | `adj_close` column and `ALTER TABLE`, strip it for Supabase, always-load benchmark tickers, `adjclose` parsing in `fetch_prices`. |
 | `insights.json`, `strategies.json` | Generated by the job (not hand written). Initial placeholder with `findings: []` so the page and service work before the first run. |
 | `worker/src/agents/case.js` | `insights` intent, `OWN_KEYS`, `ext.insights.*` paths. |
@@ -344,7 +344,7 @@ New page "Insights" next to Private in the page switcher.
 
 ### Shared (qa, appsec, compliance, architect; not builders)
 
-`analytics/tests/**` (qa owns the synthetic generator and asserts), `worker/test/phase4.mjs`,
+`scripts/analytics/tests/**` (qa owns the synthetic generator and asserts), `worker/test/phase4.mjs`,
 `tests/journeys/insights.mjs`, `docs/ARCHITECTURE.md` (add pi-insights, `insights.yml`, new
 intent and data agent, V13 and V22, the extension-point text for Insights, BigQuery `adj_close`),
 `docs/compliance/CONTROLS.md`, `RISK_REGISTER.md`, `EVIDENCE.md`.
@@ -352,14 +352,14 @@ intent and data agent, V13 and V22, the extension-point text for Insights, BigQu
 ### PR slicing (each independently revertible)
 
 1. **PR 1 data foundation:** `history_load.py` changes, then owner runs the `--prices max` backfill.
-2. **PR 2 engine:** `analytics/**`, `insights.yml`, first published files. No app change.
+2. **PR 2 engine:** `scripts/analytics/**`, `insights.yml`, first published files. No app change.
 3. **PR 3 surface:** pi-insights, gateway route, Insights page, Ask integration, V13/V22, ARCHITECTURE.md.
 
 ## 11. QA, AppSec and compliance
 
 ### 11.1 QA tests
 
-Python (`analytics/tests`, run in CI before the job and on PRs) uses an in-memory synthetic world:
+Python (`scripts/analytics/tests`, run in CI before the job and on PRs) uses an in-memory synthetic world:
 random-walk prices for 300 tickers plus SPY, synthetic trades with filing delays and amount ranges.
 No BigQuery.
 
@@ -445,7 +445,7 @@ additive and can stay.
 
 ## 14. Open questions for the owner
 
-1. **Committees.** Add member-to-committee analysis in v1.1 using the public-domain `congress-legislators` committee data (a reference CSV in `analytics/ref/`, refreshed manually)? Recommendation: yes, as a follow-up PR after v1 runs cleanly. v1 does not include it.
+1. **Committees.** Add member-to-committee analysis in v1.1 using the public-domain `congress-legislators` committee data (a reference CSV in `scripts/analytics/ref/`, refreshed manually)? Recommendation: yes, as a follow-up PR after v1 runs cleanly. v1 does not include it.
 2. **Naming members.** May published findings name individual members (only when a finding replicated on the hold-out, with the "no wrongdoing shown" line)? Recommendation: no names in v1, aggregates only (chamber, sector, size, delay). Member scan (A4) still runs and feeds S2 (members shown as "Member 1" to "Member 5", unnamed), but A4 results are published as counts. Say yes to turn names on later; it is a config switch.
 
 ## Owner decisions (2026-10-30)
@@ -457,7 +457,7 @@ additive and can stay.
 
 This is what the weekly job actually writes (`scripts/analytics/run.py`), and what the Insights page reads.
 It follows sections 7.1 and 7.2 with the differences listed here. The code lives in `scripts/analytics/`
-(not `analytics/` as in section 3.1); `python3 -m unittest discover -s scripts/analytics/tests -t .` runs the tests.
+(not `scripts/analytics/` as in section 3.1); `python3 -m unittest discover -s scripts/analytics/tests -t .` runs the tests.
 
 Sources, both with identical shape:
 
