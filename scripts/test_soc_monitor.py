@@ -109,7 +109,7 @@ class Scrub(unittest.TestCase):
         sev, f = m.evaluate(fx["data"], NOW)
         self.assertEqual(sev, m.ALERT)
         r = m.render(fx["data"], sev, f, NOW)
-        self.assertNotIn("—", r)
+        self.assertNotIn(chr(0x2014), r)
         for bad in ("NVDA", "10.1.2.3", "a@b.com"):
             self.assertNotIn(bad, r)
 
