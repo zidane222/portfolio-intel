@@ -1,0 +1,41 @@
+name: Meta supervisor
+
+on:
+  schedule:
+    - cron: '10 14 * * *'   # 14:10 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  supervise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SP }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Node dependencies
+        run: cd worker && npm ci
+
+      - name: Install Python dependencies
+        run: pip install requests
+
+      - name: Unit tests
+        run: python3 -m unittest scripts/test_meta_supervisor.py
+
+      - name: Run meta supervisor
+        run: python3 scripts/meta_supervisor.py
