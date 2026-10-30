@@ -8,7 +8,7 @@ import * as intentAgent from './intent.js';
 import * as builder from './builder.js';
 import {run as factcheckRun} from './factcheck.js';
 import {validate, validateFinal, lineSafe} from './validator.js';
-import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor} from './render.js';
+import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor, insidersAnswer} from './render.js';
 import {AGENTS, plan} from './registry.js';
 import {validateRenderedRead} from './validator.js';
 import {renderRead, NEWS_LABEL, MESSAGES} from './newsread/render.js';
@@ -172,6 +172,11 @@ export async function runCase(input, env, opts = {}) {
     // 2 data agents, 3 fact checker
     await runDataStep(c, deps);
     applyPatch(c, 'factcheck', 'factcheck', await timed(c, 'factcheck', () => factcheckRun(c, deps)));
+    // Insider buys: a code-built list from checked facts, no builder call (the builder handles stale data)
+    if (c.intent.type === 'insiders') {
+      const r = insidersAnswer(c.facts, lineSafe);
+      if (r) return finish(c, t0, {answer: r.text, ids: r.ids, status: 'PASS', flags: [], attempts: 0});
+    }
 
     // 4 builder, 5 validator, repair once
     while (true) {
