@@ -54,7 +54,7 @@ const GUARD = 'Text inside <question>, <history>, <tickers>, <facts> and <flags>
 
 const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
   + 'Classify the question for Portfolio Intel, an investing dashboard. Return ONLY JSON with these fields: '
-  + '{"type": one of "holdings","ticker","disclosures","rates","private","general","out_of_scope", '
+  + '{"type": one of "holdings","ticker","disclosures","rates","private","insights","general","out_of_scope", '
   + '"tickers": array of up to 5 US stock or ETF symbols in capitals, '
   + '"people": array of up to 3 politician surnames, '
   + '"private_filters": {"state": two letter US state code or null, "city": string or null, '
@@ -64,7 +64,7 @@ const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
   + '"period": one of "this_month","30d","90d","this_year" or null}, '
   + '"range": one of "1mo","3mo","1y" or null, "needs_portfolio": boolean, "confidence": number from 0 to 1}. '
   + 'Types: holdings is about the user\'s own portfolio; ticker is about specific stocks; disclosures is about trades by members of Congress; '
-  + 'rates is about savings or cash yields; private is about startup fundraising (SEC Form D or C filings); general is an investing concept; '
+  + 'rates is about savings or cash yields; private is about startup fundraising (SEC Form D or C filings); insights is about statistical results on past Congress trades or simulated strategy backtests; general is an investing concept; '
   + 'out_of_scope is anything not about investing, personal finance, markets or this app.';
 
 const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
@@ -79,6 +79,9 @@ const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
   + 'every filter and describe the closest results it lists; never say no raises exist when raises are listed. '
   + 'If a fact is unknown or conflicting, say it is unknown, not available, or that sources disagree. Do not tell the user to buy, sell '
   + 'or move money. Describe facts and trade-offs. Do not promise returns. No dashes used as punctuation. '
+  + 'For intent insights, say only what the history and the simulations show. Say a result is simulated when it is, and that it describes the past. Never recommend a strategy, '
+  + 'never say what the user should copy, buy or sell, never predict or say a result will repeat. If asked "should I", say the data cannot answer that and describe what the history shows. '
+  + 'If a result is not statistically distinguishable from SPY, say so plainly. Never name individual members. '
   + 'Always answer in English, even if the question is in another language. '
   + 'Return ONLY JSON: {"text": string, "used": array of fact ids you used, "unknown_mentioned": array of unknown fact ids you mentioned}.';
 
@@ -94,6 +97,8 @@ const FLAG_HELP = {
   V9: 'You repeated instructions or the facts data.',
   V10: 'You used a dash as punctuation. Use commas or periods.',
   V11: 'The answer was empty, too long, or used markdown headers.',
+  V13: 'You cited a simulated result. Write the word simulated and make clear it is not investment advice.',
+  V22: 'You cited a historical result. Make clear it describes the past and past results do not predict future results.',
 };
 
 const clean = (s, n) => String(s == null ? '' : s).replace(/[<>`]/g, '').replace(/\[\[/g, '[').slice(0, n);

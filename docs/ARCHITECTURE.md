@@ -19,7 +19,7 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys;
     data agents, fact checker, builder, validator     │
         │ service bindings                            │
         ▼                                             │
-  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private  pi-newsdesk
+  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private  pi-insights  pi-newsdesk
   (prices,   (news,   (savings  (Groq: (Plaid)    (House/Senate   (SEC Form D/C,  (news reads:
    history,   feeds)   rates)    Ask,             trades)          filters, stats) cron batch,
    sectors,                      extract,                                          on demand,
@@ -35,6 +35,10 @@ Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; ne
 GitHub Actions
   fetch_trades (daily 06:00 UTC): House + Senate PTRs, prices, Supabase + BigQuery
   deploy-worker (push): services (including private) then gateway, Secrets Store bindings
+  insights (weekly Sun 07:30 UTC + manual; push on scripts/analytics/** is a dry run): BigQuery via WIF,
+    two jobs. `insights` (contents: read, id-token: write): offline tests, auth, scripts/analytics/run.py,
+    lint, upload artifact. `commit` (contents: write only, runs only on main): commits insights.json and
+    strategies.json. Documented exception: this bot commits data files directly to main, like the daily data jobs.
   private-markets (daily 11:30 UTC): SEC EDGAR Form D + Form C, rolling 60 days → private_markets.json
   security (PR, push, weekly): secrets, dependencies, CodeQL, ZAP
   main_portfolio-intel (backend changes): Azure Web App deploy (CI/CD showcase)
@@ -82,6 +86,8 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/newsdesk/reads` | newsdesk (special-cased in `index.js`) | `POST {tickers: [1 to 40]}` → `{updated, window_days: 7, reads: {T: [record...]}}`. Latest batch verdict or today's shared read per ticker. 0 Groq calls, counts against no cap. Body at most 2 KB. Tickers only in the POST body |
 | `/api/newsdesk/read` | newsdesk (special-cased in `index.js`) | `POST {ticker}` → `{status: ok|thin|fallback|limited|busy, cached, groq_calls, quota_left, read, message}`. Gateway order: origin, `api` limit, 1 KB body, ticker regex, pi-market quote check (invalid is 400 with no Groq call), per-visitor quota (`newsread` bucket: 3 a minute, 10 uncached a day; pi-newsdesk gets only `X-PI-Quota: ok|over`, never the IP). pi-newsdesk order: Cache API, KV, today's batch row, then quota, thin check (0 calls), global cap, Groq. 503 when `NEWS_ONDEMAND_ENABLED = "0"` |
 | `/api/private/stats` | private | Same filters → `{updated, count, total_amt, by_stage, by_form, by_state_top, by_industry_top}` |
+| `/api/insights` | insights | `GET` (no params) → `insights.json` (`pi/insights/v1`) plus `served_asof`, `stale` (generated over 10 days ago). Service answers 404 without `X-PI-Internal: 1` (gateway sets it for public reads, the Ask data agent sends it). Reads only `INSIGHTS_DATA_URL` on Pages, `redirect: 'manual'` and any 3xx refused, 5 MB streamed cap, 1 h cache, last good copy 48 h, else 502 |
+| `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
 | `/api/all-trades` | disclosures | Congressional trades |
 
@@ -152,7 +158,7 @@ Code: `worker/src/agents/newsread/` (pure modules, bundled into pi-newsdesk) and
   one failing role once, applies the confidence cap and falls back to the cited headline list.
 - `validator.js` adds V14 to V21 and `validateNewsRead` (cites exist, each side cites, judge adds no
   facts, stance and confidence enums and cap, code label, advice words, stance words, injection
-  echo). V13 stays reserved for Strategy. `render.js` writes the label "News read, not a
+  echo). V13 was reserved for Strategy and is now built (Phase 4). `render.js` writes the label "News read, not a
   recommendation." and the cite text; the front end renders from the same record (`pi/news-verdict/v1`).
 - Ask: intent `news_read` (rules pre-pass, no Groq intent call) runs the data agent
   `agents/data/newsread.js`, which calls `NEWSDESK /read` with the same quota flag, then renders the
@@ -174,10 +180,28 @@ Extension points (not built):
   evidence without changing the fact checker or validator.
 - Learning agent: reads `news_verdicts` (or the BigQuery copy) by `run_date` and `ticker`, joins
   `hist_prices` from `price_ref_date`. Not built.
-- Strategy facts must carry `rules: ["simulated"]`, plus a new validator rule V13 "simulated label present".
+- Strategy facts must carry `rules: ["simulated"]`; validator V13 "simulated label present" is built (Phase 4, below).
 - Data science on BigQuery and the learning agent run in the daily GitHub job, publish JSON to
   Pages, and are read by a data agent like pi-private.
 - SOC monitor reads the per-case log line and `trace` (timings, rule IDs, no user text).
+
+## Insights and simulated strategies (in place, Phase 4)
+
+Plan: `docs/plans/phase4-data-science-strategy.md`. No Groq in the job; text comes from fixed templates.
+- Weekly job (`insights.yml`) runs `scripts/analytics/` against BigQuery with Workload Identity Federation
+  (no stored key). Least privilege is split across two jobs: analysis (`contents: read`, `id-token: write`)
+  and commit (`contents: write`, main only). Exception: the bot commits `insights.json` and `strategies.json`
+  directly to main, like the daily data jobs.
+- Lint gate (`scripts/analytics/lint.py`) runs on the published files before upload: advice words, labels,
+  dashes, schema. A lint failure writes nothing.
+- `pi-insights` is a private service reached over the `INSIGHTS` binding. It reads only
+  `INSIGHTS_DATA_URL` on Pages (`redirect: 'manual'`, 5 MB cap, 1 h cache, last good copy 48 h) and answers 404
+  without `X-PI-Internal: 1`. The gateway sets `X-PI-Internal` only on the insights route (`index.js`), after
+  the client-sent X-PI-* headers are stripped. Every other route is forwarded unchanged.
+- Validator: V13 (simulated result needs the "simulated" and "not investment advice" labels), V22 (historical
+  result needs "past results do not predict future results"), and a wider V4 advice pattern list. Labels are
+  rendered in code (`render.js`), never by the model.
+- Insights page (front end) renders the two files; Render fallback answers 503 for `/api/insights*`.
 
 ## Dev team
 

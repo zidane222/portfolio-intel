@@ -838,6 +838,16 @@ def newsdesk_read():
         return jsonify({'error': 'Unknown ticker'}), 400
     return jsonify({'error': 'News reads are paused.'}), 503
 
+# ── INSIGHTS (Phase 4) ──
+# The weekly analysis is served by pi-insights on Cloudflare. This fallback has no analytics, so it says so:
+# the app then reads the same-origin static files. Origin check and the shared 'api' rate limit apply (guard).
+@app.route('/api/insights')
+@app.route('/api/insights/strategies')
+def insights_unavailable():
+    if not origin_allowed():
+        return jsonify({'error': 'Forbidden'}), 403
+    return jsonify({'error': 'Insights unavailable'}), 503
+
 # ── HEALTH CHECK ──
 @app.route('/')
 @app.route('/health')

@@ -1,0 +1,13 @@
+# Insights service: reachable only through the gateway (no public URL). No secrets.
+name = "pi-insights"
+main = "../src/services/insights.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[vars]
+SERVICE = "insights"
+INSIGHTS_DATA_URL = "https://portfolio-intel-279.pages.dev/insights.json"
+
+[observability]
+enabled = true

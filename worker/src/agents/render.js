@@ -3,6 +3,18 @@
 
 export const DISCLAIMER = 'This is general information from the sources listed, not personalized investment advice. '
   + 'Simulated or past results do not predict future returns.';
+export const SIMULATED_LABEL = 'Simulated results from hypothetical backtests on past data, not investment advice. No trades are placed. Past results do not predict future results.';
+export const HISTORICAL_LABEL = 'This describes past public disclosures only, not investment advice. Past results do not predict future results.';
+// Fixed labels for the facts a text cites (Phase 4): code adds them, the model never writes them.
+export function labelsFor(facts, ids) {
+  const want = new Set(ids || []);
+  const rules = new Set();
+  for (const f of facts || []) if (want.has(f.id)) for (const r of f.rules || []) rules.add(r);
+  const out = [];
+  if (rules.has('simulated')) out.push(SIMULATED_LABEL);
+  if (rules.has('historical')) out.push(HISTORICAL_LABEL);
+  return out;
+}
 export const OUT_OF_SCOPE = 'I can help with investing, markets, your portfolio and this app. Try asking about one of your holdings.';
 export const SAFE_INTRO = 'Here is what the sources show:';
 export const SAFE_EMPTY = 'The sources did not return data for this question right now.';
@@ -50,7 +62,9 @@ export const PLACEHOLDER = /\[\[(f\d+)\]\]/g;
 
 export function renderText(text, facts) {
   const byId = new Map((facts || []).map(f => [f.id, f]));
-  return String(text).replace(PLACEHOLDER, (_, id) => display(byId.get(id))).trim() + '\n\n' + DISCLAIMER;
+  const cited = [...String(text).matchAll(PLACEHOLDER)].map(m => m[1]);
+  const labels = labelsFor(facts, cited);
+  return String(text).replace(PLACEHOLDER, (_, id) => display(byId.get(id))).trim() + '\n\n' + (labels.length ? labels.join(' ') + '\n\n' : '') + DISCLAIMER;
 }
 
 const day = s => (s ? String(s).slice(0, 10) : null);
@@ -85,7 +99,8 @@ export function safeAnswer(facts, lineOk = () => true) {
     shown.push(f.id);
   }
   const body = lines.length ? `${SAFE_INTRO}\n${lines.join('\n')}` : SAFE_EMPTY;
-  return {text: body + '\n\n' + DISCLAIMER, shown};
+  const labels = labelsFor(facts, shown);
+  return {text: body + '\n\n' + (labels.length ? labels.join(' ') + '\n\n' : '') + DISCLAIMER, shown};
 }
 
 export const outOfScopeAnswer = () => OUT_OF_SCOPE + '\n\n' + DISCLAIMER;

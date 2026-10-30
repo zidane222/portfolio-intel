@@ -203,6 +203,14 @@ dialog.sheet::backdrop{background:rgba(3,8,20,.6);backdrop-filter:blur(6px);-web
 
 /* FEED FILTERS, FLAGS, TRACKING */
 .g5{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.ins-table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0;font-variant-numeric:tabular-nums}
+.ins-table th,.ins-table td{text-align:left;padding:8px 10px;border-top:1px solid #E3EAF3;vertical-align:top}
+.ins-table thead th{font-size:12px;color:var(--dark-3);border-top:0}
+.ins-table tbody th{font-weight:600;min-width:150px}
+.ins-table caption{text-align:left;font-weight:600;padding:6px 0}
+#ins-tabs button,#ins-win button{min-height:44px}
+#insights summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+#insights :focus-visible{outline:3px solid #0A5FD0;outline-offset:2px}
 .pm-search{min-height:44px;border-radius:12px;border:1px solid #C9D6E8;background:#fff;color:var(--dark);font-size:15px;padding:0 14px}
 .picker-sm{min-height:36px;font-size:14px;font-weight:600;padding:0 30px 0 10px;width:100%}
 .adv{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 auto 18px;max-width:1100px;align-items:end}
@@ -882,6 +890,19 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
   </div>
 </section>
 
+<!-- INSIGHTS -->
+<section id="insights" class="dark-text">
+  <div class="wrap">
+    <h2 class="title reveal">Insights.</h2>
+    <p class="lede reveal">What the history of congressional trade disclosures shows, tested with strict statistics. Past results only.</p>
+    <div class="filters reveal"><div class="seg seg-light" id="ins-tabs" role="group" aria-label="Insights view"></div></div>
+    <div class="card-l reveal">
+      <p class="sr" id="ins-status" role="status" aria-live="polite"></p>
+      <div id="ins-body"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</section>
+
 <!-- RISK -->
 <section id="risk" class="dark-text">
   <div class="wrap">
@@ -1053,7 +1074,8 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/29a-account.js?v=13"></script>
 <script src="js/29c-passkey.js?v=11"></script>
 <script src="js/29d-private.js?v=2"></script>
-<script src="js/29b-pages.js?v=12"></script>
-<script src="js/30-init.js?v=11"></script>
+<script src="js/29e-insights.js?v=1"></script>
+<script src="js/29b-pages.js?v=13"></script>
+<script src="js/30-init.js?v=12"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ import {neededKeys} from './registry.js';
 import {SOURCE as PORTFOLIO_SOURCE} from './data/holdings.js';
 
 export const MAX_FACTS = 60;
+const LABEL_RULES = ['simulated', 'historical'];
 const DAY = 86400000;
 
 // F7: parse numbers like 1234, "1,234", "$1.2M", "5.1%". Returns null when unparseable.
@@ -29,6 +30,7 @@ export function isStale(key, asof, now) {
   if (/^(price|change_pct|prev_close):/.test(key)) return tradingDaysBetween(t, now) > 4;
   if (/^rate:/.test(key)) return now - t > 7 * DAY;
   if (/^(trade|count:buys|raise|stats):/.test(key)) return now - t > 3 * DAY;
+  if (/^(insight|insights|strategy|caveat):/.test(key)) return now - t > 10 * DAY; // weekly analysis: older than 10 days is unknown
   return false;
 }
 
@@ -38,6 +40,8 @@ export function outOfRange(key, value) {
   if (/:apy$/.test(key)) return !(value >= 0 && value <= 15);
   if (/^change_pct:/.test(key)) return !(value >= -100 && value <= 1000);
   if (/:shares$/.test(key)) return !(value >= 0);
+  if (/^insight:.+:(mean_excess_pct|ci_low|ci_high|holdout_mean)$/.test(key) || /^strategy:.+:(cagr|vol|max_dd|benchmark_cagr|excess_cagr)$/.test(key)) return !(value >= -100 && value <= 1000);
+  if (/:n_events$/.test(key) || /^insights:(tests_run|findings_count)$/.test(key)) return !(value >= 0);
   return false;
 }
 
@@ -63,7 +67,8 @@ export function factcheck(c, now = Date.now()) {
         value = toNumber(value); // F7
         if (value === null) { dropped.push(it.key); continue; }
       } else value = String(value == null ? '' : value);
-      const g = groups.get(it.key) || {key: it.key, label: it.label || it.key, unit, sources: []};
+      const g = groups.get(it.key) || {key: it.key, label: it.label || it.key, unit, sources: [], rules: new Set()};
+      for (const r of Array.isArray(it.rules) ? it.rules : []) if (LABEL_RULES.includes(r)) g.rules.add(r); // extension rules: simulated, historical
       g.sources.push({source: ev.source, asof: it.asof || ev.asof || null, url: it.url || ev.url || null, value});
       groups.set(it.key, g);
     }
@@ -73,7 +78,7 @@ export function factcheck(c, now = Date.now()) {
   const facts = [];
   for (const g of groups.values()) {
     const srcs = newest(g.sources);
-    const f = {key: g.key, label: g.label, unit: g.unit, value: srcs[0].value, status: 'verified', sources: srcs, rules: []};
+    const f = {key: g.key, label: g.label, unit: g.unit, value: srcs[0].value, status: 'verified', sources: srcs, rules: [...g.rules]};
     if (g.unit === 'text') f.rules.push('F8'); // text exists at the source; numbers in it are never facts
     if (!srcs.some(s => s.source && s.asof)) { f.status = 'unknown'; f.rules.push('F1'); }
     if (g.unit !== 'text' && g.unit !== 'date') {

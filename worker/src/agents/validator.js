@@ -3,11 +3,14 @@
 import {DISCLAIMER, PLACEHOLDER} from './render.js';
 
 const ADVICE = [
-  /you should (buy|sell|short|move|put|invest)/i,
+  /you should (buy|sell|short|move|put|invest|copy|follow|mirror)/i,
   /\bI (recommend|suggest) (buying|selling)/i,
   /\b(buy|sell)( \$?[A-Za-z.]{1,6})? now\b/i, // also "buy NVDA now" (plan 15.20)
   /best stock for you/i,
   /allocate \d+(\.\d+)?\s?% to/i,
+  /\bwill beat\b/i, /expected to outperform/i, /\bbest strategy\b/i, // forward-looking (Phase 4)
+  /\b(is|are|likely|set|poised|going) to (beat|outperform)\b/i, /\bworth (copying|following|mirroring)\b/i,
+  /\byou (could|can|might|may want to) (copy|follow|mirror)\b/i, /\bbest (approach|bet|pick) (for you|to)\b/i, /\bconsider (copying|following|mirroring)\b/i,
 ];
 const GUARANTEE = [/guarantee(d)?/i, /risk[- ]free return/i, /can'?t lose/i, /\bsure thing\b/i, /will (definitely|certainly) (rise|go up|double)/i, /100\s?% (safe|certain)/i];
 const PII = [
@@ -147,6 +150,11 @@ export function validate({draft, facts = [], question = '', rendered = null}) {
     const r = rendered;
     for (const f of safetyFlags(r, {rendered: true})) if (!flags.some(x => x.rule === f.rule)) flags.push(f);
   }
+  // V13 and V22: simulated and historical facts need their fixed labels in the rendered answer (render.js adds them, the model does not).
+  const cited = ids.map(id => byId.get(id)).filter(Boolean);
+  const shown = norm(rendered !== null ? rendered : text);
+  if (cited.some(f => (f.rules || []).includes('simulated')) && !(/\bsimulated\b/i.test(shown) && /not investment advice/i.test(shown))) flags.push({rule: 'V13', detail: 'simulated result without its label'});
+  if (cited.some(f => (f.rules || []).includes('historical')) && !/past results do not predict future results/i.test(shown)) flags.push({rule: 'V22', detail: 'historical result without its label'});
   const usedMissing = (draft && Array.isArray(draft.used) ? draft.used : []).filter(id => !ids.includes(id));
   if (usedMissing.length) warnings.push({rule: 'V12', detail: `${usedMissing.length} used id(s) not in text`});
   return {status: flags.length ? 'FLAG' : 'PASS', flags, warnings};

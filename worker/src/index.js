@@ -127,6 +127,10 @@ export default {
         const svc = owner && env[owner[2]];
         if (!owner) res = json({error: 'Not found'}, 404);
         else if (!svc) res = json({error: `The ${owner[1]} service is not available.`}, 503);
+        else if (owner[1] === 'insights') { // the gateway vouches for public reads of the static analysis files
+          const h = new Headers(req.headers); h.set('X-PI-Internal', '1');
+          res = await svc.fetch(new Request(req, {headers: h}));
+        }
         else res = await svc.fetch(req); // original method, path, headers (Origin, visitor IP) and body
       }
     } catch (e) {
