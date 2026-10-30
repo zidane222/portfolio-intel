@@ -141,3 +141,24 @@ class AdjClose(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MaxRangeDaily(unittest.TestCase):
+    def test_max_uses_period_and_daily_only(self):
+        import scripts.history_load as hl
+        seen = []
+        class R:
+            status_code = 200
+            def __init__(self, gran): self.gran = gran
+            def json(self):
+                return {'chart': {'result': [{'meta': {'dataGranularity': self.gran}, 'timestamp': [86400, 86400, 172800],
+                        'indicators': {'quote': [{'close': [1.0, 1.0, 2.0]}], 'adjclose': [{'adjclose': [1.0, 1.0, 2.0]}]}}]}}
+        def get(url, **k):
+            seen.append(url); return R('1d' if 'GOOD' in url else '1mo')
+        orig = hl.requests.get; hl.requests.get = get
+        try:
+            rows = hl.load_prices({'GOOD', 'MONTHLY'}, 'max')
+        finally:
+            hl.requests.get = orig
+        self.assertTrue(all('period1=0' in u and 'range=' not in u for u in seen))
+        self.assertEqual(sorted((r['ticker'], r['d']) for r in rows), [('GOOD', '1970-01-02'), ('GOOD', '1970-01-03')])
