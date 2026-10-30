@@ -121,7 +121,13 @@ def house_check(trades_path, k, days=21):
         elif len(misses) < 8:
             near = sorted(h for h in have if h[0] == k2[0] and h[1] == sym)[:2]
             misses.append({'fmp': list(k2), 'filed': (r.get('disclosureDate') or '')[:10], 'ours_same_member_ticker': [list(x) for x in near]})
-    return {'checked': checked, 'matched': matched, 'rate': round(matched / checked, 3) if checked else None, 'window_days': days, 'misses': misses}
+    # Reverse direction: share of our recent official House trades (filed in FMP's window) that FMP also has
+    fmp_keys = {(str(r.get('lastName') or '').strip().lower(), str(r.get('symbol') or '').upper(), (r.get('transactionDate') or '')[:10],
+                 tx_type(str(r.get('type') or ''))[:4]) for r in fmp}
+    oldest = min((r.get('disclosureDate') or '9999')[:10] for r in fmp) if fmp else '9999'
+    recent = [t for t in ours if t.get('source', 'house') == 'house' and t.get('ticker') and (t.get('filed') or '') >= oldest]
+    ours_found = sum(1 for t in recent if (last(t.get('representative', '')), t['ticker'].upper(), t.get('date'), (t.get('type') or '')[:4]) in fmp_keys)
+    return {'ours_checked': len(recent), 'ours_found_in_fmp': ours_found, 'checked': checked, 'matched': matched, 'rate': round(matched / checked, 3) if checked else None, 'window_days': days, 'misses': misses}
 
 
 if __name__ == '__main__':
