@@ -13,6 +13,7 @@ const PAGES = [
   {id: 'cash', label: 'Cash & yield', sections: ['cash'], ask: 'Is my cash earning enough?'},
   {id: 'dividends', label: 'Dividends', sections: ['dividends'], ask: 'Could I earn more income?'},
   {id: 'private', label: 'Private markets', sections: ['private'], ask: 'What about companies that aren\'t public yet?'},
+  {id: 'insights', label: 'Insights', sections: ['insights'], ask: 'What does the history actually show?'},
   {id: 'copy', label: 'Copy test', sections: ['copy'], ask: 'What if I had followed them?'},
   {id: 'news', label: 'News', sections: ['news'], ask: 'What\'s happening right now?'},
   // One page, two menu links that jump to each part
