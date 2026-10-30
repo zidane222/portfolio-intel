@@ -38,6 +38,9 @@ jobs:
           # Keep yesterday's data so new filings can be detected for alerts
           cp trades.json /tmp/old_trades.json 2>/dev/null || echo '{"trades":[]}' > /tmp/old_trades.json
 
+      - name: Parser unit tests (offline)
+        run: python3 -m unittest scripts/test_house_ptr.py scripts/test_senate_fmp.py
+
       - name: Scrape House PTR filings
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 

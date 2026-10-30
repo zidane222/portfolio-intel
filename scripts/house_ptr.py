@@ -3,7 +3,7 @@
 Shared by the daily job (current year -> trades.json) and the history backfill.
 Usage: python3 scripts/house_ptr.py --year 2026 --out trades.json [--limit 5000]
 """
-import requests, json, datetime, re, io
+import requests, json, datetime, re, io, time
 from bs4 import BeautifulSoup
 import pdfplumber
 
@@ -55,7 +55,7 @@ def scrape(year, log=print):
     soup2 = BeautifulSoup(r2.text, 'html.parser')
     table = soup2.find('table')
 
-    filings = []
+    filings, skipped_rows = [], []
     if table:
         rows = table.find_all('tr')[1:]
         for row in rows:
@@ -66,6 +66,8 @@ def scrape(year, log=print):
                 href = link['href'] if link else ''
                 if href and '.pdf' in href:
                     filings.append({'name': name, 'url': BASE + '/' + href})
+                else:
+                    skipped_rows.append({'name': name, 'url': '', 'reason': 'no PDF link in search results'})
 
     log(f"Found {len(filings)} PTR filings, parsing all...")
 
@@ -144,14 +146,36 @@ def scrape(year, log=print):
     # "SP REOF XXX, LLC [AB] P 09/08/2026 09/08/2026 $1,000,001 - $5,000,000"
     COLLAPSED = re.compile(r'^(?:(?:SP|JT|DC)\s+)?(.+?)\s+(P|S \(partial\)|S|E)\s+(\d{2}/\d{2}/\d{4})\s+\d{2}/\d{2}/\d{4}\s*(.*)$', re.S)
 
+    def download(url):
+        """Long reports can be several MB, so allow 45 s. Retry once only on a timeout, a dropped
+        connection or a 5xx; a 404 or other 4xx will not change on a second try."""
+        last = None
+        for attempt in range(2):
+            try:
+                r3 = session.get(url, headers=headers, timeout=45)
+                if r3.status_code == 200:
+                    return r3.content, ''
+                last = f'HTTP {r3.status_code}'
+                if r3.status_code < 500:
+                    break
+            except requests.RequestException as e:
+                last = type(e).__name__
+            if attempt == 0:
+                time.sleep(3)
+        return None, f'download failed ({last})'
+
     def parse_pdf(name, url):
+        """Returns (trades, reason). reason says why a filing gave no trades, so gaps show up in the log."""
         trades = []
+        content, reason = download(url)
+        if content is None:
+            return trades, reason
         try:
-            r3 = session.get(url, headers=headers, timeout=15)
-            if r3.status_code != 200:
-                return trades
-            with pdfplumber.open(io.BytesIO(r3.content)) as pdf:
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
                 text = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
+                if not text.strip():
+                    # Paper filings are scanned images with no text layer; they need OCR to read
+                    return trades, f'no text layer, likely a scanned paper filing ({len(pdf.pages)} pages)'
                 # Filing date = when the member signed the report, not the notification column
                 sm = re.search(r'Digitally Signed:[^\n]*?(\d{2}/\d{2}/\d{4})', text)
                 filed_date = parse_date(sm.group(1)) if sm else ''
@@ -174,13 +198,18 @@ def scrape(year, log=print):
                             if t:
                                 trades.append(t)
         except Exception as e:
-            log(f"Error {name}: {e}")
-        return trades
+            log(f"Error {safe(name)}: {type(e).__name__}")
+            return trades, f'parse error ({type(e).__name__}) after {len(trades)} rows'
+        return trades, '' if trades else 'no transaction rows recognized'
 
     # Process ALL filings
+    empty = list(skipped_rows)
     for i, filing in enumerate(filings):
-        trades = parse_pdf(filing['name'], filing['url'])
-        all_trades.extend(trades)
+        trades, why = parse_pdf(filing['name'], filing['url'])
+        all_trades.extend(check_date(t) for t in trades)
+        if why.startswith('parse error') or not trades:
+            empty.append({'name': filing['name'], 'url': filing['url'], 'reason': why, 'partial': bool(trades)})
+            log(f"::warning::No trades from {safe(filing['name'])}: {why} {safe(filing['url'])}")
         if (i+1) % 50 == 0:
             log(f"Processed {i+1}/{len(filings)}, trades: {len(all_trades)}")
 
@@ -199,13 +228,44 @@ def scrape(year, log=print):
     unique = [t for t in best.values()
               if t['ticker'] or (t['representative'], t['date'], t['type'], norm(t['description'])) not in stock_desc]
 
+    suspect = [t for t in unique if t.get('date_suspect')]
+    if suspect:
+        log(f"::warning::{len(suspect)} trades have a trade date after the filing date")
+
+    report = {'filings': len(filings), 'empty_count': len(empty), 'empty': empty[:200], 'date_suspect': len(suspect),
+              'date_corrected': sum(1 for t in unique if t.get('date_as_filed'))}
+    log(f"Filings with no trades: {len(empty)} of {len(filings) + len(skipped_rows)}")
+
     # Sort newest first
     unique.sort(key=lambda x: x.get('date', ''), reverse=True)
     log(f"\nTotal unique trades: {len(unique)}")
     for t in unique[:10]:
         log(f"  {t['representative']} | {t['ticker'] or 'PRIVATE ' + t['description']} | {t['type']} | {t['date']} | filed {t['filed']}")
 
-    return unique
+    return unique, report
+
+
+def safe(text):
+    """Text from the Clerk site printed in a workflow log: escape so it cannot start a new workflow command."""
+    return str(text).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+
+
+def check_date(t):
+    """A trade cannot be dated after its filing. When the year is one too high (12/26/2026 on a report
+    signed 02/09/2026), the filer meant the prior year: use it and keep the original. Otherwise flag it."""
+    d, f = t.get('date') or '', t.get('filed') or ''
+    if not (re.fullmatch(r'\d{4}-\d{2}-\d{2}', d) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', f)) or d <= f:
+        return t
+    prior = f'{int(d[:4]) - 1}{d[4:]}'
+    try:
+        gap = (datetime.date.fromisoformat(f) - datetime.date.fromisoformat(prior)).days
+    except ValueError:
+        gap = -1
+    if 0 <= gap <= 120:
+        t['date_as_filed'], t['date'] = d, prior
+    else:
+        t['date_suspect'] = True
+    return t
 
 
 if __name__ == '__main__':
@@ -216,7 +276,7 @@ if __name__ == '__main__':
     ap.add_argument('--limit', type=int, default=5000)
     ap.add_argument('--plain', action='store_true', help='write a plain list (for the history loader)')
     a = ap.parse_args()
-    unique = scrape(a.year)
+    unique, report = scrape(a.year)
     if a.plain:
         with open(a.out, 'w') as f:
             json.dump(unique, f)
@@ -225,6 +285,7 @@ if __name__ == '__main__':
             'trades': unique[:a.limit],  # full year; the limit is only a safety cap
             'house_count': len(unique),
             'senate_count': 0,
+            'house_parse_report': report,
             'updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         with open(a.out, 'w') as f:
