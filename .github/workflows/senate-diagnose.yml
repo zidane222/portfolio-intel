@@ -65,3 +65,24 @@ jobs:
           python3 scripts/senate_ptr.py --since "$(date -d '-30 days' +%Y-%m-%d)" --out s.json > out.txt 2>&1
           echo "::notice::exit=$?"
           tail -25 out.txt | sed 's/^/::notice::/' | cut -c1-400
+      - name: Probe FMP congressional endpoints (key never printed)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, json, requests
+          k = os.environ.get('FMP_API_KEY', '').strip()
+          print(f"::notice::FMP key present={bool(k)} len={len(k)}")
+          for p in ['senate-latest?page=0&limit=5', 'house-latest?page=0&limit=5', 'senate-trades?symbol=AAPL', 'senate-trades-by-name?name=Tuberville']:
+              try:
+                  r = requests.get(f'https://financialmodelingprep.com/stable/{p}', params={'apikey': k}, timeout=30)
+                  try: d = r.json()
+                  except Exception: d = r.text[:200]
+                  if isinstance(d, list):
+                      print(f"::notice::{p.split('?')[0]} -> {r.status_code} rows={len(d)} fields={sorted(d[0].keys()) if d else []}")
+                      if d: print('::notice::sample ' + json.dumps({x: d[0].get(x) for x in list(d[0])[:16]})[:600])
+                  else:
+                      print(f"::notice::{p.split('?')[0]} -> {r.status_code} {json.dumps(d)[:300]}")
+              except Exception as e:
+                  print(f"::notice::{p} failed {type(e).__name__}")
+          PY
