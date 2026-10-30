@@ -40,6 +40,13 @@ GitHub Actions
   main_portfolio-intel (backend changes): Azure Web App deploy (CI/CD showcase)
   Save to history step (inside fetch_trades): scripts/history_load.py also copies the last 3 days of
     Supabase news_verdicts into BigQuery (MERGE on id) and purges verdicts over 2 years
+SOC monitor (soc-monitor.yml, 13:15 UTC daily + manual): scripts/soc_monitor.py, stdlib + requests, no AI.
+  Reads Cloudflare Workers telemetry (cfk/cfkd, all pi-* and portfolio-intel-api), Supabase news_jobs,
+  news_verdicts and news_budget (SP/SR, read-only), GitHub runs and alert counts (GITHUB_TOKEN).
+  Severity OK/WARN/ALERT in code; WARN or ALERT opens or updates one issue labeled soc-monitor, OK closes it.
+  ALERT: cron failure streak >= 5, > 20 5xx, 0 verdicts after 06:00 UTC, failed fetch_trades or private-markets run.
+  WARN: budget >= 80%, request/exception/429 spikes (> 3x 7-day baseline), job errors, failed workflows, open alerts.
+  Exit 1 only if Cloudflare or Supabase is unreachable. Output carries no secrets, IPs, emails, tickers or bodies.
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
 
 Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before
