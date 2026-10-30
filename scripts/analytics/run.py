@@ -199,7 +199,7 @@ def main(argv=None):
         preflight(wide, dt.datetime.now(dt.timezone.utc).date())
     ins, st = build_outputs(trades, wide, basis, verdicts, a.resamples, os.environ.get('GITHUB_SHA', 'dev')[:12])
     write_docs(ins, st, a.out)
-    print(f"findings={len(ins['findings'])} tests={ins['tests_run']} runs={len(st['runs'])}")
+    print(f"::notice::Insights: findings={len(ins['findings'])} tests={ins['tests_run']} runs={len(st['runs'])}")
     return 0
 
 
