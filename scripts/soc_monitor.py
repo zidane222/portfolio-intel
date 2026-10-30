@@ -282,12 +282,15 @@ def collect_cloudflare(token, acct, now):
                 failed_ts.add(e.get("timestamp"))
     except SourceError:
         pass
-    rows = []
+    rows, seen_ts = [], set()
     for e in evs:
         w = e.get("$workers") or {}
         if not (w.get("outcome") or w.get("scheduledTime") or w.get("event")):
             continue  # log lines, not the tick itself
         ts = e.get("timestamp") or 0
+        if ts in seen_ts:
+            continue  # the tick and its log lines share a timestamp: count the tick once
+        seen_ts.add(ts)
         bad = str(w.get("outcome") or "ok") not in ("ok",) or ts in failed_ts
         rows.append((ts, bad))
     rows.sort(reverse=True)
