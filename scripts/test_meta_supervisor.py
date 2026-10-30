@@ -18,7 +18,7 @@ NOW = dt.datetime(2026, 10, 30, 14, 10, tzinfo=dt.timezone.utc)
 YESTERDAY = "2026-10-29"
 
 # Minimal valid rows for news_verdicts
-_GOOD_VERDICTS = [{"id": i, "ticker": "AAPL", "run_date": YESTERDAY, "status": "ok"} for i in range(25)]
+_GOOD_VERDICTS = [{"id": i, "ticker": "AAPL", "run_date": YESTERDAY, "status": "PASS"} for i in range(25)]
 
 # Minimal valid insights/strategies data
 _GOOD_INSIGHTS = {
@@ -153,14 +153,14 @@ class NewsJudgeCheck(unittest.TestCase):
         self.assertTrue(any(s == m.WARN for s, _ in findings))
 
     def test_over_20pct_not_ok_returns_warn(self):
-        rows = [{"id": i, "status": "ok"} for i in range(8)]
+        rows = [{"id": i, "status": "PASS"} for i in range(8)]
         rows += [{"id": i + 8, "status": "error"} for i in range(3)]  # 3/11 = 27% > 20%
         with patch("requests.get", return_value=_make_response(200, rows)):
             findings = m.check_news_judge("https://x.supabase.co", "key", YESTERDAY)
         self.assertTrue(any(s == m.WARN for s, _ in findings))
 
     def test_exactly_20pct_not_ok_is_ok(self):
-        rows = [{"id": i, "status": "ok"} for i in range(8)]
+        rows = [{"id": i, "status": "PASS"} for i in range(8)]
         rows += [{"id": i + 8, "status": "error"} for i in range(2)]  # 2/10 = 20%, not > 20%
         with patch("requests.get", return_value=_make_response(200, rows)):
             findings = m.check_news_judge("https://x.supabase.co", "key", YESTERDAY)

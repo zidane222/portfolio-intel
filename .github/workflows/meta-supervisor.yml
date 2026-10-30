@@ -13,12 +13,10 @@ jobs:
   supervise:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      SUPABASE_URL: ${{ secrets.SP }}
-      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -38,4 +36,9 @@ jobs:
         run: python3 -m unittest scripts/test_meta_supervisor.py
 
       - name: Run meta supervisor
+        # Secrets only on this step, not on npm ci or pip install
+        env:
+          SUPABASE_URL: ${{ secrets.SP }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/meta_supervisor.py

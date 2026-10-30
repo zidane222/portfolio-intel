@@ -165,12 +165,14 @@ def check_news_judge(supabase_url, supabase_key, yesterday):
     if len(rows) == 0:
         return [(WARN, f"news judge: 0 verdicts for {yesterday}")]
 
-    not_ok = sum(1 for row in rows if row.get("status") != "ok")
+    # news_verdicts.status is PASS, fallback, thin, skipped or error (supabase/news.sql).
+    # PASS, thin (too few headlines) and skipped are healthy outcomes; fallback and error mean the judge failed.
+    not_ok = sum(1 for row in rows if row.get("status") in ("fallback", "error"))
     pct = not_ok * 100 // len(rows)
     if pct > 20:
-        return [(WARN, f"news judge: {not_ok}/{len(rows)} verdicts ({pct}%) have status other than ok for {yesterday}")]
+        return [(WARN, f"news judge: {not_ok}/{len(rows)} verdicts ({pct}%) failed (fallback or error) for {yesterday}")]
 
-    return [(OK, f"news judge: {len(rows)} verdicts for {yesterday}, {not_ok} not-ok ({pct}%)")]
+    return [(OK, f"news judge: {len(rows)} verdicts for {yesterday}, {not_ok} failed ({pct}%)")]
 
 
 # ---------------------------------------------------------------- check C: insights files
