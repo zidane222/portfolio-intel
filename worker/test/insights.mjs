@@ -12,7 +12,7 @@ const J = (b, status = 200, ct = 'application/json') => new Response(typeof b ==
 export default async function ({t, worker, env, O}) {
   const insEnv = {...env, INSIGHTS_DATA_URL: BASE + '/insights.json'};
   const realFetch = globalThis.fetch, seen = [];
-  const serve = (handler) => { memClear(); seen.length = 0; globalThis.fetch = async (u, init) => { u = String(u); if (u.startsWith(BASE)) { seen.push({u, init}); return handler(u); } return realFetch(u, init); }; };
+  const serve = (handler) => { memClear(); seen.length = 0; globalThis.fetch = async (u, init) => { u = String(u); if (new URL(u).origin === BASE) { seen.push({u, init}); return handler(u); } return realFetch(u, init); }; };
   const restore = () => { globalThis.fetch = realFetch; memClear(); };
   const hdr = {Origin: O, 'CF-Connecting-IP': '7.7.7.7'};
   const get = (path, h = hdr) => worker.fetch(new Request('https://w.dev' + path, {headers: h}), insEnv);
