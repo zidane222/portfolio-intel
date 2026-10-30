@@ -31,3 +31,32 @@ jobs:
           SB="$(printf '%s' "$SB" | tr -d '[:space:]' | sed -E 's#/+$##; s#/rest/v1$##')"
           code=$(curl -sS -o u.json -w '%{http_code}' -X POST -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"days":30,"n":20}' "$SB/rest/v1/rpc/news_universe")
           echo "::notice::rpc/news_universe -> HTTP $code: $(head -c 400 u.json)"
+      - name: Cron schedule and recent errors (Cloudflare API, read-only)
+        env:
+          CF_TOKEN_RAW: ${{ secrets.cfk || secrets.cf }}
+          CF_ACCOUNT_RAW: ${{ secrets.cfkd }}
+        run: |
+          T="$(printf '%s' "$CF_TOKEN_RAW" | tr -d '[:space:]')"; A="$(printf '%s' "$CF_ACCOUNT_RAW" | tr -d '[:space:]')"
+          s=$(curl -sS -H "Authorization: Bearer $T" "https://api.cloudflare.com/client/v4/accounts/$A/workers/scripts/pi-newsdesk/schedules")
+          echo "::notice::schedules: $(printf '%s' "$s" | head -c 500)"
+          now=$(date +%s000); from=$(( now - 3*24*3600*1000 ))
+          body=$(printf '{"timeframe":{"from":%s,"to":%s},"view":"events","limit":30,"queryId":"diag","parameters":{"filters":[{"key":"$workers.scriptName","operation":"eq","type":"string","value":"pi-newsdesk"}]}}' "$from" "$now")
+          r=$(curl -sS -X POST -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d "$body" "https://api.cloudflare.com/client/v4/accounts/$A/workers/observability/telemetry/query")
+          printf '%s' "$r" | python3 -c "
+          import json,sys
+          try: d=json.load(sys.stdin)
+          except Exception: print('::notice::telemetry unparseable'); sys.exit()
+          if not d.get('success'): print('::notice::telemetry error: '+json.dumps(d.get('errors'))[:400]); sys.exit()
+          ev=(d.get('result') or {}).get('events',{}).get('events',[]) or []
+          print('::notice::telemetry events: %d' % len(ev))
+          for e in ev[:15]:
+              m=e.get('\$metadata',{}); w=e.get('\$workers',{})
+              print('::notice::'+json.dumps({'t':e.get('timestamp'),'trigger':w.get('eventType') or w.get('event',{}).get('type'),'outcome':w.get('outcome'),'msg':(m.get('message') or m.get('error') or '')[:200]})[:400])
+          "
+      - name: On-demand read through the live gateway (NVDA)
+        run: |
+          r=$(curl -sS -m 40 -X POST -H 'Origin: https://portfolio-intel-279.pages.dev' -H 'Content-Type: application/json' -d '{"ticker":"NVDA"}' https://portfolio-intel-api.viphashkahn.workers.dev/api/newsdesk/read -w ' HTTP %{http_code}')
+          echo "::notice::read NVDA: $(printf '%s' "$r" | python3 -c "import sys,json;t=sys.stdin.read();b,c=t.rsplit(' HTTP ',1)
+          try:
+            d=json.loads(b); print(c, json.dumps({k:d.get(k) for k in ('status','cached','groq_calls','message','error')}), 'stance:', (d.get('read') or {}).get('stance'))
+          except Exception: print(c, b[:300])")"
