@@ -75,6 +75,67 @@ export default async function ({t, env, withServices}) {
       assert.equal(validate({draft: {text: 'Insiders reported purchases in SEC filings.', used: []}, facts: []}).status, 'PASS');
     });
 
+    await t('insiders: natural drafts pass, exemptions stay narrow (V1, V1b)', async () => {
+      const {validate} = await import('../src/agents/validator.js');
+      const ok = ['Tether, a 10% owner, bought shares.', 'Insiders filed these on Form 4.', 'Here are the three largest insider buys.',
+        'The top two buys were LRN and GOLD.', 'Five directors and two officers bought.', 'A ten percent owner bought.'];
+      for (const text of ok) assert.equal(validate({draft: {text, used: []}, facts: []}).status, 'PASS', text);
+      for (const text of ['Become a 10% owner of LRN.', 'Buy until you are a 10% owner.', 'Copy the insiders and buy LRN.', '10 % owners of your portfolio.', 'Ten percent owners of the float. Sell now.'])
+        assert.equal(validate({draft: {text, used: []}, facts: []}).status, 'FLAG', text);
+      const bad = ['Put 10% of your portfolio in it.', 'He bought 10% more.', 'Form 4 shows 154196 shares.', 'Filed on October 27.', 'Three this week.', 'About five thousand dollars.'];
+      for (const text of bad) assert.equal(validate({draft: {text, used: []}, facts: []}).status, 'FLAG', text);
+    });
+
+    await t('ask: prescribed insider draft on the real insiders.json passes first time', async () => {
+      const {readFileSync} = await import('node:fs');
+      const real = JSON.parse(readFileSync(new URL('../../insiders.json', import.meta.url), 'utf8'));
+      const newest = Date.parse(real.buys.reduce((m, b) => (b.filed > m ? b.filed : m), ''));
+      const shift = d => (Number.isFinite(Date.parse(d)) ? iso(Date.parse(d) + (NOW - DAY - newest)) : d); // fixed relative to NOW so the test never ages out
+      memClear(); data = {buys: real.buys.map(b => ({...b, filed: shift(b.filed), date: shift(b.date)})), updated: new Date(NOW).toISOString()}; G.INTENT = []; G.BUILD = []; G.calls = [];
+      G.BUILD.push(u => {
+        const f = factsIn(u), id = l => f.find(x => x.label === l)?.id;
+        const buys = f.filter(x => /^Insider buy /.test(x.label)).slice(0, 3);
+        const lines = buys.map(x => `[[${x.id}]], worth [[${id('Value of ' + x.label.slice(12) + ' insider buy')}]].`);
+        const held = id('Filings held back') ? ` [[${id('Filings held back')}]].` : '';
+        return {text: `[[${id('Filing window')}]]: [[${f.find(x => /^Insider buys filed/.test(x.label)).id}]] in total, the three largest buys first.${held}\n` + lines.join('\n'), used: []};
+      });
+      const res = await runCase(parseInput(JSON.stringify({question: 'Any big insider buys this week?'})), withServices(env));
+      assert.equal(res.check.status, 'PASS', JSON.stringify(res.check)); assert.equal(res.check.attempts, 1);
+      assert.ok(G.calls[0].sys.includes('Do not retype the buyer, role or date'));
+      data = FIX;
+    });
+
+    await t('insiders QA: realistic drafts on the real insiders.json, which pass and which still flag', async () => {
+      const {validate} = await import('../src/agents/validator.js');
+      const real = JSON.parse(fs.readFileSync(new URL('../../insiders.json', import.meta.url), 'utf8'));
+      const deps = {now: () => Date.UTC(2026, 9, 30, 12), bindings: {DISCLOSURES: {fetch: async () => ok({buys: real.buys, updated: real.updated})}}};
+      const {evidence: [ev]} = await insidersRun({input: {question: 'Any big insider buys this week?'}, intent: {type: 'insiders', tickers: []}}, deps);
+      const facts = ev.items.map((it, i) => ({id: 'f' + (i + 1), label: it.label, status: 'verified'}));
+      const ids = l => facts.filter(f => f.label === l).map(f => `[[${f.id}]]`);
+      const [win] = ids('Filing window'), [cnt] = ids('Insider buys filed this past week'), [held] = ids('Filings held back');
+      const [lrn] = ids('Insider buy LRN'), [lrnV] = ids('Value of LRN insider buy'), [gold] = ids('Insider buy GOLD'), [goldV] = ids('Value of GOLD insider buy');
+      assert.ok(win && cnt && held && lrn && lrnV && gold && goldV, 'real data facts present');
+      const pass = [
+        `${win}: ${cnt} in total. ${held}.\n${lrn}, worth ${lrnV}.\n${gold}, worth ${goldV}.`,
+        `Yes. ${win}, ${cnt} in total, from SEC Form 4 filings. The largest: ${lrn}, worth ${lrnV}.`,
+        `The biggest was ${lrn}, worth ${lrnV}. Next, Tether, a 10% owner, in ${gold}, worth ${goldV}.`,
+        `Here are the top three buys from ${cnt} filed this week. ${lrn}, worth ${lrnV}.`,
+        `${win}: ${cnt}. One filing was held back because its value looks like a data error. ${lrn}, worth ${lrnV}.`,
+        `These come from Form 4 filings. A ten percent owner bought GOLD: ${gold}, worth ${goldV}.`,
+        `${win}, ${cnt} in total. Insider selling is not included in this data.`,
+      ];
+      for (const text of pass) assert.equal(validate({draft: {text, used: []}, facts}).status, 'PASS', text);
+      // Typed values the model should take from placeholders still flag (V1) and go to the repair attempt.
+      const flag = [
+        `There were 59 buys filed in the last 7 days. ${lrn}, worth ${lrnV}.`,
+        `Haggart Dylan G., a Director of Stride, bought ${lrnV} of LRN on October 27.`,
+        `LRN: a Director bought ${lrnV} (filed 2026-10-27).`,
+        `In the last 7 days, insiders filed ${cnt} buys.`,
+        `${lrn}, worth ${lrnV} for 154,196 shares.`,
+      ];
+      for (const text of flag) assert.ok(validate({draft: {text, used: []}, facts}).flags.some(f => f.rule === 'V1'), text);
+    });
+
     await t('insiders: oversized or redirected insiders.json is refused', async () => {
       const prev = globalThis.__insiders;
       const e = withServices(env);
@@ -87,7 +148,7 @@ export default async function ({t, env, withServices}) {
 
     await t('insiders: filing window from the question', async () => {
       const now = Date.UTC(2026, 9, 30);
-      assert.deepEqual(windowOf('Any big insider buys this week?', now), {since: '2026-10-23', label: 'in the last 7 days'});
+      assert.deepEqual(windowOf('Any big insider buys this week?', now), {since: '2026-10-23', label: 'this past week'});
       assert.equal(windowOf('insider buys this month', now).since, '2026-10-01');
       assert.equal(windowOf('insider buys in the last 30 days', now).since, '2026-09-30');
       assert.equal(windowOf('insider buys today', now).since, '2026-10-30');
@@ -141,7 +202,7 @@ export default async function ({t, env, withServices}) {
       memClear(); data = {...FIX, buys: [FIX.buys[3]]};
       const deps = {bindings: withServices(env), now: () => NOW};
       const {evidence: [ev]} = await insidersRun({input: {question: 'insider buys this week'}, intent: {type: 'insiders', tickers: []}}, deps);
-      assert.match(ev.items.find(i => i.key === 'insider:window').value, /^No insider buys were filed in the last 7 days/);
+      assert.match(ev.items.find(i => i.key === 'insider:window').value, /^No insider buys were filed this past week/);
       assert.equal(ev.items.find(i => i.key === 'insider:1').value.split(' ')[0], 'OLDX');
       assert.equal(ev.items.find(i => i.key === 'count:insider_buys'), undefined);
       data = FIX;
@@ -166,9 +227,9 @@ export default async function ({t, env, withServices}) {
       assert.equal(validateFinal(res.answer).status, 'PASS');
     });
 
-    await t('ask: typed form number in the draft is caught (V1) and repaired', async () => {
+    await t('ask: a typed amount in the draft is caught (V1) and repaired', async () => {
       memClear(); data = FIX; G.INTENT = []; G.BUILD = []; G.calls = [];
-      G.BUILD.push({text: 'Insiders reported buys on Form 4 this week.', used: []});
+      G.BUILD.push({text: 'The CEO of Big Co bought 2.5 worth of shares on Form 4 this week.', used: []});
       G.BUILD.push(u => ({text: `The largest was [[${idOf(u, 'Insider buy BIGC')}]].`, used: []}));
       const res = await runCase(parseInput(JSON.stringify({question: 'Any big insider buys this week?'})), withServices(env));
       assert.equal(res.check.status, 'PASS'); assert.equal(res.check.attempts, 2);

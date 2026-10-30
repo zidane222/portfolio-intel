@@ -22,9 +22,10 @@ export function windowOf(question, now = Date.now()) {
   const d = new Date(now);
   if (/\btoday\b/i.test(q)) return {since: iso(now), label: 'today'};
   if (/\bthis month\b|\bmonth to date\b/i.test(q)) return {since: iso(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)), label: 'this month'};
-  if (/\b(?:past|last) (?:30 days|month)\b/i.test(q)) return {since: iso(now - 30 * DAY), label: 'in the last 30 days'};
-  if (/\b(?:past|last) (?:two|2) weeks\b/i.test(q)) return {since: iso(now - 14 * DAY), label: 'in the last 14 days'};
-  return {since: iso(now - 7 * DAY), label: 'in the last 7 days'}; // "this week", "recent" and no period
+  // Labels in words: the model copies labels into its draft, and a typed digit there fails V1
+  if (/\b(?:past|last) (?:30 days|month)\b/i.test(q)) return {since: iso(now - 30 * DAY), label: 'in the past month'};
+  if (/\b(?:past|last) (?:two|2) weeks\b/i.test(q)) return {since: iso(now - 14 * DAY), label: 'in the past fortnight'};
+  return {since: iso(now - 7 * DAY), label: 'this past week'}; // "this week", "recent" and no period
 }
 
 // Joint filers (a fund and its manager, say) each report the same purchase. One row per purchase,

@@ -12,6 +12,7 @@ const ADVICE = [
   /\b(is|are|likely|set|poised|going) to (beat|outperform)\b/i, /\bworth (copying|following|mirroring)\b/i,
   /\b(bullish|bearish|buy|good|strong|positive) (sign|signal|indicator)\b/i, /\binsiders? (are|is|seem|appear|must be) (confident|optimistic|bullish)\b/i, // insider buys (S-01)
   /\bsignals? (that )?the (stock|shares|price|company) (will|could|may|should|is about to)\b/i, /\binsiders? (know|knows|expect|expects)\b/i,
+  /(?:^|[.!?]\s+)(?:buy|sell|short|copy|follow|mirror|become)\b/im, /\b(?:copy|follow|mirror) (?:the )?insiders?\b/i, // commands aimed at the reader
   /\byou (could|can|might|may want to) (copy|follow|mirror)\b/i, /\bbest (approach|bet|pick) (for you|to)\b/i, /\bconsider (copying|following|mirroring)\b/i,
 ];
 const GUARANTEE = [/guarantee(d)?/i, /risk[- ]free return/i, /can'?t lose/i, /\bsure thing\b/i, /will (definitely|certainly) (rise|go up|double)/i, /100\s?% (safe|certain)/i];
@@ -42,9 +43,12 @@ const sentences = s => String(s).split(/(?<=[.!?])\s+|\n+/);
 // "401k" counts as the account only after a possessive ("your 401k"); "worth 401k" is an amount.
 const NOT_QTY = String.raw`(?![-\s]*(?:points?|pts|percent|per\s*cent|%|x\b|times|fold|k\b|thousand|million))`;
 const INDEX_NAMES = new RegExp(String.raw`(?:\bS&P\s?(?:500|400|600|1500)\b|\bNasdaq[- ]100\b|\bRussell\s(?:1000|2000|3000)\b|\bDow\s(?:Jones\s)?30\b|\b401\s?\(k\)|(?<=\b(?:your|my|our|their|his|her|a|the)\s)401\s?k\b|\b529\s(?:plan|account)s?\b)` + NOT_QTY, 'gi');
+// Filing terms that contain a digit but state no amount: the SEC form name and the legal role.
+// "10% owner" is fixed by law (a holder of more than 10% of a class); "10% of your portfolio" is not this.
+const NAMED_TERMS = /\bForm\s4s?\b|\b10\s?%\s?(?:beneficial\s)?owners?\b(?!\s+of\b)|\bten percent (?:beneficial\s)?owners?\b(?!\s+of\b)/gi;
 function strayNumbers(text) {
   const bad = [];
-  const n = norm(text).replace(PLACEHOLDER, ' ').replace(INDEX_NAMES, ' ');
+  const n = norm(text).replace(PLACEHOLDER, ' ').replace(INDEX_NAMES, ' ').replace(NAMED_TERMS, ' ');
   for (const ch of String(text) + n) if (ch > '\x7F' && /\p{N}/u.test(ch)) bad.push(ch);
   for (const line of n.split('\n')) {
     const body = line.replace(/^\s*\d{1,2}[.)]\s/, '');
@@ -71,7 +75,8 @@ const UNIT = '(?:shares?|dollars?|cents?|percent|per\\s+cent|points?|basis|hundr
 const SMALL = 'zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty';
 const COUNTED = '(?:etfs?|funds?|holdings?|positions?|stocks?|assets?|classes|class|categories|category|sectors?|companies|company|tickers?|accounts?|types?|kinds?|'
   + 'investments?|securities|security|bonds?|raises?|filings?|startups?|sources?|things?|ways?|options?|areas?|groups?|parts?|regions?|countries|markets?|deposits?|'
-  + 'items?|factors?|risks?|buckets?|pieces?|names?|indexes|indices|index|vehicles?|products?|members?|trades?|rounds?|states?|cities|city|industries|industry|questions?|points\\s+to)';
+  + 'items?|factors?|risks?|buckets?|pieces?|names?|indexes|indices|index|vehicles?|products?|members?|trades?|rounds?|states?|cities|city|industries|industry|questions?|'
+  + 'buys|purchases?|insiders?|filers?|transactions?|directors?|executives?|officers?|owners?|points\\s+to)';
 const LINK = '(?:[a-z&]+[- ]){0,2}';
 const COUNT_OK = new RegExp(`^(?:\\s+${LINK}${COUNTED}\\b|\\s+of\\s+(?:your|the|these|those|them|its|my|our|it|which|all)\\b)`, 'i');
 const QTY_AFTER = new RegExp(`^(?:-|\\s+${UNIT}\\b|\\s+(?:x|fold)\\b|-?fold\\b)`, 'i');
@@ -100,7 +105,7 @@ function countWords(s) {
   return hits;
 }
 function numberWords(text) {
-  const s = norm(text).replace(PLACEHOLDER, PH);
+  const s = norm(text).replace(PLACEHOLDER, PH).replace(NAMED_TERMS, ' ');
   const hits = countWords(s);
   for (const re of NUMBER_WORDS) { const m = s.match(re); if (m) hits.push(m[0].trim().toLowerCase()); }
   for (const m of s.matchAll(PCT_WORD)) if (!m[1].endsWith(PH)) hits.push(m[0].trim().toLowerCase());
