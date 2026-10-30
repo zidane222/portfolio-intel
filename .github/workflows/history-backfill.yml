@@ -8,6 +8,11 @@ on:
       years:
         description: 'Filing years, space separated'
         default: '2021 2022 2023 2024 2025 2026'
+      prices:
+        description: 'Price range: 5y, or max for a one-time full reload (fills adj_close for all history)'
+        type: choice
+        options: ['5y', 'max']
+        default: '5y'
       replace_senate:
         description: 'Clear Senate rows in Supabase before loading (use after a Senate fix)'
         type: boolean
@@ -94,4 +99,4 @@ jobs:
         run: |
           pip install --quiet requests google-cloud-bigquery
           ls trades_*.json
-          python3 scripts/history_load.py --trades trades_*.json --prices 5y ${{ github.event.inputs.replace_senate == 'true' && '--replace-chamber senate' || '' }}
+          python3 scripts/history_load.py --trades trades_*.json --prices ${{ github.event.inputs.prices || '5y' }} ${{ github.event.inputs.replace_senate == 'true' && '--replace-chamber senate' || '' }}
