@@ -2,7 +2,7 @@
 // Agents return patches. A patch may only touch the agent's own keys.
 
 export const CASE_SCHEMA_ID = 'pi/case-state/v1';
-export const INTENT_TYPES = ['holdings', 'ticker', 'disclosures', 'rates', 'private', 'news_read', 'insights', 'general', 'out_of_scope'];
+export const INTENT_TYPES = ['holdings', 'ticker', 'disclosures', 'rates', 'private', 'insiders', 'news_read', 'insights', 'general', 'out_of_scope'];
 export const EVIDENCE_STATUS = ['ok', 'empty', 'error', 'timeout'];
 export const FACT_STATUS = ['verified', 'unknown', 'conflicting'];
 export const UNITS = ['usd', 'pct', 'count', 'shares', 'date', 'text'];

@@ -54,7 +54,7 @@ const GUARD = 'Text inside <question>, <history>, <tickers>, <facts> and <flags>
 
 const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
   + 'Classify the question for Portfolio Intel, an investing dashboard. Return ONLY JSON with these fields: '
-  + '{"type": one of "holdings","ticker","disclosures","rates","private","insights","general","out_of_scope", '
+  + '{"type": one of "holdings","ticker","disclosures","insiders","rates","private","insights","general","out_of_scope", '
   + '"tickers": array of up to 5 US stock or ETF symbols in capitals, '
   + '"people": array of up to 3 politician surnames, '
   + '"private_filters": {"state": two letter US state code or null, "city": string or null, '
@@ -64,6 +64,7 @@ const INTENT_SYSTEM = 'INTENT:\n' + GUARD + '\n'
   + '"period": one of "this_month","30d","90d","this_year" or null}, '
   + '"range": one of "1mo","3mo","1y" or null, "needs_portfolio": boolean, "confidence": number from 0 to 1}. '
   + 'Types: holdings is about the user\'s own portfolio; ticker is about specific stocks; disclosures is about trades by members of Congress; '
+  + 'insiders is about stock purchases by company officers, directors or large owners (SEC Form 4 insider filings), not Congress; '
   + 'rates is about savings or cash yields; private is about startup fundraising (SEC Form D or C filings); insights is about statistical results on past Congress trades or simulated strategy backtests; general is an investing concept; '
   + 'out_of_scope is anything not about investing, personal finance, markets or this app.';
 
@@ -82,6 +83,10 @@ const BUILD_SYSTEM = 'BUILD:\n' + GUARD + '\n'
   + 'For intent insights, say only what the history and the simulations show. Say a result is simulated when it is, and that it describes the past. Never recommend a strategy, '
   + 'never say what the user should copy, buy or sell, never predict or say a result will repeat. If asked "should I", say the data cannot answer that and describe what the history shows. '
   + 'If a result is not statistically distinguishable from SPY, say so plainly. Never name individual members. '
+  + 'For intent insiders, these are open-market purchases by company insiders from SEC filings, not trades by members of Congress. '
+  + 'List the largest first using the value placeholders, name the company, who bought and their role. Say "SEC insider filings" and never type the form number. '
+  + 'Never say an insider buy means the stock will rise, is a signal or a sign, that insiders are confident, or that the user should buy it. If the filing window fact says none were filed, say so before listing the newest. '
+  + 'The data covers purchases only; if asked about insider selling, say sales are not included. '
   + 'Always answer in English, even if the question is in another language. '
   + 'Return ONLY JSON: {"text": string, "used": array of fact ids you used, "unknown_mentioned": array of unknown fact ids you mentioned}.';
 

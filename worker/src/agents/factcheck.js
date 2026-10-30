@@ -29,7 +29,7 @@ export function isStale(key, asof, now) {
   if (!Number.isFinite(t)) return false;
   if (/^(price|change_pct|prev_close):/.test(key)) return tradingDaysBetween(t, now) > 4;
   if (/^rate:/.test(key)) return now - t > 7 * DAY;
-  if (/^(trade|count:buys|raise|stats):/.test(key)) return now - t > 3 * DAY;
+  if (/^(trade|count:buys|count:insider_buys|insider|raise|stats):/.test(key)) return now - t > 3 * DAY;
   if (/^(insight|insights|strategy|caveat):/.test(key)) return now - t > 10 * DAY; // weekly analysis: older than 10 days is unknown
   return false;
 }
