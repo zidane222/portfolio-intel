@@ -41,7 +41,18 @@ jobs:
       - name: Scrape House PTR filings
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 
-      - name: Senate trades (FMP, official Senate site blocks automation)
+      - name: Senate trades (official Senate site, tried first)
+        continue-on-error: true
+        run: |
+          # The official site has blocked automated requests since 2026-10-23. We try once a day with a normal
+          # request and never work around the block. If it answers, its trades take priority over FMP's.
+          if timeout 900 python3 scripts/senate_ptr.py --since "$(date -d '-45 days' +%Y-%m-%d)" --out senate_official.json; then
+            echo "::notice::Official Senate site: $(python3 -c 'import json;print(len(json.load(open("senate_official.json"))))') trades"
+          else
+            echo "::notice::Official Senate site unavailable today (blocked or down); using FMP"; echo '[]' > senate_official.json
+          fi
+
+      - name: Senate trades (FMP, merged with the official site)
         continue-on-error: true
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -62,6 +73,12 @@ jobs:
           merged = {key(t): t for t in last['trades']}
           for t in new:
               merged[key(t)] = {**merged.get(key(t), {}), **t}
+          official = json.load(open('senate_official.json')) if os.path.exists('senate_official.json') else []
+          for t in official:  # official site wins on any trade both sources have
+              merged[key(t)] = {**merged.get(key(t), {}), **t, 'verified': 'official'}
+          fmp_keys = {key(t) for t in new}
+          d['senate_official_count'] = len(official)
+          d['senate_official_in_fmp'] = sum(1 for t in official if key(t) in fmp_keys)
           year = f"{datetime.date.today().year}-01-01"
           senate = sorted([t for t in merged.values() if t.get('filed', t['date']) >= year or t['date'] >= year], key=lambda t: t['date'], reverse=True)
           stale = bool(os.environ.get('SENATE_STALE'))
@@ -69,7 +86,7 @@ jobs:
           if not stale:
               json.dump({'as_of': as_of, 'source': 'FMP senate-latest', 'trades': senate}, open('senate_last.json', 'w'), separators=(',', ':'))
           d['trades'] = sorted([t for t in d['trades'] if t.get('source') != 'senate'] + senate, key=lambda t: t.get('date', ''), reverse=True)
-          d['senate_count'], d['senate_as_of'], d['senate_stale'], d['senate_source'] = len(senate), as_of, stale, 'FMP'
+          d['senate_count'], d['senate_as_of'], d['senate_stale'], d['senate_source'] = len(senate), as_of, stale, ('Official Senate site + FMP' if official else 'FMP')
           newest = max((t.get('filed', '') for t in senate), default='')
           d['senate_newest_filing'] = newest
           json.dump(d, open('trades.json', 'w'))
