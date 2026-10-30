@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  security-events: read
 
 jobs:
   check:
@@ -60,3 +61,9 @@ jobs:
           try:
             d=json.loads(b); print(c, json.dumps({k:d.get(k) for k in ('status','cached','groq_calls','message','error')}), 'stance:', (d.get('read') or {}).get('stance'))
           except Exception: print(c, b[:300])")"
+      - name: Open code scanning alerts (rule, file, line)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/code-scanning/alerts?state=open&per_page=50" \
+            -q '.[] | "::notice::#\(.number) \(.rule.security_severity_level // .rule.severity) \(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) \(.most_recent_instance.message.text[0:140])"' || echo "::notice::code scanning not readable"
