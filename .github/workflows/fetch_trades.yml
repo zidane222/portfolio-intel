@@ -41,28 +41,52 @@ jobs:
       - name: Scrape House PTR filings
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 
-      - name: Scrape Senate PTR filings
+      - name: Senate trades (FMP, official Senate site blocks automation)
         continue-on-error: true
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: |
-          # On success, save the result as the last good copy; on failure, keep serving the last good copy.
-          if python3 scripts/senate_ptr.py --since "$(date +%Y)-01-01" --out senate.json && [ "$(python3 -c "import json;print(len(json.load(open('senate.json'))))")" -gt 0 ]; then
-            python3 -c "import json,datetime;json.dump({'as_of':datetime.date.today().isoformat(),'trades':json.load(open('senate.json'))},open('senate_last.json','w'),separators=(',',':'))"
+          # New filings from FMP are merged with the last good copy; on any failure the last good copy is served.
+          if python3 scripts/senate_fmp.py --since "$(date -d '-45 days' +%Y-%m-%d)" --known senate_last.json --out senate_new.json; then
             SENATE_STALE=""
           else
-            echo "::warning::Senate scrape failed; serving the last good Senate data from senate_last.json"
-            SENATE_STALE=1
+            echo "::warning::FMP Senate fetch failed; serving the last good Senate data from senate_last.json"
+            echo '[]' > senate_new.json; SENATE_STALE=1
           fi
           SENATE_STALE="$SENATE_STALE" python3 - <<'PYEOF'
-          import json, os
+          import json, os, datetime
           d = json.load(open('trades.json'))
           last = json.load(open('senate_last.json'))
-          senate = last['trades']
+          new = json.load(open('senate_new.json'))
+          key = lambda t: (t['representative'].lower(), t['date'], t['type'], t.get('ticker') or t.get('description', '').lower(), t.get('amount'))
+          merged = {key(t): t for t in last['trades']}
+          for t in new:
+              merged[key(t)] = {**merged.get(key(t), {}), **t}
+          year = f"{datetime.date.today().year}-01-01"
+          senate = sorted([t for t in merged.values() if t.get('filed', t['date']) >= year or t['date'] >= year], key=lambda t: t['date'], reverse=True)
+          stale = bool(os.environ.get('SENATE_STALE'))
+          as_of = last['as_of'] if stale else datetime.date.today().isoformat()
+          if not stale:
+              json.dump({'as_of': as_of, 'source': 'FMP senate-latest', 'trades': senate}, open('senate_last.json', 'w'), separators=(',', ':'))
           d['trades'] = sorted([t for t in d['trades'] if t.get('source') != 'senate'] + senate, key=lambda t: t.get('date', ''), reverse=True)
-          d['senate_count'] = len(senate)
-          d['senate_as_of'] = last['as_of']
-          d['senate_stale'] = bool(os.environ.get('SENATE_STALE'))
+          d['senate_count'], d['senate_as_of'], d['senate_stale'], d['senate_source'] = len(senate), as_of, stale, 'FMP'
+          newest = max((t.get('filed', '') for t in senate), default='')
+          d['senate_newest_filing'] = newest
           json.dump(d, open('trades.json', 'w'))
-          print(f"::notice::Senate: {len(senate)} trades as of {last['as_of']}{' (stale, scrape failed)' if d['senate_stale'] else ''}")
+          print(f"::notice::Senate: {len(senate)} trades ({len(new)} from FMP in the last 45 days), newest filing {newest}{' (stale)' if stale else ''}")
+          PYEOF
+
+      - name: FMP accuracy cross-check against the official House scrape
+        continue-on-error: true
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          python3 scripts/senate_fmp.py --house-check trades.json > house_check.json
+          python3 - <<'PYEOF'
+          import json
+          d = json.load(open('trades.json'))
+          d['fmp_house_check'] = json.loads(open('house_check.json').read().splitlines()[0])
+          json.dump(d, open('trades.json', 'w'))
           PYEOF
 
       - name: Google Cloud sign-in (for the BigQuery archive)

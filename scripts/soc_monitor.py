@@ -30,6 +30,7 @@ ERROR_SPIKE_MIN = 10
 SPIKE_429_MIN = 10
 WARN_403_MIN = 50
 SENATE_MAX_AGE_DAYS = 3
+FMP_MATCH_MIN = 0.95
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
 DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
@@ -86,6 +87,9 @@ def evaluate(d, now):
             add(ALERT, "Senate trades missing from trades.json")
         elif sen.get("stale") or (sen.get("age_days") is not None and sen["age_days"] > SENATE_MAX_AGE_DAYS):
             add(ALERT, f"Senate trades are stale: last good data is {sen.get('age_days')} days old (scrape failing)")
+        hc = sen.get("house_check") or {}
+        if (hc.get("checked") or 0) >= 10 and hc.get("rate") is not None and hc["rate"] < FMP_MATCH_MIN:
+            add(WARN, f"FMP accuracy check: only {hc['matched']} of {hc['checked']} recent FMP House trades match the official House data")
 
     cf = d.get("cloudflare") or {}
     sb = d.get("supabase") or {}
@@ -437,7 +441,7 @@ def collect_senate(now, path="trades.json"):
             age = (now.date() - dt.date.fromisoformat(asof)).days
         except ValueError:
             age = None
-    return {"count": count, "stale": bool(d.get("senate_stale")), "age_days": age}
+    return {"count": count, "stale": bool(d.get("senate_stale")), "age_days": age, "house_check": d.get("fmp_house_check") or {}}
 
 
 def main(argv):

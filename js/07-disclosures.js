@@ -9,7 +9,10 @@ async function loadTrades() {
   if (d && Array.isArray(d.trades)) {
     trades = d.trades.filter(t => (t.ticker && t.ticker.length <= 6) || (t.private && t.description)).map(t => ({...t, amount: String(t.amount || '').replace(/\s+/g, ' ').replace(/\s*-\s*/, ' - ')})).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tradesUpdated = d.updated ? new Date(d.updated) : null;
-    senateNote = d.senate_stale && d.senate_as_of ? ` · Senate trades as of ${new Date(d.senate_as_of + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} (the Senate site is blocking updates)` : '';
+    const fmtDay = s => new Date(s + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+    const hc = d.fmp_house_check || {};
+    senateNote = d.senate_stale && d.senate_as_of ? ` · Senate trades as of ${fmtDay(d.senate_as_of)} (Senate updates are delayed)`
+      : d.senate_source === 'FMP' && d.senate_newest_filing ? ` · Senate data via FMP, newest filing ${fmtDay(d.senate_newest_filing)}${hc.checked ? `, ${Math.round(hc.rate * 100)}% match on the official House check` : ''}` : '';
   }
   buildPelosiRef();
   if (REF.pelosi.some(h => !prices[h.ticker])) loadPrices().then(loadHistory);
