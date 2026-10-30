@@ -39,6 +39,6 @@ jobs:
         # Secrets only on this step, not on npm ci or pip install
         env:
           SUPABASE_URL: ${{ secrets.SP }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/meta_supervisor.py
