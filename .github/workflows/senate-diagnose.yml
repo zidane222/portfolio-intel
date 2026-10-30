@@ -29,6 +29,36 @@ jobs:
               except Exception as e:
                   print(f"::notice::GET {url} failed: {type(e).__name__}: {str(e)[:200]}")
           PY
+      - name: Probe the report list request
+        run: |
+          python3 - <<'PY'
+          import requests, re, datetime
+          BASE = 'https://efdsearch.senate.gov'
+          UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36'}
+          s = requests.Session(); s.headers.update(UA)
+          r = s.get(BASE + '/search/home/', timeout=30)
+          tok = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', r.text)
+          a = s.post(BASE + '/search/home/', data={'prohibition_agreement': '1', 'csrfmiddlewaretoken': tok.group(1) if tok else ''},
+                     headers={'Referer': BASE + '/search/home/'}, timeout=30, allow_redirects=False)
+          print(f"::notice::agree POST -> {a.status_code} location={a.headers.get('Location')} cookies={list(s.cookies.keys())}")
+          g = s.get(BASE + '/search/', timeout=30)
+          forms = re.findall(r'<form[^>]*>', g.text)[:4]
+          inputs = sorted(set(re.findall(r'name="([a-z_]+)"', g.text)))[:40]
+          print(f"::notice::search page -> {g.status_code} final={g.url} forms={forms} inputs={inputs}")
+          since = (datetime.date.today() - datetime.timedelta(days=30)).strftime('%m/%d/%Y 00:00:00')
+          d = s.post(BASE + '/search/report/data/', timeout=60, headers={'Referer': BASE + '/search/', 'X-CSRFToken': s.cookies.get('csrftoken', ''), 'X-Requested-With': 'XMLHttpRequest'},
+                     data={'start': '0', 'length': '5', 'report_types': '[11]', 'filer_types': '[1,5]', 'submitted_start_date': since, 'submitted_end_date': '',
+                           'candidate_state': '', 'senator_state': '', 'office_id': '', 'first_name': '', 'last_name': '', 'draw': '1'})
+          body = re.sub(r'\s+', ' ', d.text)[:500]
+          print(f"::notice::data POST -> {d.status_code} ctype={d.headers.get('Content-Type')} body={body!r}")
+          js = re.findall(r'src="([^"]+\.js[^"]*)"', g.text)
+          print(f"::notice::scripts={js[:8]}")
+          for src in js:
+              if 'search' in src or 'report' in src or 'main' in src:
+                  j = s.get(src if src.startswith('http') else BASE + src, timeout=30).text
+                  for m in re.findall(r'.{0,80}(?:report/data|ajax|url\s*:).{0,160}', j)[:6]:
+                      print('::notice::js ' + re.sub(r'\s+', ' ', m)[:260])
+          PY
       - name: Run the scraper for this month
         run: |
           set +e
