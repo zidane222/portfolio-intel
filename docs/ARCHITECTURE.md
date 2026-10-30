@@ -99,6 +99,7 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
 | `/api/all-trades` | disclosures | Congressional trades |
+| `/api/insiders` (binding only) | disclosures | `GET` → `{buys[], updated}` from `insiders.json` (SEC Form 4 open-market buys, built by `scripts/smart_money.py`); the `seen` index is not returned. Used by the `insiders` Ask agent; no public gateway route |
 
 Render fallback: `POST /api/newsdesk/reads` returns empty reads and `POST /api/newsdesk/read` returns
 503 "News reads are paused." with the same origin, size and ticker checks, no Groq call, nothing
@@ -129,7 +130,10 @@ Flow for one `POST /api/ask` case:
    result (`via: rules`). Clear out of scope skips Groq and returns a canned answer.
 4. Data agents from `registry.js`, run in parallel per stage: `holdings` (device portfolio, no binding),
    `market` (MARKET), `news` (NEWS), `disclosures` (DISCLOSURES), `rates` (RATES, `?cached=1`),
-   `private` (PRIVATE). Each failure becomes an evidence row with status `error` or `timeout`.
+   `private` (PRIVATE), `insiders` (DISCLOSURES `/api/insiders`: corporate insider buys, not Congress; rules
+   route "insider", "Form 4" and officer or director purchases here and skip Groq call #1; window from the
+   question, "this week" by default; largest first; joint filings merged; any single buy over $1B held back
+   as a data error and noted). Each failure becomes an evidence row with status `error` or `timeout`.
 5. `factcheck.js` (rules F1 to F10): sources and as-of dates, unknown for missing keys, cross-source
    tolerance, freshness, range checks, portfolio recompute, parsing, text as text only, cap of 60
    facts, derived facts in code only.

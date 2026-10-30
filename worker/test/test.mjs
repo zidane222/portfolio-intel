@@ -32,6 +32,7 @@ globalThis.fetch = async (u, init) => {
   if (u.includes('/v8/finance/chart/')) return ok(chart(110, [100, 102, 104, 110]));
   if (u.includes('/v1/finance/search')) return ok({quotes: [{symbol: 'AAPL', quoteType: 'EQUITY', sectorDisp: 'Technology', industryDisp: 'Consumer Electronics'}]});
   if (host === 'news.google.com') return ok('<rss><channel><item><title>Apple rises - Reuters</title><link>https://x.com/a</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><source url="r">Reuters</source></item></channel></rss>');
+  if (host === 'raw.githubusercontent.com' && u.endsWith('/insiders.json')) { if (globalThis.__insiders) return globalThis.__insiders(u); return ok({buys: [], updated: 'x', seen: {}}); }
   if (host === 'raw.githubusercontent.com') return ok({trades: [{ticker: 'NVDA'}], house_count: 1, updated: 'x'});
   if (host === 'api.groq.com') { if (globalThis.__groq) return globalThis.__groq(init); return ok({choices: [{message: {content: '{"holdings":[]}'}}]}); }
   if (u.includes('pages.dev')) { if (globalThis.__pages) return globalThis.__pages(u); return new Response(JSON.stringify({updated: new Date().toISOString(), raises: []}), {status: 200, headers: {'Content-Type': 'application/json'}}); }
@@ -70,6 +71,7 @@ await import('./phase2.mjs').then(m => m.default({t, worker, env, O, withService
 await import('./phase3.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./phase4.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./insights.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
+await import('./insiders.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./newsdesk.mjs').then(m => m.default({t}));
 console.log(`\n${n} tests passed`);
 // Secrets Store bindings are objects with get()

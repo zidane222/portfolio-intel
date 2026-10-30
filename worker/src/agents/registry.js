@@ -10,8 +10,9 @@ import * as rates from './data/rates.js';
 import * as privateAgent from './data/private.js';
 import * as newsread from './data/newsread.js';
 import * as insights from './data/insights.js';
+import * as insiders from './data/insiders.js';
 
-export const AGENTS = {holdings, market, news, disclosures, rates, private: privateAgent, newsread, insights};
+export const AGENTS = {holdings, market, news, disclosures, rates, private: privateAgent, newsread, insights, insiders};
 
 const hasPortfolio = c => !!(c.input.portfolio && Array.isArray(c.input.portfolio.holdings) && c.input.portfolio.holdings.length);
 const heldTickers = c => new Set((c.input.portfolio?.holdings || []).map(h => h.ticker));
@@ -23,6 +24,8 @@ export const REGISTRY = {
   disclosures: {agents: [['disclosures', 1], ['holdings', 1, hasPortfolio], ['market', 2]], needs: c => []},
   rates: {agents: [['rates', 1], ['holdings', 1, hasPortfolio]], needs: c => []},
   private: {agents: [['private', 1]], needs: c => ['stats:count']},
+  // Corporate insider buys (SEC Form 4), not Congress. The count is needed so an empty window says so.
+  insiders: {agents: [['insiders', 1]], needs: c => ['insider:window']},
   news_read: {agents: [['newsread', 1]], needs: c => []},
   // Phase 4: weekly analysis and simulated backtests (pi-insights). Needs the lead keys the agent chose, so a missing value shows as unknown.
   insights: {agents: [['insights', 1]], needs: c => (c.evidence || []).filter(e => e.agent === 'insights').flatMap(e => e.wanted || [])},

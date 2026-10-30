@@ -8,7 +8,7 @@
 //
 // Covers: Ask panel PASS (answer, Checked badge, Sources with dates), fallback (note, sources open,
 // no AI text), /api/ask 404 (falls back to /api/ai, "Sources unavailable right now."), the chat for
-// the same three cases, and the Private markets page loading with filters.
+// the same three cases, the insider buys question (Checked, SEC EDGAR Form 4 sources, no fallback note), and the Private markets page loading with filters.
 // Fails on console errors, CSP violations, or an em/en dash in rendered text.
 import {execSync} from 'node:child_process';
 const pw = await import(execSync('npm root -g').toString().trim() + '/playwright/index.mjs');
@@ -24,6 +24,14 @@ const SRC = [
 ];
 const RESP = {
   pass: {answer: 'Your portfolio total is $12,345.67.\n\n' + DISCLAIMER, sources: SRC, check: {status: 'PASS', flags: [], attempts: 1}, intent: 'holdings', case_id: 'x', ms: 10},
+  // Insider buys (SEC Form 4): the question that used to land on Congress data and fall back.
+  insiders: {answer: 'From SEC insider filings: LRN (Stride, Inc.), bought by Haggart Dylan G., Director, filed 2026-10-27, worth $12.18M. RENT (Rent the Runway, Inc.), bought by Nexus Capital Management LP and STORY3 Capital Partners, LLC, Director, 10% owner, filed 2026-10-23, worth $2.25M. These are company insiders, not members of Congress.\n\n' + DISCLAIMER,
+    sources: [
+      {fact: 'f1', label: 'Insider buy LRN', value: 'LRN (Stride, Inc.), bought by Haggart Dylan G., Director, filed 2026-10-27', status: 'verified', source: 'SEC EDGAR Form 4', asof: '2026-10-30T11:53:48Z', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4'},
+      {fact: 'f2', label: 'Value of LRN insider buy', value: '$12.18M', status: 'verified', source: 'SEC EDGAR Form 4', asof: '2026-10-30T11:53:48Z', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4'},
+      {fact: 'f3', label: 'Insider buy RENT', value: 'RENT (Rent the Runway, Inc.), bought by Nexus Capital Management LP and STORY3 Capital Partners, LLC, Director, 10% owner, filed 2026-10-23', status: 'verified', source: 'SEC EDGAR Form 4', asof: '2026-10-30T11:53:48Z', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4'},
+      {fact: 'f4', label: 'Value of RENT insider buy', value: '$2.25M', status: 'verified', source: 'SEC EDGAR Form 4', asof: '2026-10-30T11:53:48Z', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4'},
+    ], check: {status: 'PASS', flags: [], attempts: 1}, intent: 'insiders', case_id: 'z', ms: 10},
   fallback: {answer: 'Here is what the sources show:\n* Portfolio total value: $12,345.67\n\n' + DISCLAIMER, sources: SRC.slice(0, 1), check: {status: 'fallback', flags: ['V4'], attempts: 2}, intent: 'holdings', case_id: 'y', ms: 10},
 };
 const AI_TEXT = 'Plain answer from the old assistant.';
@@ -88,6 +96,20 @@ async function run(viewport, label) {
   check(aiHits === aiBefore + 1 && (await page.textContent('#answer')) === AI_TEXT, `${label} ask 404 uses /api/ai`, `aiHits ${aiHits - aiBefore}`);
   check((await page.textContent('#answer-check')).includes('Sources unavailable right now.') && !(await page.isVisible('#answer-check .check-badge')), `${label} ask 404 note, no badge`);
   check(await page.$eval('#answer-sources', d => d.hidden), `${label} ask 404 no sources`);
+
+  // Insider buys: Checked badge, Form 4 sources, no fallback note
+  mode = 'insiders'; let insBody = null;
+  page.once('request', r => { if (r.url() === API + '/api/ask') insBody = r.postData(); });
+  await askOnce('Any big insider buys this week?');
+  const ai1 = await page.textContent('#answer');
+  check(ai1.includes('LRN (Stride, Inc.)') && ai1.includes('$12.18M') && !ai1.includes(DISCLAIMER), `${label} ask insiders shows the answer`, ai1.slice(0, 80));
+  check(await page.isVisible('#answer-check .check-badge') && (await page.textContent('#answer-check')).trim() === 'Checked', `${label} ask insiders shows Checked badge`);
+  check(!(await page.textContent('#answer-check')).includes('Shown from sources only'), `${label} ask insiders has no fallback note`);
+  check((await page.textContent('#answer-sources-n')) === 'Sources (4)', `${label} ask insiders sources count`);
+  await page.click('#answer-sources-n');
+  const insSrc = await page.textContent('#answer-sources-list');
+  check(insSrc.includes('SEC EDGAR Form 4') && /as of Oct 30, 2026/.test(insSrc) && !/Congress|House|Senate/.test(insSrc), `${label} ask insiders sources are SEC Form 4 with dates`, insSrc.slice(0, 120));
+  check(!!insBody && insBody.includes('Any big insider buys this week?'), `${label} ask insiders question sent to /api/ask`);
 
   // Chat
   await page.click('#as-fab');

@@ -18,7 +18,7 @@ const STOP = new Set(['I', 'A', 'AI', 'AM', 'AN', 'AND', 'ARE', 'AS', 'AT', 'BE'
   'GDP', 'HOW', 'HYSA', 'IF', 'IN', 'IPO', 'IRA', 'IS', 'IT', 'ME', 'MY', 'NO', 'NOT', 'OF', 'OK', 'ON', 'OR', 'PE', 'PTR', 'SEC', 'SELL', 'SO',
   'THE', 'TO', 'UP', 'US', 'USA', 'USD', 'VS', 'WE', 'WHAT', 'WHO', 'WHY', 'APY', 'YTD', 'EPS', 'FAQ', 'FED', 'API', 'LLC', 'INC', 'Q', 'TX', 'NY', 'CA',
   'FORM', 'D', 'C', 'DCA', 'ROI', 'ROTH', 'K', 'S', 'P', 'EU', 'UK']);
-const FINANCE = /\b(stock|stocks|share|shares|etf|fund|portfolio|invest|investing|investment|market|markets|price|dividend|yield|apy|savings|cash|bond|bonds|rate|rates|interest|congress|senator|trade|trades|ticker|holding|holdings|allocation|diversif\w*|return|returns|crypto|bitcoin|money|finance|financial|budget|retire\w*|401k|ira|roth|startup|raise|raises|funding|seed|series|sec|filing|filings|app|dashboard|p\/e|earnings|valuation)\b/i;
+const FINANCE = /\b(insiders?|stock|stocks|share|shares|etf|fund|portfolio|invest|investing|investment|market|markets|price|dividend|yield|apy|savings|cash|bond|bonds|rate|rates|interest|congress|senator|trade|trades|ticker|holding|holdings|allocation|diversif\w*|return|returns|crypto|bitcoin|money|finance|financial|budget|retire\w*|401k|ira|roth|startup|raise|raises|funding|seed|series|sec|filing|filings|app|dashboard|p\/e|earnings|valuation)\b/i;
 const OUT_HIGH = /\b(poem|poetry|song|lyrics|joke|recipe|haiku|limerick|essay|bedtime story|short story|love letter|horoscope|homework|translate)\b/i;
 
 // news_read: matched by rules only (with a ticker), so the Groq intent call is skipped (plan D15).
@@ -41,6 +41,13 @@ export const INSIGHTS_RE = new RegExp([
 
 const KW = {
   private: /\b(pre-?seed|seed round|seed rounds|series a|series b|startup|startups|fund ?rais\w*|funding round|raises?|raised|form d|form c|crowdfund\w*|venture|private (market|companies|company|raise))/i,
+  // Corporate insiders (SEC Form 4): officers, directors and 10% owners. Checked before Congress, so
+  // "insider" questions never land on the PTR data. "Congress insider trading" still goes to disclosures.
+  insiders: /\binsiders?\b|\bform 4s?\b|\b(?:ceos?|cfos?|executives?|directors?|officers?|10% owners?)\b.{0,30}\b(?:bought|buys?|buying|purchas\w*)\b|\b(?:bought|buys?|buying|purchas\w*)\b.{0,30}\bby (?:ceos?|cfos?|executives?|directors?|officers?|10% owners?)\b/i,
+  // The insiders data is filings of purchases: route only questions asking for that activity.
+  // Concept questions ("what is insider trading", "is it illegal") and selling go to Groq or general.
+  insiderActivity: /\b(?:buys?|bought|buying|purchas\w*|filed|filings|recent(?:ly)?|latest|this (?:week|month)|today|any|biggest|largest|big|top)\b/i,
+  insiderSelling: /\b(?:sell|sells|selling|sold|sales?|dump\w*)\b/i,
   disclosures: /\b(congress\w*|senator|senators|senate|house member|representative|politician\w*|pelosi|ptr|disclos\w*|lawmaker\w*)/i,
   rates: /\b(savings|high[- ]yield|hysa|apy|money market|interest rate|cash (yield|earn|options?)|where should my cash|earn more on (my )?cash|cd rates?)\b/i,
   holdings: /\b(my portfolio|my holdings|my stocks|my positions|diversif\w*|my allocation|allocation|rebalanc\w*|am i|my gains?|my losses?|my income|largest holding|biggest holding|concentrat\w*)\b/i,
@@ -118,6 +125,7 @@ export function rulesIntent(question, held = []) {
   else if (NEWS_READ_RE.test(q) && tickers.length) type = 'news_read';
   else if (INSIGHTS_RE.test(q)) type = 'insights';
   else if (KW.private.test(q)) type = 'private';
+  else if (KW.insiders.test(q) && KW.insiderActivity.test(q) && !KW.insiderSelling.test(q) && !KW.disclosures.test(q)) type = 'insiders';
   else if (KW.disclosures.test(q)) type = 'disclosures';
   else if (KW.rates.test(q)) type = 'rates';
   else if (tickers.length) type = 'ticker';
@@ -131,7 +139,7 @@ export function rulesIntent(question, held = []) {
     private_filters: type === 'private' ? rulesFilters(q) : emptyFilters(),
     range: rulesRange(q),
     needs_portfolio: type === 'holdings' || type === 'rates' || tickers.some(t => heldSet.has(t)),
-    confidence: type === 'out_of_scope' && clearlyOutOfScope(q) ? 0.95 : type === 'news_read' || type === 'insights' ? 0.9 : 0.6,
+    confidence: type === 'out_of_scope' && clearlyOutOfScope(q) ? 0.95 : ['news_read', 'insights', 'insiders'].includes(type) ? 0.9 : 0.6,
     via: 'rules',
   };
 }
@@ -183,7 +191,7 @@ export const isNewsRead = (q, held = []) => rulesIntent(q, held).type === 'news_
 export async function run(c, deps) {
   const held = (c.input.portfolio?.holdings || []).map(h => h.ticker).filter(t => TICKER_RE.test(t));
   const rules = rulesIntent(c.input.question, held);
-  if (rules.type === 'news_read' || rules.type === 'insights') return {intent: rules}; // rules pre-pass: no Groq call #1
+  if (['news_read', 'insights', 'insiders'].includes(rules.type)) return {intent: rules}; // rules pre-pass: no Groq call #1
   try {
     const out = await deps.ai('/internal/intent', {question: c.input.question, history: c.input.history.slice(-2), tickers: held}, 5000);
     return {intent: normalizeIntent(out && out.intent, rules, held)};
