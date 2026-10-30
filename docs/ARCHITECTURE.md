@@ -51,6 +51,15 @@ SOC monitor (soc-monitor.yml, 13:15 UTC daily + manual): scripts/soc_monitor.py,
   ALERT: cron failure streak >= 5, > 20 5xx, 0 verdicts after 06:00 UTC, failed fetch_trades or private-markets run.
   WARN: budget >= 80%, request/exception/429 spikes (> 3x 7-day baseline), job errors, failed workflows, open alerts.
   Exit 1 only if Cloudflare or Supabase is unreachable. Output carries no secrets, IPs, emails, tickers or bodies.
+Meta supervisor (meta-supervisor.yml, 14:10 UTC daily + manual): scripts/meta_supervisor.py, stdlib + requests, no AI.
+  Checks the other supervisors (A validator canary, B news judge, C insights files) and owns source
+  reconciliation (D): official House and Senate records vs FMP, read from trades.json on main. fetch_trades
+  computes the cross-check at 06:00 (it holds the FMP key); check D judges it. House: ALERT below 80% of
+  FMP's trades in our scrape, or a member FMP shows with 2+ trades and none in our data (cause unknown);
+  WARN below 95%, FMP accuracy below 95%, a member missing because a filing is unreadable, failed downloads
+  or parses. Year-long known gaps (scanned filings, dates after filing) are noted as OK lines. Senate:
+  compared only on days the official site answers; staleness stays with the SOC monitor, which no longer
+  judges reconciliation. A crash in check D becomes an ALERT finding. One issue, label meta-supervisor.
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
 
 Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before

@@ -30,7 +30,6 @@ ERROR_SPIKE_MIN = 10
 SPIKE_429_MIN = 10
 WARN_403_MIN = 50
 SENATE_MAX_AGE_DAYS = 3
-FMP_MATCH_MIN = 0.95
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
 DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
@@ -87,12 +86,7 @@ def evaluate(d, now):
             add(ALERT, "Senate trades missing from trades.json")
         elif sen.get("stale") or (sen.get("age_days") is not None and sen["age_days"] > SENATE_MAX_AGE_DAYS):
             add(ALERT, f"Senate trades are stale: last good data is {sen.get('age_days')} days old (scrape failing)")
-        hc = sen.get("house_check") or {}
-        oc, of = hc.get("ours_checked") or 0, hc.get("ours_found_in_fmp") or 0
-        if oc >= 10 and of / oc < FMP_MATCH_MIN:
-            add(WARN, f"FMP accuracy check: FMP has only {of} of {oc} recent trades from the official House data")
-        if (hc.get("checked") or 0) >= 10 and hc.get("rate") is not None and hc["rate"] < FMP_MATCH_MIN:
-            add(WARN, f"House scraper gap: only {hc['matched']} of {hc['checked']} recent House trades listed by FMP are in our official House scrape")
+        # Official vs FMP reconciliation is judged by the meta supervisor (check D), not here
 
     cf = d.get("cloudflare") or {}
     sb = d.get("supabase") or {}
