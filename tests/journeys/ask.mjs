@@ -65,7 +65,8 @@ async function run(viewport, label) {
   mode = 'pass';
   await askOnce('How diversified am I?');
   const a1 = await page.textContent('#answer');
-  check(a1.includes('$12,345.67') && a1.includes(DISCLAIMER), `${label} ask PASS shows the answer`);
+  check(a1.includes('$12,345.67') && !a1.includes(DISCLAIMER), `${label} ask PASS shows the answer without repeating the disclaimer`);
+  check((await page.textContent('#ask')).includes('not personalized investment advice'), `${label} ask shows the disclaimer once on the page`);
   check(await page.isVisible('#answer-check .check-badge') && (await page.textContent('#answer-check')).trim() === 'Checked', `${label} ask PASS shows Checked badge`);
   check(!(await page.getAttribute('#answer-sources', 'hidden') !== null), `${label} ask PASS sources visible`);
   check((await page.textContent('#answer-sources-n')) === 'Sources (2)', `${label} ask PASS sources count`);
