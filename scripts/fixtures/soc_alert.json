@@ -1,0 +1,15 @@
+{"now": "2026-10-30T13:15:00",
+ "data": {
+  "cloudflare": {
+   "scripts": {
+    "pi-market": {"requests": 900, "baseline_daily": 200, "s4xx": 12, "s5xx": 25, "s403": 3, "s429": 40, "s429_baseline_daily": 2, "exceptions": 30, "exceptions_baseline_daily": 1},
+    "portfolio-intel-api": {"requests": 150, "baseline_daily": 140, "s4xx": 2, "s5xx": 0, "s403": 0, "s429": 0, "exceptions": 0}
+   },
+   "cron": {"ticks": 40, "failures": 6, "failure_streak": 6},
+   "top_errors": [["TypeError: x is undefined for ticker=NVDA from 10.1.2.3 mail a@b.com", 7]]
+  },
+  "supabase": {"jobs": {"ok": 20, "error": 2, "pending": 1}, "verdicts_today": 0,
+               "budget": {"calls": 80, "tokens": 100, "calls_cap": 90, "tokens_cap": 180000}},
+  "github": {"failed_runs": [{"name": "Security scans"}], "dependabot_open": 2,
+             "data_jobs": {"Fetch Congress Trades": "failure", "Private markets (SEC Form D and Form C)": "success"}}
+ }}
