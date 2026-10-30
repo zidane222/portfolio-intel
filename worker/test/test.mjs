@@ -67,6 +67,7 @@ await t('404', async () => { assert.equal((await call('/api/nope')).status, 404)
 await t('rate limit', async () => { let last; for (let i = 0; i < 125; i++) last = await worker.fetch(new Request('https://w.dev/api/news', {headers: {Origin: O, 'CF-Connecting-IP': '9.9.9.9'}}), env); assert.equal(last.status, 429); });
 await import('./phase2.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./phase3.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
+await import('./phase4.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./newsdesk.mjs').then(m => m.default({t}));
 console.log(`\n${n} tests passed`);
 // Secrets Store bindings are objects with get()
