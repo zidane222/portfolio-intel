@@ -312,3 +312,13 @@ export default async function ({t, worker, env, O, withServices, bind}) {
 
   globalThis.__groq = prevGroq;
 }
+
+// AppSec M2: softer advice wording is flagged
+{
+  const {lineSafe} = await import('../src/agents/validator.js');
+  for (const s of ['This is likely to outperform the market.', 'That strategy is worth copying.', 'You could copy this trade.', 'Consider following these senators.'])
+    if (lineSafe(s)) { console.error('V4 missed:', s); process.exit(1); }
+  for (const s of ['The simulated run trailed SPY over the period.', 'Members filed 40 trades.'])
+    if (!lineSafe(s)) { console.error('V4 false positive:', s); process.exit(1); }
+  console.log('V4 soft advice: ok');
+}

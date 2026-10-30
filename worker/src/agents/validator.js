@@ -9,6 +9,8 @@ const ADVICE = [
   /best stock for you/i,
   /allocate \d+(\.\d+)?\s?% to/i,
   /\bwill beat\b/i, /expected to outperform/i, /\bbest strategy\b/i, // forward-looking (Phase 4)
+  /\b(is|are|likely|set|poised|going) to (beat|outperform)\b/i, /\bworth (copying|following|mirroring)\b/i,
+  /\byou (could|can|might|may want to) (copy|follow|mirror)\b/i, /\bbest (approach|bet|pick) (for you|to)\b/i, /\bconsider (copying|following|mirroring)\b/i,
 ];
 const GUARANTEE = [/guarantee(d)?/i, /risk[- ]free return/i, /can'?t lose/i, /\bsure thing\b/i, /will (definitely|certainly) (rise|go up|double)/i, /100\s?% (safe|certain)/i];
 const PII = [

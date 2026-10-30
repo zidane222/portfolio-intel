@@ -96,7 +96,8 @@ const internal = req => req.headers.get('X-PI-Internal') === '1';
 function route(kind) {
   return async (req, env) => {
     if (!internal(req)) return json({error: 'Not found'}, 404);
-    if (limited(req)) return json({error: 'Too many requests. Try again in a minute.'}, 429);
+    // Ask-agent calls come over the binding with no client IP and are already limited by the ask bucket
+    if (req.headers.get('CF-Connecting-IP') && limited(req)) return json({error: 'Too many requests. Try again in a minute.'}, 429);
     const doc = await loadDoc(env, kind);
     if (!doc) return json({error: 'Insights data is not available right now'}, 502);
     return json(decorate(doc), 200, {'Cache-Control': 'no-store'});
