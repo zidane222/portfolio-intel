@@ -73,16 +73,16 @@ jobs:
           import os, json, requests
           k = os.environ.get('FMP_API_KEY', '').strip()
           print(f"::notice::FMP key present={bool(k)} len={len(k)}")
-          for p in ['senate-latest?page=0&limit=5', 'house-latest?page=0&limit=5', 'senate-trades?symbol=AAPL', 'senate-trades-by-name?name=Tuberville']:
+          for p in ['senate-latest?page=0&limit=100', 'senate-latest?page=0&limit=50', 'senate-latest?page=0&limit=25', 'senate-latest?page=1&limit=25', 'senate-latest?page=5&limit=25', 'senate-latest?page=0', 'house-latest?page=0&limit=100']:
               try:
                   r = requests.get(f'https://financialmodelingprep.com/stable/{p}', params={'apikey': k}, timeout=30)
                   try: d = r.json()
                   except Exception: d = r.text[:200]
                   if isinstance(d, list):
-                      print(f"::notice::{p.split('?')[0]} -> {r.status_code} rows={len(d)} fields={sorted(d[0].keys()) if d else []}")
-                      if d: print('::notice::sample ' + json.dumps({x: d[0].get(x) for x in list(d[0])[:16]})[:600])
+                      ds = sorted(x.get('disclosureDate', '') for x in d)
+                      print(f"::notice::{p} -> {r.status_code} rows={len(d)} disclosed {ds[0] if ds else ''}..{ds[-1] if ds else ''}")
                   else:
-                      print(f"::notice::{p.split('?')[0]} -> {r.status_code} {json.dumps(d)[:300]}")
+                      print(f"::notice::{p} -> {r.status_code} {json.dumps(d)[:200]}")
               except Exception as e:
                   print(f"::notice::{p} failed {type(e).__name__}")
           PY
