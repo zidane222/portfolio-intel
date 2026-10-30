@@ -42,7 +42,7 @@ async function askAI(question, history) {
   const d = await getJSON(BACKEND_URL + '/api/ai', {method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({mode: 'assistant', context: buildContext(), question: (convo ? 'Conversation so far:\n' + convo + '\n\nNew question: ' : '') + question})});
   if (d.error) throw new Error(d.error);
-  return (d.answer || 'No answer came back. Try rephrasing.').replace(/\*\*|__|^#+\s/gm, '').trim();
+  return stripDisclaimer(d.answer || 'No answer came back. Try rephrasing.').replace(/\*\*|__|^#+\s/gm, '').trim();
 }
 // Structured portfolio summary built on the device for /api/ask (plan 5.1).
 // User-supplied context for this one request only: the server never stores it.
