@@ -31,7 +31,7 @@ globalThis.fetch = async (u, init) => {
   if (u.includes('/v8/finance/chart/')) return ok(chart(110, [100, 102, 104, 110]));
   if (u.includes('/v1/finance/search')) return ok({quotes: [{symbol: 'AAPL', quoteType: 'EQUITY', sectorDisp: 'Technology', industryDisp: 'Consumer Electronics'}]});
   if (host === 'news.google.com') return ok('<rss><channel><item><title>Apple rises - Reuters</title><link>https://x.com/a</link><pubDate>Mon, 19 Oct 2026 10:00:00 GMT</pubDate><source url="r">Reuters</source></item></channel></rss>');
-  if (u.includes('raw.githubusercontent.com')) return ok({trades: [{ticker: 'NVDA'}], house_count: 1, updated: 'x'});
+  if (host === 'raw.githubusercontent.com') return ok({trades: [{ticker: 'NVDA'}], house_count: 1, updated: 'x'});
   if (host === 'api.groq.com') { if (globalThis.__groq) return globalThis.__groq(init); return ok({choices: [{message: {content: '{"holdings":[]}'}}]}); }
   if (u.includes('pages.dev')) { if (globalThis.__pages) return globalThis.__pages(u); return new Response(JSON.stringify({updated: new Date().toISOString(), raises: []}), {status: 200, headers: {'Content-Type': 'application/json'}}); }
   if (u.includes('plaid.com/link/token/create')) return ok({link_token: 'link-sandbox-1'});
@@ -84,7 +84,8 @@ console.log(`\n${n} tests passed`);
   const real = globalThis.fetch;
   globalThis.fetch = async (u, init) => {
     u = String(u);
-    if (u.includes('reddit.com')) return new Response('blocked', {status: 403});
+    const host = (() => { try { return new URL(u).hostname; } catch (e) { return ''; } })();
+    if ((host === 'reddit.com' || host.endsWith('.reddit.com'))) return new Response('blocked', {status: 403});
     if (u.startsWith('https://backup.test/api/feeds')) return new Response(JSON.stringify({articles: [{title: 'WSB post', link: 'https://r/1', source: 'r/wallstreetbets', social: true}]}), {status: 200});
     return new Response('<rss><item><title>Market up</title><link>https://n/1</link></item></rss>', {status: 200});
   };
@@ -100,7 +101,8 @@ console.log(`\n${n} tests passed`);
   const real = globalThis.fetch; let gn = 0;
   globalThis.fetch = async (u) => {
     u = String(u);
-    if (u.includes('news.google.com')) { gn++; return new Response('blocked', {status: 503}); }
+    const host = (() => { try { return new URL(u).hostname; } catch (e) { return ''; } })();
+    if (host === 'news.google.com') { gn++; return new Response('blocked', {status: 503}); }
     if (u.startsWith('https://backup.test/api/news/tickers/')) return new Response(JSON.stringify({articles: [{title: 'Backup NVDA', link: 'https://b/1', ticker: 'NVDA'}]}), {status: 200});
     if (u === 'https://backup.test/api/news') return new Response(JSON.stringify({articles: [{title: 'Backup top', link: 'https://b/2'}]}), {status: 200});
     return new Response('no', {status: 404});

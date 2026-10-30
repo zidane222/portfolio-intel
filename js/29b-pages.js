@@ -87,7 +87,7 @@ function showPage(target, {scroll = true} = {}) {
   if (!scroll) return;
   const first = secsOf(page)[0];
   if (changed && (target === page.id || target === first)) window.scrollTo({top: 0, behavior: 'auto'});
-  else { const el = $(target); if (el) el.scrollIntoView({behavior: changed || reduced ? 'auto' : 'smooth', block: 'start'}); }
+  else { const el = ALL_IDS().includes(target) ? $(target) : null; if (el) el.scrollIntoView({behavior: changed || reduced ? 'auto' : 'smooth', block: 'start'}); }
 }
 
 function wirePages() {

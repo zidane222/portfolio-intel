@@ -742,7 +742,8 @@ def plaid_link_token():
                                           **({'redirect_uri': os.environ['PLAID_REDIRECT_URI']} if os.environ.get('PLAID_REDIRECT_URI') else {})})
         return jsonify({'link_token': d['link_token']})
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        app.logger.warning('plaid call failed: %s', type(e).__name__)
+        return jsonify({'error': 'The brokerage connection failed. Try again later.'}), 502
 
 @app.route('/api/plaid/exchange', methods=['POST'])
 def plaid_exchange():
@@ -753,7 +754,8 @@ def plaid_exchange():
         d = _plaid('/item/public_token/exchange', {'public_token': str(body.get('public_token') or '')})
         return jsonify({'token': _plaid_fernet().encrypt(d['access_token'].encode()).decode()})
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        app.logger.warning('plaid call failed: %s', type(e).__name__)
+        return jsonify({'error': 'The brokerage connection failed. Try again later.'}), 502
 
 @app.route('/api/plaid/holdings', methods=['POST'])
 def plaid_holdings():
@@ -763,7 +765,8 @@ def plaid_holdings():
     try:
         d = _plaid('/investments/holdings/get', {'access_token': _open_token(body.get('token'))})
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        app.logger.warning('plaid call failed: %s', type(e).__name__)
+        return jsonify({'error': 'The brokerage connection failed. Try again later.'}), 502
     secs = {x['security_id']: x for x in d.get('securities', [])}
     merged = {}
     for h in d.get('holdings', []):
