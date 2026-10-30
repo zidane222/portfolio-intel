@@ -100,6 +100,18 @@ class Scrub(unittest.TestCase):
         for bad in ("NVDA", "10.1.2.3", "a@b.com", "abc.def", "AAPL", "k" * 40):
             self.assertNotIn(bad, s)
 
+    def test_adversarial(self):
+        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.abc123DEF456"
+        s = m.scrub("GET https://abcd.supabase.co/rest/v1/x?apikey=SECRETKEY123 auth " + jwt
+                    + " v6 2001:db8::1 path /api/quote/NVDA/history sb_secret_abc123 ghp_abc123", 400)
+        for bad in ("SECRETKEY123", "supabase.co", jwt, "eyJ", "2001:db8", "NVDA", "sb_secret", "ghp_"):
+            self.assertNotIn(bad, s)
+
+    def test_injection_neutralised(self):
+        s = m.scrub("ping @octocat <img src=x> ![a](http://e.co/x.png) [c](u) `x` ::add-mask::foo\n::set-output name=a::b | c", 400)
+        for bad in ("@", "<", ">", "[", "]", "!", "`", "|", "::"):
+            self.assertNotIn(bad, s)
+
     def test_truncates(self):
         self.assertEqual(len(m.scrub("x " * 500, 50)), 50)
 

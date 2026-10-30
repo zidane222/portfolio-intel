@@ -43,14 +43,19 @@ class SourceError(Exception):
 
 # ---------------------------------------------------------------- scrubbing
 _SCRUB = [
-    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[email]"),
-    (re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"), "[ip]"),
-    (re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}\b"), "[ip]"),
-    (re.compile(r"(?i)bearer\s+[\w.~+/=-]+"), "[token]"),
-    (re.compile(r"\b[A-Za-z0-9_\-]{32,}\b"), "[token]"),
-    (re.compile(r"(?i)(ticker|symbol|tickers|symbols)(\"?\s*[:=]\s*)(\"?\[?[^,;&}\s]*)"), r"\1\2[redacted]"),
-    (re.compile(r"(?i)(body|payload|authorization|apikey|api_key|token|password)(\"?\s*[:=]\s*)\S+"), r"\1\2[redacted]"),
-    (re.compile(r"\$[A-Z]{1,5}\b"), "[ticker]"),
+    (re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://\S+"), "{url}"),
+    (re.compile(r"\beyJ[\w-]*\.[\w-]*(?:\.[\w-]*)?"), "{token}"),
+    (re.compile(r"\b(?:sb_secret|sb_publishable|sbp|ghp|gho|ghs|ghu|github_pat)_[\w-]+"), "{token}"),
+    (re.compile(r"(?<![\w:])(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?![\w:])"), "{ip}"),
+    (re.compile(r"(?<=/)[A-Z]{1,5}(?=[/?#\s]|$)"), "{ticker}"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "{email}"),
+    (re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"), "{ip}"),
+    (re.compile(r"\b(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}\b"), "{ip}"),
+    (re.compile(r"(?i)bearer\s+[\w.~+/=-]+"), "{token}"),
+    (re.compile(r"\b[A-Za-z0-9_\-]{32,}\b"), "{token}"),
+    (re.compile(r"(?i)(ticker|symbol|tickers|symbols)(\"?\s*[:=]\s*)(\"?\[?[^,;&}\s]*)"), r"\1\2{redacted}"),
+    (re.compile(r"(?i)(body|payload|authorization|apikey|api_key|token|password)(\"?\s*[:=]\s*)\S+"), r"\1\2{redacted}"),
+    (re.compile(r"\$[A-Z]{1,5}\b"), "{ticker}"),
 ]
 
 
@@ -58,6 +63,9 @@ def scrub(text, n=140):
     s = str(text or "").replace("\n", " ").replace("\r", " ")
     for rx, rep in _SCRUB:
         s = rx.sub(rep, s)
+    # Neutralise markdown/HTML, @mentions and workflow commands (output goes to issues and summaries).
+    s = s.replace("::", ": :").replace("@", "(at)")
+    s = s.translate({ord(c): " " for c in "<>`[]!|\\"})
     s = re.sub(r"\s+", " ", s).strip()
     return s[:n]
 
@@ -173,7 +181,7 @@ def notice_lines(d, sev, findings, now):
     c = cf.get("cron") or {}
     return [f"::notice::SOC {now:%Y-%m-%d} {sev}: {len(findings)} findings",
             f"::notice::requests={req} 5xx={e5} cron_ticks={c.get('ticks', 0)} cron_failures={c.get('failures', 0)} streak={c.get('failure_streak', 0)}",
-            f"::notice::verdicts_today={sb.get('verdicts_today', 0)} jobs={json.dumps(sb.get('jobs') or {}, sort_keys=True)} budget_calls={(sb.get('budget') or {}).get('calls', 0)}"]
+            f"::notice::verdicts_today={sb.get('verdicts_today', 0)} jobs={json.dumps({scrub(k, 30): v for k, v in (sb.get('jobs') or {}).items()}, sort_keys=True)} budget_calls={(sb.get('budget') or {}).get('calls', 0)}"]
 
 
 # ---------------------------------------------------------------- collectors
@@ -296,12 +304,15 @@ def sb_get(base, key, path):
         raise SourceError(f"supabase unreachable ({type(e).__name__})")
     if r.status_code >= 400:
         raise SourceError(f"supabase query failed HTTP {r.status_code}")
-    return r.json()
+    try:
+        return r.json()
+    except ValueError:
+        raise SourceError("supabase returned non-JSON")
 
 
 def collect_supabase(base, key, now, caps):
     today = f"{now:%Y-%m-%d}"
-    jobs = Counter(r["status"] for r in sb_get(base, key, f"news_jobs?select=status&run_date=eq.{today}&limit=1000"))
+    jobs = Counter(scrub(r.get("status"), 30) for r in sb_get(base, key, f"news_jobs?select=status&run_date=eq.{today}&limit=1000"))
     ver = sb_get(base, key, f"news_verdicts?select=id&run_date=eq.{today}&limit=1000")
     bud = (sb_get(base, key, f"news_budget?select=calls,tokens,batch_calls&day=eq.{today}") or [{}])[0]
     return {"jobs": dict(jobs), "verdicts_today": len(ver),
