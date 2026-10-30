@@ -201,4 +201,8 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:  # one line for the Actions summary: type and message only, never rows
+        print(f"::error::Insights run failed: {type(e).__name__}: {str(e)[:400]}")
+        raise
