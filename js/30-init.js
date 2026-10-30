@@ -17,7 +17,12 @@ function init() {
   wireTickerLinks(); renderWatch(); renderAlerts(); wireCopyButtons(); wireCash(); loadYieldData(); wireFeedFilters();
   $('cmp-member').onchange = e => { cmpMember = e.target.value; renderAnyMember(); };
   $('share-copy').onclick = shareCopy;
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    // When a new release takes over, reload once so the new code is used right away
+    const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then(r => r.update()).catch(() => {});
+  }
   $('watch-form').onsubmit = e => { e.preventDefault(); toggleWatch($('watch-in').value, true); $('watch-in').value = ''; };
   renderHero(); renderHoldings(); renderFeed(); renderSignals(); renderTicker(); renderMix();
   loadPrices(); loadHistory(); loadTrades(); loadNews(); loadSectors();
