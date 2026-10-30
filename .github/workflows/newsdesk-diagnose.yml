@@ -1,0 +1,33 @@
+name: Newsdesk diagnose (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read news tables (counts only, no secrets printed)
+        env:
+          SB: ${{ secrets.SP }}
+          KEY: ${{ secrets.SR }}
+        run: |
+          SB="$(printf '%s' "$SB" | tr -d '[:space:]' | sed -E 's#/+$##; s#/rest/v1$##')"
+          q() { curl -sS -o body.json -w '%{http_code}' -H "apikey: $KEY" -H "Authorization: Bearer $KEY" "$SB/rest/v1/$1"; }
+          for path in "news_jobs?select=day,status,attempts&order=day.desc&limit=200" \
+                      "news_budget?select=*&order=day.desc&limit=10" \
+                      "news_verdicts?select=id,ticker,status,run_date&order=run_date.desc&limit=50"; do
+            code=$(q "$path")
+            echo "::notice::$path -> HTTP $code: $(python3 -c "import json;d=json.load(open('body.json'));print(json.dumps(d)[:700])" 2>/dev/null)"
+          done
+      - name: News universe function
+        env:
+          SB: ${{ secrets.SP }}
+          KEY: ${{ secrets.SR }}
+        run: |
+          SB="$(printf '%s' "$SB" | tr -d '[:space:]' | sed -E 's#/+$##; s#/rest/v1$##')"
+          code=$(curl -sS -o u.json -w '%{http_code}' -X POST -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"days":30,"n":20}' "$SB/rest/v1/rpc/news_universe")
+          echo "::notice::rpc/news_universe -> HTTP $code: $(head -c 400 u.json)"
