@@ -447,3 +447,8 @@ additive and can stay.
 
 1. **Committees.** Add member-to-committee analysis in v1.1 using the public-domain `congress-legislators` committee data (a reference CSV in `analytics/ref/`, refreshed manually)? Recommendation: yes, as a follow-up PR after v1 runs cleanly. v1 does not include it.
 2. **Naming members.** May published findings name individual members (only when a finding replicated on the hold-out, with the "no wrongdoing shown" line)? Recommendation: no names in v1, aggregates only (chamber, sector, size, delay). Member scan (A4) still runs and feeds S2 (members shown as "Member 1" to "Member 5", unnamed), but A4 results are published as counts. Say yes to turn names on later; it is a config switch.
+
+## Owner decisions (2026-10-30)
+
+1. Committee analysis: yes, as a follow-up after v1 runs cleanly, using public committee data.
+2. Published findings use aggregates only. No individual members are named.
