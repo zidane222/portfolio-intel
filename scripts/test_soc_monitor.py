@@ -101,7 +101,7 @@ class Scrub(unittest.TestCase):
             self.assertNotIn(bad, s)
 
     def test_adversarial(self):
-        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.abc123DEF456"
+        jwt = ".".join(["eyJhbGciOiJIUzI1NiJ9", "eyJyb2xlIjoic2VydmljZSJ9", "abc123DEF456"])  # fake, built at runtime
         s = m.scrub("GET https://abcd.supabase.co/rest/v1/x?apikey=SECRETKEY123 auth " + jwt
                     + " v6 2001:db8::1 path /api/quote/NVDA/history sb_secret_abc123 ghp_abc123", 400)
         for bad in ("SECRETKEY123", "supabase.co", jwt, "eyJ", "2001:db8", "NVDA", "sb_secret", "ghp_"):
