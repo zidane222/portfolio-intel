@@ -30,7 +30,7 @@ ERROR_SPIKE_MIN = 10
 SPIKE_429_MIN = 10
 WARN_403_MIN = 50
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
-DATA_JOBS = {"Fetch Congress Trades": 6, "Private markets (SEC Form D and Form C)": 11}  # name: earliest UTC hour
+DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
 CF_SCRIPTS = ["pi-market", "pi-news", "pi-rates", "pi-ai", "pi-broker", "pi-disclosures",
               "pi-private", "pi-newsdesk", "portfolio-intel-api"]
@@ -138,7 +138,7 @@ def evaluate(d, now):
             continue  # not readable
         if j == "failure":
             add(ALERT, f"data job failed today: {name}")
-        elif j == "missing" and now.hour > hour:
+        elif j == "missing" and now.hour >= hour:
             add(WARN, f"data job has no run today: {name}")
 
     sev = max((s for s, _ in f), key=lambda s: RANK[s], default=OK)
@@ -270,20 +270,33 @@ def collect_cloudflare(token, acct, now):
     for g, n in exc_base:
         if g.get("$workers.scriptName") in scripts:
             scripts[g["$workers.scriptName"]]["exceptions_baseline_daily"] += n / 7.0
-    # cron outcomes, newest first
-    evs = cf_events(token, acct, t24, now, [_flt("$workers.scriptName", "eq", "pi-newsdesk"),
-                                             _flt("$workers.eventType", "eq", "cron")], 200)
+    # cron outcomes, newest first. A tick can end "ok" at the platform level after logging
+    # "newsdesk tick failed" (the handler catches its own errors), so count those logs as failures.
+    nd = _flt("$workers.scriptName", "eq", "pi-newsdesk")
+    evs = cf_events(token, acct, t24, now, [nd, _flt("$workers.eventType", "eq", "scheduled")], 200)
+    failed_ts = set()
+    try:
+        for e in cf_events(token, acct, t24, now, [nd], 500):
+            m = e.get("$metadata") or {}
+            if "tick failed" in str(m.get("message") or m.get("error") or ""):
+                failed_ts.add(e.get("timestamp"))
+    except SourceError:
+        pass
     rows = []
     for e in evs:
         w = e.get("$workers") or {}
-        rows.append((e.get("timestamp") or 0, str(w.get("outcome") or "")))
+        if not (w.get("outcome") or w.get("scheduledTime") or w.get("event")):
+            continue  # log lines, not the tick itself
+        ts = e.get("timestamp") or 0
+        bad = str(w.get("outcome") or "ok") not in ("ok",) or ts in failed_ts
+        rows.append((ts, bad))
     rows.sort(reverse=True)
     streak = 0
-    for _, o in rows:
-        if o in ("ok", ""):
+    for _, bad in rows:
+        if not bad:
             break
         streak += 1
-    failures = sum(1 for _, o in rows if o not in ("ok", ""))
+    failures = sum(1 for _, bad in rows if bad)
     # error messages grouped, scrubbed, no bodies
     errs = Counter()
     try:
