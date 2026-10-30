@@ -5,6 +5,7 @@ const LIMITS = {
   api: [[120, 60]],
   ask: [[6, 60], [40, 3600], [150, 86400]], // POST /api/ask, checked in the gateway before the supervisor
   private: [[30, 60]], // pi-private
+  insights: [[30, 60]], // pi-insights
   newsread: [[3, 60], [10, 86400]], // uncached news reads; counted with count() only when Groq ran (plan D10)
 };
 const HITS = new Map();

@@ -19,7 +19,7 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys;
     data agents, fact checker, builder, validator     │
         │ service bindings                            │
         ▼                                             │
-  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private  pi-newsdesk
+  pi-market  pi-news  pi-rates  pi-ai  pi-broker  pi-disclosures  pi-private  pi-insights  pi-newsdesk
   (prices,   (news,   (savings  (Groq: (Plaid)    (House/Senate   (SEC Form D/C,  (news reads:
    history,   feeds)   rates)    Ask,             trades)          filters, stats) cron batch,
    sectors,                      extract,                                          on demand,
@@ -82,6 +82,8 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/newsdesk/reads` | newsdesk (special-cased in `index.js`) | `POST {tickers: [1 to 40]}` → `{updated, window_days: 7, reads: {T: [record...]}}`. Latest batch verdict or today's shared read per ticker. 0 Groq calls, counts against no cap. Body at most 2 KB. Tickers only in the POST body |
 | `/api/newsdesk/read` | newsdesk (special-cased in `index.js`) | `POST {ticker}` → `{status: ok|thin|fallback|limited|busy, cached, groq_calls, quota_left, read, message}`. Gateway order: origin, `api` limit, 1 KB body, ticker regex, pi-market quote check (invalid is 400 with no Groq call), per-visitor quota (`newsread` bucket: 3 a minute, 10 uncached a day; pi-newsdesk gets only `X-PI-Quota: ok|over`, never the IP). pi-newsdesk order: Cache API, KV, today's batch row, then quota, thin check (0 calls), global cap, Groq. 503 when `NEWS_ONDEMAND_ENABLED = "0"` |
 | `/api/private/stats` | private | Same filters → `{updated, count, total_amt, by_stage, by_form, by_state_top, by_industry_top}` |
+| `/api/insights` | insights | `GET` (no params) → `insights.json` (`pi/insights/v1`) plus `served_asof`, `stale` (generated over 10 days ago). Service answers 404 without `X-PI-Internal: 1` (gateway sets it for public reads, the Ask data agent sends it). Reads only `INSIGHTS_DATA_URL` on Pages, `redirect: 'manual'` and any 3xx refused, 5 MB streamed cap, 1 h cache, last good copy 48 h, else 502 |
+| `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
 | `/api/all-trades` | disclosures | Congressional trades |
 

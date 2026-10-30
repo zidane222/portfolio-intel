@@ -46,7 +46,7 @@ jobs:
           # pi-newsdesk needs owner setup first (KV namespace, Secrets Store entries, Supabase URL).
           # Until all of it is in place it is skipped with a warning, and the gateway is deployed
           # without its NEWSDESK binding (news-read routes answer 503), so other deploys keep working.
-          SERVICES="market news rates ai broker disclosures private"
+          SERVICES="market news rates ai broker disclosures private insights"
           KV_ID="$(printf '%s' "$CF_KV_NEWSREADS_RAW" | tr -d '[:space:]')"
           SB_URL="$(printf '%s' "$SB_URL_RAW" | tr -d '[:space:]' | sed -E 's#/+$##; s#/rest/v1$##')"
           newsdesk_skip=""
