@@ -12,7 +12,10 @@ export function chooseMode(pack) {
     if (it.tone > 0) { P += w; if (!it.social) pos.add(it.source); } else { N += w; if (!it.social) neg.add(it.source); }
   }
   const basis = {P, N, n, pubs_pos: pos.size, pubs_neg: neg.size};
-  if (items.length < 3 || n < 2) return {mode: 'thin', ...basis};
+  // Thin means too little news (under 3 headlines), not too little tone.
+  if (items.length < 3) return {mode: 'thin', ...basis};
+  // Plenty of news but the word list can't read its tone: let both sides argue it.
+  if (n < 2) return {mode: 'debate', ...basis};
   const dominantPubs = P >= N ? pos.size : neg.size;
   // "Every toned headline has the same sign" is ratio 1. Both paths still need two distinct
   // publishers on the dominant side, so one site flooding one tone cannot force collaborate.

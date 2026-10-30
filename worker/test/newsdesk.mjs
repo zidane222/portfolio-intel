@@ -42,7 +42,7 @@ function world({headlines = 8, groqFail = false, budget = {calls: 90, tokens: 18
     u = String(u); w.fetches.push(u);
     const ok = b => new Response(typeof b === 'string' ? b : JSON.stringify(b), {status: 200});
     if (u.startsWith(SB + '/rest/v1/')) {
-      assert.equal(init.redirect, 'error', 'Supabase calls must use redirect: error');
+      assert.equal(init.redirect, 'manual', 'Supabase calls must not follow redirects (Workers reject redirect: error)');
       assert.equal(init.headers.apikey, KEY);
       assert.equal(init.headers.Authorization, 'Bearer ' + KEY);
       const path = u.slice((SB + '/rest/v1/').length);

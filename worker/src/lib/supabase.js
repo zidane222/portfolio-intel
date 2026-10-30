@@ -12,10 +12,12 @@ export function makeSupabase(env, {timeoutMs = 8000} = {}) {
   async function send(op, path, init) {
     let r;
     try {
-      r = await fetch(`${base}/rest/v1/${path}`, {...init, redirect: 'error', signal: AbortSignal.timeout(timeoutMs)});
+      // Workers' fetch rejects redirect: 'error', so use 'manual' and refuse any redirect below
+      r = await fetch(`${base}/rest/v1/${path}`, {...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs)});
     } catch (e) {
       throw new Error(`Supabase ${op} failed: network`);
     }
+    if (r.status >= 300 && r.status < 400) { try { await r.body?.cancel(); } catch { /* ignore */ } throw new Error(`Supabase ${op} failed: redirect`); }
     if (!r.ok) { try { await r.body?.cancel(); } catch { /* ignore */ } throw new Error(`Supabase ${op} failed: ${r.status}`); }
     if (r.status === 204) return null;
     const text = await r.text();

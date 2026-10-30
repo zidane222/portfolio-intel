@@ -158,7 +158,7 @@ async function fetchText(env) {
     if (hit) return await hit.text();
   } catch { /* cache is best effort */ }
   try {
-    const r = await fetch(url, {redirect: 'error', signal: AbortSignal.timeout(FETCH_MS), headers: {Accept: 'application/json'}});
+    const r = await fetch(url, {redirect: 'manual', signal: AbortSignal.timeout(FETCH_MS), headers: {Accept: 'application/json'}});
     if (!r.ok) throw new Error('status ' + r.status);
     const ct = r.headers.get('Content-Type') || '';
     if (!/^application\/json\b/i.test(ct)) throw new Error('content type ' + ct.slice(0, 40));
