@@ -29,6 +29,7 @@ SPIKE_MIN_REQUESTS = 200
 ERROR_SPIKE_MIN = 10
 SPIKE_429_MIN = 10
 WARN_403_MIN = 50
+SENATE_MAX_AGE_DAYS = 3
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
 DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
@@ -77,6 +78,14 @@ def evaluate(d, now):
 
     def add(sev, text):
         f.append((sev, text))
+
+    # Senate disclosures are a core feed: missing or stale data is an ALERT
+    sen = d.get("senate") or {}
+    if sen:
+        if not sen.get("count"):
+            add(ALERT, "Senate trades missing from trades.json")
+        elif sen.get("stale") or (sen.get("age_days") is not None and sen["age_days"] > SENATE_MAX_AGE_DAYS):
+            add(ALERT, f"Senate trades are stale: last good data is {sen.get('age_days')} days old (scrape failing)")
 
     cf = d.get("cloudflare") or {}
     sb = d.get("supabase") or {}
@@ -414,6 +423,23 @@ def emit(d, now, write_summary=True):
     return sev, findings, report
 
 
+def collect_senate(now, path="trades.json"):
+    """Senate feed health from the published trades.json in the checkout (counts and dates only)."""
+    try:
+        d = json.load(open(path))
+    except (OSError, ValueError):
+        return {}
+    count = sum(1 for x in d.get("trades", []) if x.get("source") == "senate")
+    asof = d.get("senate_as_of")
+    age = None
+    if asof:
+        try:
+            age = (now.date() - dt.date.fromisoformat(asof)).days
+        except ValueError:
+            age = None
+    return {"count": count, "stale": bool(d.get("senate_stale")), "age_days": age}
+
+
 def main(argv):
     if len(argv) >= 3 and argv[1] == "--fixtures":
         with open(argv[2], encoding="utf-8") as fh:
@@ -437,6 +463,7 @@ def main(argv):
         problems.append(str(e))
     gtoken, repo = env.get("GITHUB_TOKEN", ""), env.get("GITHUB_REPOSITORY", "")
     data["github"] = collect_github(gtoken, repo, now) if gtoken and repo else {}
+    data["senate"] = collect_senate(now)
     if problems:
         for p in problems:
             print(f"::error::SOC monitor cannot reach a source: {p}")

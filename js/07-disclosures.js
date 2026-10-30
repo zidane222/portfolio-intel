@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────
 //  DISCLOSURES FEED
 // ─────────────────────────────────────────────
+let senateNote = '';
 async function loadTrades() {
   let d = null;
   try { d = await getJSON('./trades.json?v=' + Math.floor(Date.now() / 3.6e6)); }
@@ -8,6 +9,7 @@ async function loadTrades() {
   if (d && Array.isArray(d.trades)) {
     trades = d.trades.filter(t => (t.ticker && t.ticker.length <= 6) || (t.private && t.description)).map(t => ({...t, amount: String(t.amount || '').replace(/\s+/g, ' ').replace(/\s*-\s*/, ' - ')})).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     tradesUpdated = d.updated ? new Date(d.updated) : null;
+    senateNote = d.senate_stale && d.senate_as_of ? ` · Senate trades as of ${new Date(d.senate_as_of + 'T12:00:00').toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} (the Senate site is blocking updates)` : '';
   }
   buildPelosiRef();
   if (REF.pelosi.some(h => !prices[h.ticker])) loadPrices().then(loadHistory);
@@ -40,7 +42,7 @@ function renderFeed() {
   if (feedAdv.flagged) list = list.filter(t => flags[tradeKey(t)]);
   const advOn = fm || feedAdv.sector || feedAdv.type || feedAdv.size || feedAdv.flagged;
   const fresh = lastVisit ? trades.filter(t => (t.filed || '') > lastVisit).length : 0;
-  $('feed-lede').innerHTML = (tradesUpdated ? `${trades.length} recent trades · filings checked ${esc(ago(tradesUpdated))}` : 'Congressional trades, as filed.') + (fresh ? `<span class="new-dot">${fresh} new since your last visit</span>` : '');
+  $('feed-lede').innerHTML = (tradesUpdated ? `${trades.length} recent trades · filings checked ${esc(ago(tradesUpdated))}${esc(senateNote)}` : 'Congressional trades, as filed.') + (fresh ? `<span class="new-dot">${fresh} new since your last visit</span>` : '');
 
   const feed = $('feed');
   if (feedFilter === 'trump') { renderTrumpFeed(feed); return; }
