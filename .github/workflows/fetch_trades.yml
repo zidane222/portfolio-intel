@@ -44,15 +44,25 @@ jobs:
       - name: Scrape Senate PTR filings
         continue-on-error: true
         run: |
-          python3 scripts/senate_ptr.py --since "$(date +%Y)-01-01" --out senate.json
-          python3 - <<'PYEOF'
-          import json
+          # On success, save the result as the last good copy; on failure, keep serving the last good copy.
+          if python3 scripts/senate_ptr.py --since "$(date +%Y)-01-01" --out senate.json && [ "$(python3 -c "import json;print(len(json.load(open('senate.json'))))")" -gt 0 ]; then
+            python3 -c "import json,datetime;json.dump({'as_of':datetime.date.today().isoformat(),'trades':json.load(open('senate.json'))},open('senate_last.json','w'),separators=(',',':'))"
+            SENATE_STALE=""
+          else
+            echo "::warning::Senate scrape failed; serving the last good Senate data from senate_last.json"
+            SENATE_STALE=1
+          fi
+          SENATE_STALE="$SENATE_STALE" python3 - <<'PYEOF'
+          import json, os
           d = json.load(open('trades.json'))
-          senate = json.load(open('senate.json'))
-          d['trades'] = sorted(d['trades'] + senate, key=lambda t: t.get('date', ''), reverse=True)
+          last = json.load(open('senate_last.json'))
+          senate = last['trades']
+          d['trades'] = sorted([t for t in d['trades'] if t.get('source') != 'senate'] + senate, key=lambda t: t.get('date', ''), reverse=True)
           d['senate_count'] = len(senate)
+          d['senate_as_of'] = last['as_of']
+          d['senate_stale'] = bool(os.environ.get('SENATE_STALE'))
           json.dump(d, open('trades.json', 'w'))
-          print(f"Added {len(senate)} Senate trades")
+          print(f"::notice::Senate: {len(senate)} trades as of {last['as_of']}{' (stale, scrape failed)' if d['senate_stale'] else ''}")
           PYEOF
 
       - name: Google Cloud sign-in (for the BigQuery archive)
@@ -323,6 +333,6 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add trades.json
-          git add trump_filings.json sectors.json smart_money.json insiders.json yields.json data_cache 2>/dev/null || true
+          git add trump_filings.json sectors.json smart_money.json insiders.json yields.json senate_last.json data_cache 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           git push
