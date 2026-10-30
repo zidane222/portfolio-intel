@@ -88,8 +88,11 @@ def evaluate(d, now):
         elif sen.get("stale") or (sen.get("age_days") is not None and sen["age_days"] > SENATE_MAX_AGE_DAYS):
             add(ALERT, f"Senate trades are stale: last good data is {sen.get('age_days')} days old (scrape failing)")
         hc = sen.get("house_check") or {}
+        oc, of = hc.get("ours_checked") or 0, hc.get("ours_found_in_fmp") or 0
+        if oc >= 10 and of / oc < FMP_MATCH_MIN:
+            add(WARN, f"FMP accuracy check: FMP has only {of} of {oc} recent trades from the official House data")
         if (hc.get("checked") or 0) >= 10 and hc.get("rate") is not None and hc["rate"] < FMP_MATCH_MIN:
-            add(WARN, f"FMP accuracy check: only {hc['matched']} of {hc['checked']} recent FMP House trades match the official House data")
+            add(WARN, f"House scraper gap: only {hc['matched']} of {hc['checked']} recent House trades listed by FMP are in our official House scrape")
 
     cf = d.get("cloudflare") or {}
     sb = d.get("supabase") or {}
