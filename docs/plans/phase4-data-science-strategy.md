@@ -452,3 +452,100 @@ additive and can stay.
 
 1. Committee analysis: yes, as a follow-up after v1 runs cleanly, using public committee data.
 2. Published findings use aggregates only. No individual members are named.
+
+## Contract
+
+This is what the weekly job actually writes (`scripts/analytics/run.py`), and what the Insights page reads.
+It follows sections 7.1 and 7.2 with the differences listed here. The code lives in `scripts/analytics/`
+(not `analytics/` as in section 3.1); `python3 -m unittest discover -s scripts/analytics/tests -t .` runs the tests.
+
+Sources, both with identical shape:
+
+- Gateway: `GET /api/insights` and `GET /api/insights/strategies`. The service adds two top-level keys, `served_asof` (ISO time) and `stale` (bool, older than 10 days). Render returns `503 {"error":"Insights unavailable"}`.
+- Static fallback, same origin: `/insights.json` and `/strategies.json` (no `served_asof`, no `stale`; compute staleness from `generated`).
+
+Rules for reading both files:
+
+- All text fields (`label`, `title`, `summary`, `description`, `name`, caveat `text`) are rendered with `textContent`. They are plain sentences with no markup. Never build links from the files.
+- All percent values are plain numbers in percent units, rounded to 2 decimals (`4.1` means 4.1 percent or 4.1 percentage points). `null` means not available: show a dash, never zero.
+- `label` is always shown. In `strategies.json`, `label` and the word "Simulated" are not hideable.
+- Empty arrays are valid (`findings: []`, `runs: []`). The files ship as empty placeholders until the first weekly run. Empty `findings` shows "No result passed all tests this week. N tests were run." where N is `tests_run.confirmatory + tests_run.exploratory`.
+
+### insights.json (`pi/insights/v1`)
+
+```
+schema, method_version ("ds-1"), generated, code_version, label
+data_asof: {trades, prices, news_verdicts}            // dates or null
+params:    {fdr_q, split_date, primary_horizon_days, cost_bps_roundtrip, resamples, seed, price_basis}
+coverage:  {trades_total, events_used, tickers_priced, dropped: {no_ticker, bad_dates, no_price, too_recent}}
+tests_run: {confirmatory, exploratory}
+findings[]: {
+  id, analysis ("A1","A2","A3","A5","A6"), family ("confirmatory"|"exploratory"), title, summary,
+  statistic: "mean_excess" | "mean_difference" | "slope_span",
+  subject: {chamber|null, tx_type, member (always null), sector|null, bucket|null},
+  horizon_days, entry ("filing_next_close"),
+  n_events, n_months, n_tickers,
+  mean_excess_pct,                 // the statistic in percentage points
+  ci95_pct: [lo, hi],              // plain 95 percent interval
+  ci_adj_pct: [lo, hi], ci_adj_level,   // interval at the family-adjusted level used for the decision
+  net_mean_excess_pct,             // after the 50 bps round-trip cost
+  p_adj,                           // Benjamini-Hochberg adjusted
+  placebo_pct|null,                // A1 only: 95th percentile of random-pick cohort means
+  holdout: {n_events, mean_excess_pct, p_one_sided, replicates (always true in a finding)},
+  not_achievable_trade_date_pct|null,   // A1 and A2 only; label it "not achievable" if shown
+  caveats[]                        // ids found in the top-level caveats list
+}
+tested[]: {id, analysis, horizon_days, status ("no_evidence"|"unstable"|"insufficient_data"|"finding"),
+           n_events, mean_excess_pct|null, ci95_pct|null, reason}      // confirmatory family only
+scan_summary: {members: {eligible, tested, findings}, sectors: {eligible, tested, findings}}   // counts only, no names
+descriptive: {filing_delay_buckets: [{bucket, n, trade_to_filing_excess_pct|null}],
+              size_buckets: [{bucket, n, mean_excess_pct_90d|null}]}     // label as descriptive; null when n < 100
+news_stance: {status ("gated"|"open_not_analysed"), scored, needed, distinct_days, days_needed}   // show progress bar scored/needed
+caveats[]: {id, text}
+```
+
+`statistic` tells the page how to word the number: `mean_excess` is the average return above SPY; `mean_difference` (A3, fast filers minus slow filers) is a difference of two averages; `slope_span` (A6) is the change in excess return from the smallest to the largest disclosed size range. `findings` is sorted by `id`.
+
+### strategies.json (`pi/strategies/v1`)
+
+```
+schema, method_version ("st-1"), generated, label, benchmark ("SPY")
+data_asof: {prices, trades}
+assumptions: {entry, cost_bps_per_side: {stock, etf}, cash_return, taxes, price_basis, filing_delay, common_window_start}
+strategies_tried (6)
+runs[]: {                                   // nine runs
+  id, name (ends with "(simulated)"), family ("copy"|"etf"), rules (["simulated"]), description (starts "Simulated."),
+  params: {...},                            // free-form key/value, show as text
+  period: {start, end},
+  metrics: {full: {cagr_pct, vol_pct, max_dd_pct, sharpe|null, turnover_x, avg_invested_pct, trades},
+            common: {cagr_pct, vol_pct, max_dd_pct, sharpe|null}},
+  benchmark_metrics: {full: {cagr_pct, vol_pct, max_dd_pct, sharpe|null}, common: {...}},
+  relative: {excess_cagr_pct, excess_cagr_ci95_pct: [lo, hi], beta|null, alpha_ann_pct|null, info_ratio|null},
+  sensitivity: {cost_x2_cagr_pct, trade_date_hypothetical_cagr_pct|null},   // the second is "not achievable"; null for ETF runs
+  holdout: {start, excess_cagr_pct, same_sign}|null,
+  evidence: "ahead" | "behind" | "not_distinguishable",
+  curve: {dates[], strategy[], benchmark[]},   // month-end growth of 100, equal lengths
+  caveats[],
+  reference_in_sample?: {cagr_pct, label}      // copy-top-members only: show with its label, "reference, not evidence"
+}
+caveats[]: {id, text}
+```
+
+Run ids: `copy-senate-buys`, `copy-house-buys`, `copy-top-members` (members are never named), `momentum-sectors`,
+`dividend-basket`, `tbill-proxy`, `balanced-annual`, `balanced-never`, `balanced-band`.
+Evidence wording for the page (words, no green or red): `ahead` is "ahead of SPY over this period and in the hold-out period",
+`behind` is the mirror, `not_distinguishable` is "not statistically distinguishable from SPY".
+
+### Ask integration facts (for reference)
+
+Evidence keys the data agent emits: `insight:<id>:mean_excess_pct|ci_low|ci_high|n_events|holdout_mean` (rules `historical`),
+`strategy:<id>:cagr|vol|max_dd|sharpe|benchmark_cagr|excess_cagr|evidence|period` (rules `simulated`), `insights:tests_run`,
+`insights:findings_count`, `insights:label`, `strategy:label`, `caveat:<id>`. The benchmark keys are namespaced per run
+(`strategy:<id>:benchmark_cagr`) because each run has its own dates, so one `benchmark:SPY:cagr` key would conflict across runs.
+
+### Deviations from sections 5 and 6 decided while building (for architect and owner review)
+
+1. Python lives in `scripts/analytics/`; prices and trades are joined in pandas (two BigQuery reads, about 100 MB), not in SQL, so every step is testable offline. Bytes per run are lower than the section 12 estimate.
+2. Hold-out replication also requires the hold-out effect, net of cost, to reach half the practical floor. Without it, a pre-2024-only effect passed on a 0.5 point hold-out mean (test T6).
+3. A7 (news stance vs returns) publishes the gate and progress only. The test itself is not built because the hold-out sample cannot exist yet. `news_stance.status` becomes `open_not_analysed` when the gate opens.
+4. Null-world test: 100 seeds measured 0 confirmatory and 3 exploratory false findings (3 percent, within the 10 percent FDR target). The unit test runs 40 seeds by default (`PI_NULL_SEEDS=200` for the full set) and asserts zero confirmatory findings in the fixed seeds 100 to 119 and at most 10 percent of seeds with any finding. It does not assert zero exploratory findings in every fixed seed, because the method allows about 10 percent by design.

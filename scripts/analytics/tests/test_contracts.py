@@ -34,7 +34,7 @@ class Contracts(unittest.TestCase):
             self.assertIsNone(f['subject']['member'])
             self.assertTrue(f['holdout']['replicates'])
         blob = json.dumps(ins) + json.dumps(st)
-        self.assertNotRegex(blob, '[–—]')
+        self.assertNotRegex(blob, '[\u2013\u2014]')
 
     def test_summary_numbers_come_from_fields(self):
         ins, st = docs()
@@ -47,7 +47,7 @@ class Contracts(unittest.TestCase):
         ins, st = docs()
         cases = []
         a = copy.deepcopy(ins); a['findings'][0]['summary'] += ' You should buy this.'; cases.append(a)
-        b = copy.deepcopy(ins); b['findings'][0]['title'] = 'Senate — purchases'; cases.append(b)
+        b = copy.deepcopy(ins); b['findings'][0]['title'] = 'Senate \u2014 purchases'; cases.append(b)
         c = copy.deepcopy(ins); c['label'] = 'Historical analysis.'; cases.append(c)
         d = copy.deepcopy(ins); d['findings'][0]['mean_excess_pct'] = float('nan'); cases.append(d)
         e = copy.deepcopy(ins); e['findings'][0]['holdout']['replicates'] = False; cases.append(e)

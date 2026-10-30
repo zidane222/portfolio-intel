@@ -8,7 +8,7 @@ from . import config as C
 
 ADVICE = re.compile(r"\b(you should|we recommend|i recommend|recommended|should (?:buy|sell|copy|invest)|buy now|sell now|will beat|will outperform|"
                     r"expected to outperform|best strategy|guarantee[ds]?|can'?t lose|risk[- ]free return|sure thing|beat the market)\b", re.I)
-DASH = re.compile('[–—]')
+DASH = re.compile('[\u2013\u2014]')
 NUM = re.compile(r'\d+(?:\.\d+)?')
 CONSTANTS = {95.0, 2024.0, 15.0, 30.0, 0.0, 12.0, 1.0, 40.0, 60.0, 5.0, 100.0}  # fixed words in templates: 95 percent, 2024, 15 days, 60/40, ...
 EVIDENCE = {'ahead', 'behind', 'not_distinguishable'}
