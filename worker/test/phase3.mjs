@@ -81,7 +81,9 @@ export default async function ({t, worker, env, O, withServices, bind}) {
   // 2 mode
   await t('p3 mode: thin, collaborate, debate, one publisher, social half weight', async () => {
     assert.equal(chooseMode(buildPack('NVDA', DEBATE_HEADS.slice(0, 2), NOW)).mode, 'thin');
-    assert.equal(chooseMode(buildPack('NVDA', [H('Nvidia beats estimates', 'CNBC'), H('Analysts discuss roadmap', 'X', 2), H('Event recap for investors', 'Y', 3)], NOW)).mode, 'thin');
+    // Enough news but the word list reads tone in only one headline: debate, not thin (UAT: NVDA came back thin)
+    assert.equal(chooseMode(buildPack('NVDA', [H('Nvidia beats estimates', 'CNBC'), H('Analysts discuss roadmap', 'X', 2), H('Event recap for investors', 'Y', 3)], NOW)).mode, 'debate');
+    assert.equal(chooseMode(buildPack('NVDA', [H('Nvidia keynote set for Tuesday', 'CNBC'), H('What to know about Nvidia earnings', 'Reuters', 2), H('Nvidia CEO speaks at conference', 'WSJ', 3)], NOW)).mode, 'debate');
     const c = chooseMode(buildPack('AAPL', COLLAB_HEADS, NOW));
     assert.equal(c.mode, 'collaborate'); assert.equal(c.P, 4); assert.equal(c.pubs_pos, 4);
     assert.equal(chooseMode(buildPack('NVDA', DEBATE_HEADS, NOW)).mode, 'debate');
