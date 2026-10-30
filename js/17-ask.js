@@ -63,6 +63,10 @@ function buildPortfolio() {
   };
 }
 // Calls the supervisor. Returns {text, sources, check, mode}: mode is 'checked', 'fallback' or 'plain' (old /api/ai path).
+// The server adds this to every checked answer (validator V7). The app shows it once, at the top of the chat
+// and under Ask, so it is not repeated on each message. Simulated labels stay on the answers they belong to.
+const ASK_DISCLAIMER = 'This is general information from the sources listed, not personalized investment advice. Simulated or past results do not predict future returns.';
+const stripDisclaimer = s => String(s || '').split(ASK_DISCLAIMER).join('').replace(/\n{3,}/g, '\n\n').trim();
 async function askChecked(question, history) {
   try {
     const hist = (history || []).filter(m => m && m.text).slice(-6).map(m => ({role: m.role === 'user' ? 'user' : 'assistant', text: String(m.text).slice(0, 600)}));
@@ -76,7 +80,7 @@ async function askChecked(question, history) {
     // intent news_read: the gateway adds the read record (contract 6.4); it is rendered by readCard()
     const read = d.intent === 'news_read' && d.read && typeof d.read === 'object' ? d.read : null;
     if (read) keepRead(read);
-    if (status === 'PASS') return {text: d.answer.trim(), sources, check: 'PASS', mode: 'checked', read};
+    if (status === 'PASS') return {text: stripDisclaimer(d.answer), sources, check: 'PASS', mode: 'checked', read};
     return {text: '', sources, check: status || 'fallback', mode: 'fallback', read};
   } catch (e) {
     return {text: await askAI(question, history), sources: [], check: null, mode: 'plain', read: null};

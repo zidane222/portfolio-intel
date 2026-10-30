@@ -21,12 +21,13 @@ function chatSuggestions() {
 }
 function renderChat() {
   const box = $('as-msgs');
+  const note = `<p class="as-note" role="note">${esc(ASK_DISCLAIMER)}</p>`;
   if (!chat.length) {
-    box.innerHTML = `<div class="as-hello"><div class="as-hi">Hi, how can I help?</div><div class="as-sub">I can see your portfolio, live prices, Congress filings, insider buys and cash rates.</div>
+    box.innerHTML = note + `<div class="as-hello"><div class="as-hi">Hi, how can I help?</div><div class="as-sub">I can see your portfolio, live prices, Congress filings, insider buys and cash rates.</div>
       <div class="as-chips">${chatSuggestions().map(q => `<button type="button" class="as-chip">${esc(q)}</button>`).join('')}</div></div>`;
     box.querySelectorAll('.as-chip').forEach(b => b.onclick = () => sendChat(b.textContent));
   } else {
-    box.innerHTML = (chat.restored ? '<p class="as-note" role="note">Answers are not saved after a reload. Your earlier questions are below.</p>' : '')
+    box.innerHTML = note + (chat.restored ? '<p class="as-note" role="note">Answers are not saved after a reload. Your earlier questions are below.</p>' : '')
       + chat.map(m => `<div class="as-m ${chatRole(m.role)}"><div class="as-b">${m.text ? `<div class="as-t">${esc(m.text)}</div>` : ''}${m.role === 'bot' && m.mode ? `<div class="as-check">${checkHTML(m)}</div>${sourcesBlock(m.sources, m.mode === 'fallback')}` : ''}${m.role === 'bot' && m.read ? readCard(m.read, {title: true}) : ''}</div></div>`).join('')
       + (chat.busy ? '<div class="as-m bot"><div class="as-b as-typing" aria-label="Thinking"><span></span><span></span><span></span></div></div>' : '');
   }
