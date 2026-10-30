@@ -21,7 +21,7 @@ function chatSuggestions() {
 }
 function renderChat() {
   const box = $('as-msgs');
-  const note = `<p class="as-note" role="note">${esc(ASK_DISCLAIMER)}</p>`;
+  const note = `<p class="as-fine" role="note">${esc(ASK_DISCLAIMER)}</p>`;
   if (!chat.length) {
     box.innerHTML = note + `<div class="as-hello"><div class="as-hi">Hi, how can I help?</div><div class="as-sub">I can see your portfolio, live prices, Congress filings, insider buys and cash rates.</div>
       <div class="as-chips">${chatSuggestions().map(q => `<button type="button" class="as-chip">${esc(q)}</button>`).join('')}</div></div>`;
