@@ -1,0 +1,60 @@
+name: Insights (weekly data science and strategy backtests)
+
+# Reads trades and prices from BigQuery, writes insights.json and strategies.json to the repo root on main.
+# Push on analytics code runs the tests and a dry run (artifact only, no commit). No Groq, no secrets printed.
+on:
+  schedule:
+    - cron: '30 7 * * 0'   # Sundays 07:30 UTC, after the 06:00 daily load
+  workflow_dispatch:
+  push:
+    paths: ['scripts/analytics/**', '.github/workflows/insights.yml']
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: insights
+  cancel-in-progress: false
+
+jobs:
+  insights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet -r scripts/analytics/requirements.txt
+      - name: Offline tests (a failure stops the job)
+        run: python3 -m unittest discover -s scripts/analytics/tests -t . -v
+      - name: Google Cloud sign-in
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
+          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
+      - name: Run analysis (lint runs inside; a lint failure writes nothing)
+        run: python3 -m scripts.analytics.run --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: insights
+          path: out/*.json
+          retention-days: 14
+      - name: Commit the two files
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp out/insights.json insights.json
+          cp out/strategies.json strategies.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add insights.json strategies.json
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -m "Insights: weekly results"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 5
+          done
+          exit 1
