@@ -15,8 +15,9 @@ const FEEDS = [
 ];
 
 const tag = (s, name) => { const m = s.match(new RegExp(`<${name}\\b[^>]*>([\\s\\S]*?)</${name}>`, 'i')); return m ? m[1] : ''; };
-// Strip tags, decode entities, then drop any angle brackets the decoding produced, so no markup survives
-const clean = s => unescapeHtml(String(s).replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '')).replace(/[<>]/g, '').trim();
+// Strip tags until none are left, decode entities, then drop any angle brackets the decoding produced
+const stripTags = s => { let prev; do { prev = s; s = s.replace(/<[^<>]*>/g, ''); } while (s !== prev); return s; };
+const clean = s => unescapeHtml(stripTags(String(s).replace(/<!\[CDATA\[|\]\]>/g, ''))).replace(/[<>]/g, '').trim();
 
 function toIso(raw) {
   const d = new Date(String(raw).trim());
