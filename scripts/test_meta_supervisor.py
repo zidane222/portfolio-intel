@@ -266,6 +266,157 @@ class InsightsCheck(unittest.TestCase):
         self.assertTrue(any(s == m.ALERT and "insights.json" in t for s, t in findings))
 
 
+class ReconciliationCheck(unittest.TestCase):
+    BASE = {"updated": "2026-10-30T06:20:00+00:00", "senate_official_count": 0, "senate_official_in_fmp": 0,
+            "senate_stale": False, "senate_as_of": "2026-10-30",
+            "fmp_house_check": {"ours_checked": 45, "ours_found_in_fmp": 44, "checked": 90, "matched": 88,
+                                "matched_other_symbol": 3, "miss_causes": {}, "misses": []},
+            "house_parse_report": {"filings": 455, "empty": [], "date_suspect": 0}}
+
+    def run_check(self, mutate=None):
+        d = copy.deepcopy(self.BASE)
+        if mutate:
+            mutate(d)
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+            json.dump(d, tf)
+        try:
+            return m.check_reconciliation(NOW, tf.name)
+        finally:
+            os.unlink(tf.name)
+
+    def worst(self, findings):
+        return max((s for s, _ in findings), key=lambda s: m.RANK[s])
+
+    def test_healthy_is_ok(self):
+        f = self.run_check()
+        self.assertEqual(self.worst(f), m.OK)
+        self.assertTrue(any("3 under a different symbol" in t for _, t in f))
+        self.assertTrue(any("Senate data is FMP only" in t for _, t in f))
+
+    def test_low_completeness_alerts_and_mid_warns(self):
+        self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(matched=48))), m.ALERT)
+        self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(matched=80))), m.WARN)
+
+    def test_low_fmp_accuracy_warns(self):
+        self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(ours_found_in_fmp=41))), m.WARN)
+
+    def test_small_sample_not_judged(self):
+        f = self.run_check(lambda d: d["fmp_house_check"].update(checked=5, matched=1, ours_checked=3, ours_found_in_fmp=0))
+        self.assertEqual(self.worst(f), m.OK)
+
+    def test_member_with_no_trades_alerts_with_name(self):
+        miss = lambda c: {"fmp": ["mccaul", "VVV", "2026-08-19", "Purc"], "cause": c}
+        f = self.run_check(lambda d: d["fmp_house_check"].update(misses=[miss("member_has_no_trades_in_our_data")] * 3))
+        self.assertTrue(any(s == m.ALERT and "mccaul: 3 trade(s)" in t for s, t in f))
+        one = self.run_check(lambda d: d["fmp_house_check"].update(misses=[miss("member_has_no_trades_in_our_data")]))
+        self.assertTrue(any(s == m.WARN and "mccaul: 1" in t for s, t in one))
+        unread = self.run_check(lambda d: d["fmp_house_check"].update(misses=[miss("member_has_no_trades_in_our_data_filing_unreadable")]))
+        self.assertTrue(any(s == m.WARN and "could not read" in t for s, t in unread))
+
+    def test_unreadable_filings_and_dates_warn(self):
+        def mut(d):
+            d["house_parse_report"].update(date_suspect=2, empty=[
+                {"name": "McCaul, Michael T.", "reason": "no text layer, likely a scanned paper filing (12 pages)"},
+                {"name": "Doe, Jane", "reason": "download failed (ReadTimeout)"},
+                {"name": "Roe, Rick", "reason": "no transaction rows recognized"}])
+        f = self.run_check(mut)
+        warn = [t for s, t in f if s == m.WARN]
+        ok = [t for s, t in f if s == m.OK]
+        # Year-long known gaps are notes, not daily warnings; transient download or parse failures warn
+        self.assertTrue(any("1 scanned paper filing(s) this year not read, needs OCR (McCaul, Michael T.)" in t for t in ok))
+        self.assertTrue(any("1 filing(s) failed to download or parse (Doe, Jane)" in t for t in warn))
+        self.assertTrue(any("2 trade(s) this year dated after" in t for t in ok))
+
+    def test_names_are_plain_text(self):
+        def mut(d):
+            d["house_parse_report"]["empty"] = [{"name": "<img src=x>[link](http://e)", "reason": "parse error (X)"}]
+        t = " ".join(t for _, t in self.run_check(mut))
+        self.assertNotIn("<", t); self.assertNotIn("[", t)
+
+    def test_senate_official_compared_when_available(self):
+        f = self.run_check(lambda d: d.update(senate_official_count=40, senate_official_in_fmp=30))
+        self.assertTrue(any(s == m.WARN and "30 of 40" in t for s, t in f))
+        self.assertEqual(self.worst(self.run_check(lambda d: d.update(senate_official_count=40, senate_official_in_fmp=39))), m.OK)
+
+    def test_senate_stale_left_to_soc_monitor(self):
+        self.assertEqual(self.worst(self.run_check(lambda d: d.update(senate_stale=True))), m.OK)
+
+    def test_old_data_and_missing_check_warn(self):
+        self.assertEqual(self.worst(self.run_check(lambda d: d.update(updated="2026-10-28T06:00:00+00:00"))), m.WARN)
+        self.assertEqual(self.worst(self.run_check(lambda d: d.pop("fmp_house_check"))), m.WARN)
+
+    def test_missing_file_alerts(self):
+        self.assertEqual(m.check_reconciliation(NOW, "/nonexistent/trades.json")[0][0], m.ALERT)
+
+    def test_producer_reason_strings(self):
+        # Exact strings house_ptr.py writes; partial parse errors count as failed, empty-row reasons are not flagged
+        def mut(d):
+            d["house_parse_report"]["empty"] = [
+                {"name": "A, B", "reason": "parse error (KeyError) after 3 rows", "partial": True},
+                {"name": "C, D", "reason": "download failed (HTTPError 503)", "partial": False},
+                {"name": "E, F", "reason": "no text layer, likely a scanned paper filing (2 pages)", "partial": False},
+                {"name": "G, H", "reason": "no transaction rows recognized", "partial": False},
+                {"name": "I, J", "reason": "no PDF link in search results"}]
+        f = self.run_check(mut)
+        texts = [t for s, t in f if s == m.WARN]
+        self.assertTrue(any("2 filing(s) failed to download or parse (A, B, C, D)" in t for t in texts))
+        self.assertTrue(any(s == m.OK and "1 scanned" in t for s, t in f))
+        self.assertFalse(any("G, H" in t or "I, J" in t for t in texts))
+
+    def test_updated_in_house_ptr_format_is_fresh(self):
+        import datetime as _d
+        stamp = (NOW - _d.timedelta(hours=8)).isoformat()  # house_ptr: datetime.now(timezone.utc).isoformat()
+        f = self.run_check(lambda d: d.update(updated=stamp))
+        self.assertFalse(any("hours old" in t or "no readable" in t for _, t in f))
+
+    def test_naive_or_bad_updated_does_not_crash(self):
+        # A time with no zone is read as UTC; anything unreadable warns. Neither may crash.
+        f = self.run_check(lambda d: d.update(updated="2026-10-30T06:20:00"))
+        self.assertFalse(any("hours old" in t or "no readable" in t for _, t in f))
+        for bad in (12345, None, "garbage"):
+            f = self.run_check(lambda d: d.update(updated=bad))
+            self.assertTrue(any(s == m.WARN and "no readable" in t for s, t in f), bad)
+
+    def test_senate_blocked_every_day_is_not_noisy(self):
+        # Official site blocked since 2026-10-23: workflow writes count 0, stale False
+        f = self.run_check(lambda d: d.update(senate_official_count=0, senate_official_in_fmp=0, senate_stale=False))
+        self.assertTrue(all(s == m.OK for s, t in f if t.startswith("Senate")))
+
+    def test_contract_with_senate_fmp_house_check(self):
+        # Feed the real producer's output into check D
+        import senate_fmp as sf
+        import tempfile
+        ours = [{"representative": "Sessions, Pete", "ticker": "VZ", "date": "2026-10-02", "type": "Sale",
+                 "filed": "2026-10-27", "source": "house"}]
+        fmp = [{"symbol": "BXPE", "transactionDate": "2026-08-20", "lastName": "McCaul", "type": "Purchase", "disclosureDate": "2026-10-16"},
+               {"symbol": "XOM", "transactionDate": "2026-08-21", "lastName": "McCaul", "type": "Purchase", "disclosureDate": "2026-10-16"}]
+        src = {"trades": ours, "house_parse_report": {"empty": [{"name": "McCaul, Michael T.", "reason": "no text layer, likely a scanned paper filing (4 pages)"}]}}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+            json.dump(src, tf)
+        try:
+            with patch.object(sf, "fetch_latest", return_value=fmp):
+                hc = json.loads(json.dumps(sf.house_check(tf.name, "k")))
+        finally:
+            os.unlink(tf.name)
+        f = self.run_check(lambda d: d.update(fmp_house_check=hc))
+        self.assertTrue(any(s == m.WARN and "mccaul: 2 trade(s)" in t and "could not read" in t for s, t in f))
+        self.assertTrue(any("member has no trades in our data filing unreadable 2" in t for _, t in f))
+
+
+class ReconciliationNeverStopsRun(unittest.TestCase):
+    def test_crash_in_check_d_becomes_alert(self):
+        with patch("meta_supervisor.check_canary", return_value=[]), \
+             patch("meta_supervisor.check_insights_files", return_value=[]), \
+             patch("meta_supervisor.check_reconciliation", side_effect=AttributeError("x")), \
+             patch("meta_supervisor.sync_issue") as sync, \
+             patch.dict(os.environ, {"GITHUB_TOKEN": "t", "GITHUB_REPOSITORY": "o/r"}, clear=True), \
+             patch("sys.stdout", new=__import__("io").StringIO()):
+            self.assertEqual(m.main(), 0)
+        self.assertEqual(sync.call_args[0][3], m.ALERT)
+        self.assertIn("reconciliation: check failed on trades.json (AttributeError)", sync.call_args[0][4])
+
+
 class OverallSeverity(unittest.TestCase):
     def test_alert_beats_warn_and_ok(self):
         findings = [(m.OK, "a"), (m.WARN, "b"), (m.ALERT, "c")]
@@ -320,6 +471,7 @@ class SecretsNotLeaked(unittest.TestCase):
              patch("requests.get", return_value=_make_response(200, _GOOD_VERDICTS)), \
              patch("meta_supervisor.sync_issue", side_effect=fake_sync), \
              patch("meta_supervisor.check_insights_files", return_value=[(m.OK, "ok")]), \
+             patch("meta_supervisor.check_reconciliation", return_value=[(m.OK, "ok")]), \
              patch.dict(os.environ, env, clear=True), \
              patch("sys.stdout", output), \
              patch("meta_supervisor.dt") as mock_dt:

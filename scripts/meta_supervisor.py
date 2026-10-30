@@ -5,6 +5,8 @@ Checks:
   A. Validator canary  - runs lineSafe() via Node and verifies known-bad and known-safe lines.
   B. News judge health - reads yesterday's news_verdicts from Supabase PostgREST.
   C. Insights files    - verifies labels, SIMULATED tag and freshness of insights.json and strategies.json.
+  D. Source reconciliation - judges the daily cross-check between official House and Senate records
+     and FMP, from trades.json on main. The trades job computes it; this check owns the verdict.
 
 Stdlib + requests only. No AI. No LLM calls.
 Secrets only from env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN, GITHUB_REPOSITORY.
@@ -217,13 +219,109 @@ def check_insights_files(now):
     return findings
 
 
+# ---------------------------------------------------------------- D: source reconciliation
+FMP_ACCURACY_MIN = 0.95      # share of our official House trades FMP also has
+HOUSE_COMPLETE_WARN = 0.95   # share of FMP's House trades our official scrape has
+HOUSE_COMPLETE_ALERT = 0.80
+SENATE_AGREE_MIN = 0.95
+RECON_MAX_AGE_HOURS = 36
+MIN_SAMPLE = 10
+
+
+def _plain(text, n=60):
+    """Names and reasons come from public filings; keep them to plain text in the issue body."""
+    return re.sub(r"[^\w ,.'()/-]", "", str(text))[:n]
+
+
+def check_reconciliation(now, path="trades.json"):
+    """Official records vs FMP, both chambers. Returns list of (severity, text)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except FileNotFoundError:
+        return [(ALERT, "reconciliation: trades.json not found")]
+    except ValueError:
+        return [(ALERT, "reconciliation: trades.json is not valid JSON")]
+    findings = []
+
+    try:
+        ts = dt.datetime.fromisoformat(str(d.get("updated") or "").replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=dt.timezone.utc)
+        age_h = (now - ts).total_seconds() / 3600
+        if age_h > RECON_MAX_AGE_HOURS:
+            findings.append((WARN, f"reconciliation: trades data is {age_h:.0f} hours old, the daily trades job may not have run"))
+    except (ValueError, TypeError):
+        findings.append((WARN, "reconciliation: trades.json has no readable updated time"))
+
+    # House: both directions
+    hc = d.get("fmp_house_check")
+    if not hc:
+        findings.append((WARN, "reconciliation: no House cross-check in trades.json (the FMP step failed or was skipped)"))
+    else:
+        oc, of = hc.get("ours_checked") or 0, hc.get("ours_found_in_fmp") or 0
+        if oc >= MIN_SAMPLE:
+            sev = WARN if of / oc < FMP_ACCURACY_MIN else OK
+            findings.append((sev, f"House, FMP accuracy: FMP has {of} of {oc} recent official House trades ({100 * of / oc:.0f}%)"))
+        checked, matched = hc.get("checked") or 0, hc.get("matched") or 0
+        if checked >= MIN_SAMPLE:
+            rate = matched / checked
+            sev = ALERT if rate < HOUSE_COMPLETE_ALERT else WARN if rate < HOUSE_COMPLETE_WARN else OK
+            other = hc.get("matched_other_symbol") or 0
+            note = f", {other} under a different symbol" if other else ""
+            findings.append((sev, f"House, our completeness: we have {matched} of {checked} recent House trades FMP lists ({100 * rate:.0f}%{note})"))
+        causes = hc.get("miss_causes") or {}
+        if causes:
+            findings.append((OK, "House misses by cause: " + ", ".join(f"{_plain(k).replace('_', ' ')} {_plain(v, 6)}" for k, v in sorted(causes.items()))))
+        # Members FMP shows trading who have no trades at all in our data
+        missing = {}
+        for mi in hc.get("misses") or []:
+            if str(mi.get("cause", "")).startswith("member_has_no_trades"):
+                name = _plain((mi.get("fmp") or ["?"])[0], 30)
+                missing.setdefault(name, [0, False])
+                missing[name][0] += 1
+                missing[name][1] |= mi["cause"].endswith("filing_unreadable")
+        for name, (n, unreadable) in sorted(missing.items()):
+            # Unknown cause with several trades is an alert; a filing we know we cannot read yet is a warning
+            sev = WARN if unreadable or n < 2 else ALERT
+            why = ", our scraper could not read the filing" if unreadable else ""
+            findings.append((sev, f"House member {name}: {n} trade(s) on FMP, none in our data{why}"))
+
+    # House: filings the scraper could not read, and bad dates
+    pr = d.get("house_parse_report") or {}
+    empty = pr.get("empty") or []
+    scanned = [e for e in empty if "scanned" in str(e.get("reason", ""))]
+    failed = [e for e in empty if e not in scanned and str(e.get("reason", "")).startswith(("download failed", "parse error"))]
+    # The parse report covers the whole year, so known gaps are noted, not warned on every day
+    if scanned:
+        names = ", ".join(sorted({_plain(e.get("name"), 30) for e in scanned})[:5])
+        findings.append((OK, f"House: {len(scanned)} scanned paper filing(s) this year not read, needs OCR ({names})"))
+    if failed:
+        names = ", ".join(sorted({_plain(e.get("name"), 30) for e in failed})[:5])
+        findings.append((WARN, f"House: {len(failed)} filing(s) failed to download or parse ({names})"))
+    if pr.get("date_suspect"):
+        findings.append((OK, f"House: {_plain(pr['date_suspect'], 6)} trade(s) this year dated after their filing date"))
+
+    # Senate: the official site only answers on some days; FMP is the fallback
+    oc, of = d.get("senate_official_count") or 0, d.get("senate_official_in_fmp") or 0
+    # Senate staleness is alerted by the SOC monitor; not repeated here
+    if oc >= MIN_SAMPLE:
+        sev = WARN if of / oc < SENATE_AGREE_MIN else OK
+        findings.append((sev, f"Senate, FMP accuracy: FMP has {of} of {oc} trades from the official Senate site ({100 * of / oc:.0f}%)"))
+    elif oc:
+        findings.append((OK, f"Senate: official site returned {oc} trade(s), too few to compare"))
+    else:
+        findings.append((OK, "Senate: official site not checked today (blocked or down), Senate data is FMP only and unverified"))
+    return findings
+
+
 # ---------------------------------------------------------------- report
 def render(now, findings, overall):
     yesterday = (now - dt.timedelta(days=1)).strftime("%Y-%m-%d")
     lines = [
         f"# Meta supervisor: {now:%Y-%m-%d} {overall}",
         "",
-        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files.",
+        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation.",
         "",
         "## Findings",
     ]
@@ -301,6 +399,12 @@ def main():
 
     # C: insights files
     all_findings.extend(check_insights_files(now))
+
+    # D: source reconciliation (official records vs FMP). A malformed trades.json must not stop the run
+    try:
+        all_findings.extend(check_reconciliation(now))
+    except Exception as exc:
+        all_findings.append((ALERT, f"reconciliation: check failed on trades.json ({type(exc).__name__})"))
 
     overall = max((s for s, _ in all_findings), key=lambda s: RANK[s], default=OK)
     report = render(now, all_findings, overall)
