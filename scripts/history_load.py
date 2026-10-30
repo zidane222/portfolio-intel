@@ -85,7 +85,9 @@ def load_trades(paths):
 
 # ── Prices (Yahoo daily closes) ─────────────────────────
 def fetch_prices(ticker, rng):
-    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={rng}&interval=1d'
+    # Yahoo answers range=max with monthly bars; an explicit period keeps daily bars for full history
+    span = f'period1=0&period2={int(time.time())}' if rng == 'max' else f'range={rng}'
+    url = f'https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?{span}&interval=1d'
     for attempt in range(3):
         try:
             r = requests.get(url, headers=UA, timeout=15)
@@ -95,6 +97,8 @@ def fetch_prices(ticker, rng):
             if r.status_code != 200:
                 return []
             res = (r.json().get('chart', {}).get('result') or [{}])[0]
+            if (res.get('meta') or {}).get('dataGranularity', '1d') != '1d':
+                return []  # never mix weekly or monthly bars into the daily table
             closes = ((res.get('indicators', {}).get('quote') or [{}])[0].get('close')) or []
             adj = ((res.get('indicators', {}).get('adjclose') or [{}])[0].get('adjclose')) or []
             adj += [None] * (len(closes) - len(adj))  # adjclose missing or short: leave adj_close null
@@ -111,7 +115,8 @@ def load_prices(tickers, rng):
     with ThreadPoolExecutor(max_workers=6) as pool:
         for rows in pool.map(lambda t: fetch_prices(t, rng), sorted(tickers)):
             out.extend(rows)
-    return out
+    # One row per ticker and day (Yahoo can repeat the latest bar); MERGE and upsert need unique keys
+    return list({(r['ticker'], r['d']): r for r in out}.values())
 
 
 # ── Supabase (rolling 5 years) ──────────────────────────
