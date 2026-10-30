@@ -33,7 +33,10 @@ class BudgetExceeded(Exception):
 def default_config(dry_run, max_bytes, params):
     from google.cloud import bigquery
     qp = [bigquery.ScalarQueryParameter(k, t, v) for k, (t, v) in params.items()]
-    return bigquery.QueryJobConfig(query_parameters=qp, dry_run=dry_run, use_query_cache=not dry_run, maximum_bytes_billed=None if dry_run else max_bytes)
+    cfg = bigquery.QueryJobConfig(query_parameters=qp, dry_run=dry_run, use_query_cache=not dry_run)
+    if not dry_run:  # setting it to None sends the string "None", which BigQuery rejects
+        cfg.maximum_bytes_billed = int(max_bytes)
+    return cfg
 
 
 class BQ:
