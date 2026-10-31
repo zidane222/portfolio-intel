@@ -8,7 +8,7 @@ import * as intentAgent from './intent.js';
 import * as builder from './builder.js';
 import {run as factcheckRun} from './factcheck.js';
 import {validate, validateFinal, lineSafe} from './validator.js';
-import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor, insidersAnswer, disclosuresAnswer} from './render.js';
+import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor, insidersAnswer, disclosuresAnswer, ratesAnswer} from './render.js';
 import {AGENTS, plan} from './registry.js';
 import {validateRenderedRead} from './validator.js';
 import {renderRead, NEWS_LABEL, MESSAGES} from './newsread/render.js';
@@ -178,6 +178,10 @@ export async function runCase(input, env, opts = {}) {
       if (r) return finish(c, t0, {answer: r.text, ids: r.ids, status: 'PASS', flags: [], attempts: 0});
     }
     // Congress trades: same code-built list. The builder kept failing V1/V1b on dollar ranges and dates.
+    if (c.intent.type === 'rates') {
+      const r = ratesAnswer(c.facts, lineSafe);
+      if (r) return finish(c, t0, {answer: r.text, ids: r.ids, status: 'PASS', flags: [], attempts: 0});
+    }
     if (c.intent.type === 'disclosures') {
       const r = disclosuresAnswer(c.facts, lineSafe);
       if (r) return finish(c, t0, {answer: r.text, ids: r.ids, status: 'PASS', flags: [], attempts: 0});
@@ -192,7 +196,11 @@ export async function runCase(input, env, opts = {}) {
       let patch;
       try {
         patch = await timed(c, 'builder', () => builder.run(c, deps, {attempt: attempts, flags, timeoutMs: isRepair ? REPAIR_MS : BUILD_MS}));
-      } catch (e) { break; }
+      } catch (e) {
+        // A failed Groq call (empty or cut-off answer, timeout) gets one more try while time and budget allow.
+        if (attempts < 2 && c.budget.groq_calls < MAX_GROQ_CALLS && remaining(c) >= REPAIR_MS) continue;
+        break;
+      }
       applyPatch(c, 'builder', 'builder', patch);
       const rendered = renderText(c.draft.text, c.facts);
       const v = validate({draft: c.draft, facts: c.facts, question: c.input.question, rendered});

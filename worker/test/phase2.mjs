@@ -261,10 +261,15 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.ok(d.sources.length >= 1 && d.sources.length <= 8);
     assert.ok(d.check.flags.length >= 1);
   });
-  await t('ask: builder error goes to the safe answer', async () => {
-    groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500});
+  await t('ask: builder error twice goes to the safe answer', async () => {
+    groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500}); G.BUILD.push({status: 500});
     const d = await (await ask({question: 'Am I diversified?', portfolio: PORT})).json();
-    assert.equal(d.check.status, 'fallback'); assert.equal(G.calls.length, 2);
+    assert.equal(d.check.status, 'fallback'); assert.equal(G.calls.length, 3);
+  });
+  await t('ask: one builder error is retried once and can still PASS', async () => {
+    groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500}); G.BUILD.push({text: 'Most of your portfolio is in cash.', used: []});
+    const d = await (await ask({question: 'Explain my risk level', portfolio: PORT})).json();
+    assert.equal(d.check.status, 'PASS', JSON.stringify(d.check)); assert.equal(G.calls.length, 3);
   });
   await t('ask: intent invalid JSON or Groq error falls back to rules', async () => {
     groqReset(); G.INTENT.push('not json at all'); G.BUILD.push({text: 'Here is a summary.', used: []});
@@ -300,18 +305,16 @@ export default async function ({t, worker, env, O, withServices, bind}) {
       assert.equal(validateFinal(d.answer).status, 'PASS');
     } finally { globalThis.fetch = orig; }
   });
-  await t('ask: rates intent uses ?cached=1, no extra Groq call', async () => {
+  await t('ask: rates intent uses ?cached=1 and a code-built answer, no Groq call', async () => {
     memClear(); groqReset();
-    G.INTENT.push(intentJSON('rates'));
-    G.BUILD.push(u => ({text: `Your SPAXX yield is [[${idOf(u, 'SPAXX cash yield')}]].`, used: []}));
     const seen = [];
     const e = withServices(env);
     const spy = name => ({fetch: r => { seen.push(name + ' ' + new URL(r.url).pathname + new URL(r.url).search); return e[name].fetch(r); }});
     const e2 = {...e, RATES: spy('RATES'), MARKET: spy('MARKET')};
     const res = await runCase(parseInput(JSON.stringify({question: 'Where should my cash earn more?', portfolio: PORT})), e2);
     assert.deepEqual(seen, ['RATES /api/top-rates?cached=1']);
-    assert.equal(G.calls.length, 2); assert.ok(G.calls.every(c => c.kind !== 'OTHER'));
-    assert.equal(res.check.status, 'PASS');
+    assert.ok(G.calls.every(c => c.kind !== 'INTENT'), 'intent is rules-only');
+    assert.equal(res.check.status, 'PASS', JSON.stringify(res.answer));
   });
   await t('registry: each intent type runs exactly its agents (binding spy)', async () => {
     const e = withServices(env);
