@@ -9,6 +9,7 @@ Caches (committed so each document is fetched once):
 """
 import datetime
 import json
+import math
 import os
 import re
 import time
@@ -33,6 +34,19 @@ TOP_N = 40          # holdings kept per filing
 QUARTERS = 5        # filings kept per investor
 INSIDER_DAYS = 90   # rolling window for insider buys
 INSIDER_MIN = 25000 # ignore tiny purchases
+INSIDER_MAX = 1e9   # no single open-market insider purchase comes near this: larger is a filing or parse error
+
+
+def implausible(sh, px):
+    """A transaction whose numbers cannot be right: not a finite positive number, or worth more than
+    INSIDER_MAX. The known case (LeonaBio, Oct 2026): $3,149.47 a share for 3,149,470 shares, $9.9B."""
+    try:
+        sh, px = float(sh), float(px)
+    except (TypeError, ValueError):
+        return True
+    if not (math.isfinite(sh) and math.isfinite(px)) or sh <= 0 or px <= 0:
+        return True
+    return sh * px > INSIDER_MAX
 
 os.makedirs('data_cache/13f', exist_ok=True)
 
@@ -162,6 +176,9 @@ def parse_form4(txt, filed):
             px = float(text_of(tx, 'transactionPricePerShare') or 0)
         except ValueError:
             continue
+        if implausible(sh, px):
+            print(f'form4 suspect transaction skipped: {re.sub(r"[^A-Z0-9.-]", "", text_of(doc, "issuerTradingSymbol").upper())[:8]} shares {sh:.0f} price {px:.2f}')
+            continue
         buys.append((text_of(tx, 'transactionDate'), sh, px))
     if not buys:
         return None
@@ -218,7 +235,7 @@ def insiders():
     cutoff = (today - datetime.timedelta(days=INSIDER_DAYS)).isoformat()
     uniq = {}
     for b in buys:
-        if b['filed'] >= cutoff:
+        if b['filed'] >= cutoff and not implausible(b.get('shares') or 0, b.get('price') or 0):  # also clears rows stored before this check
             uniq[(b['ticker'], b['owner'], b['date'], b['value'])] = b
     buys = sorted(uniq.values(), key=lambda b: (b['filed'], b['value']), reverse=True)
     # Remember only the last week of checked filings so the file stays small
