@@ -262,11 +262,11 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     assert.ok(d.check.flags.length >= 1);
   });
   await t('ask: builder error twice goes to the safe answer', async () => {
-    groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500}); G.BUILD.push({status: 500});
+    groqReset(); G.INTENT.push(intentJSON('holdings')); for (let i = 0; i < 4; i++) G.BUILD.push({status: 500}); // two tries, each on both models
     const d = await (await ask({question: 'Am I diversified?', portfolio: PORT})).json();
-    assert.equal(d.check.status, 'fallback'); assert.equal(G.calls.length, 3);
+    assert.equal(d.check.status, 'fallback'); assert.equal(G.calls.length, 5);
   });
-  await t('ask: one builder error is retried once and can still PASS', async () => {
+  await t('ask: first model error falls to the second model and can still PASS', async () => {
     groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500}); G.BUILD.push({text: 'Most of your portfolio is in cash.', used: []});
     const d = await (await ask({question: 'Explain my risk level', portfolio: PORT})).json();
     assert.equal(d.check.status, 'PASS', JSON.stringify(d.check)); assert.equal(G.calls.length, 3);

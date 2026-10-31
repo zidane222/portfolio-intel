@@ -1,7 +1,9 @@
 // Groq chat with a fallback model, same behavior as the old Python server.
 // Options (all optional, defaults keep the original behavior):
 //   timeoutMs  per-model request timeout (default 60000)
-//   fallback   false skips the second model (default true)
+//   fallback   false skips the second model (default true). 'fast' tries the second model only
+//              inside the same timeoutMs budget, so a 429 or empty answer from the first model
+//              (Groq limits each model separately) still gets an answer before the caller's deadline.
 //   signal     extra AbortSignal (for example the /api/ask deadline)
 // env.GROQ_MODEL sets the first model (default openai/gpt-oss-120b).
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
@@ -17,12 +19,15 @@ export async function groqChat(env, system, user, maxTokens, jsonMode = false, o
   const key = env.GROQ_API_KEY;
   if (!key) throw new Error('AI not configured');
   const timeoutMs = opts.timeoutMs > 0 ? opts.timeoutMs : 60000;
-  let last = '';
+  const shared = opts.fallback === 'fast';
+  const end = Date.now() + timeoutMs;
+  let last = '', tried = 0;
   for (const model of groqModels(env, opts.fallback !== false)) {
+    if (shared && tried++ && end - Date.now() < 1500) break; // not enough time left for another model
     const payload = {model, max_tokens: maxTokens, messages: [{role: 'system', content: system}, {role: 'user', content: user}]};
     if (model.startsWith('openai/')) payload.reasoning_effort = 'low';
     if (jsonMode) payload.response_format = {type: 'json_object'};
-    const timeout = AbortSignal.timeout(timeoutMs);
+    const timeout = AbortSignal.timeout(shared ? Math.max(1, end - Date.now()) : timeoutMs);
     const signal = opts.signal && AbortSignal.any ? AbortSignal.any([timeout, opts.signal]) : timeout;
     let r, d;
     try {
