@@ -11,7 +11,7 @@ Browser / PWA (Cloudflare Pages, mirror on GitHub Pages)
         │                                   │
         │ HTTPS, origin-checked             │ auth + encrypted sync (RLS)
         ▼                                   ▼
-Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys;
+Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, passcode;
   routes /api/* to private services        tables: synced_data, hist_trades, hist_prices)
   rate limits, CORS allowlist,                        ▲
   strips client X-PI-* headers                        │ daily load, 5-year window
@@ -118,7 +118,7 @@ gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` wit
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
 | Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
-| Account | Email, passkey public keys | Supabase Auth | Supabase managed |
+| Account | Email, passkey public keys, hash of the passcode login secret | Supabase Auth | Supabase managed. The login secret is PBKDF2 (600k, salt from the email, separate purpose) of the passcode, so it can't recover the passcode or the data key |
 | Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |
 | Confidential (user), news list | The user's own ticker list for News "My reads" | Device vault (`state.newsList`), ciphertext when synced | Sent to the gateway as plain tickers in a POST body to get reads, with no user identifier (control C-39, accepted disclosure) |
 

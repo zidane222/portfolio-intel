@@ -6,7 +6,7 @@
 // upload, so Supabase only ever stores ciphertext. Row level security limits each user to their row.
 const SB_SESSION = 'pi.sb.session', SB_SYNCED = 'pi.sync.at';
 const SYNC_MIN_PASS = 8;
-let syncTimer = null, syncBusy = false, remoteCache = null, remoteChecked = false, justSignedIn = false, pendingEmail = '';
+let syncTimer = null, syncBusy = false, remoteCache = null, remoteChecked = false, justSignedIn = false, pendingEmail = '', pwMode = false;
 
 const sbOn = () => !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 function sbSession() { try { return JSON.parse(localStorage.getItem(SB_SESSION)); } catch (e) { return null; } }
@@ -41,6 +41,45 @@ function sbTakeRedirect() {
   if (p.get('error_description')) { setTimeout(() => syncUI('Sign-in link problem: ' + p.get('error_description')), 0); return; }
   justSignedIn = true;
   sbSave({access_token: p.get('access_token'), refresh_token: p.get('refresh_token'), expires_at: +p.get('expires_at') || Math.floor(Date.now() / 1000) + (+p.get('expires_in') || 3600)});
+}
+
+// ── Passcode sign-in ──
+// The passcode never leaves the device. A separate login secret is derived from it with PBKDF2,
+// using a salt tied to the email and a different purpose label than the encryption key. That secret
+// is the Supabase account password, so Supabase only ever stores a hash of a value that can't be
+// turned back into the passcode or the key that encrypts the synced data.
+const PW_LINKED = 'pi.pw.linked', LOGIN_ITER = 600000;
+async function loginSecret(pass, email) {
+  const salt = new TextEncoder().encode('pi-login-v1:' + email.trim().toLowerCase());
+  return (await hashPass(pass, salt, LOGIN_ITER)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function pwLinked() { try { const s = sbSession(); return !!(s && s.email && localStorage.getItem(PW_LINKED) === s.email); } catch (e) { return false; } }
+// Let this passcode sign in on other devices. Needs a signed-in session and a sync-length passcode.
+async function pwLink(pass) {
+  let s = sbSession();
+  if (!s || !pass || pass.length < SYNC_MIN_PASS) return false;
+  try {
+    if (!s.email) { const u = await sbFetch('/auth/v1/user'); s = {...sbSession(), email: u.email}; sbSave(s); }
+    await sbFetch('/auth/v1/user', {method: 'PUT', body: JSON.stringify({password: await loginSecret(pass, s.email)})});
+    try { localStorage.setItem(PW_LINKED, s.email); } catch (e) {}
+    return true;
+  } catch (e) { return false; }
+}
+async function pwSignIn(email, pass) {
+  let d;
+  try {
+    d = await sbFetch('/auth/v1/token?grant_type=password', {method: 'POST', body: JSON.stringify({email, password: await loginSecret(pass, email)})}, false);
+  } catch (e) {
+    if (e.status === 400) throw new Error('Email or passcode didn\'t match. First time using your passcode to sign in? Sign in once with an email code and unlock with your passcode. That turns on passcode sign-in.');
+    throw e;
+  }
+  sbSave({access_token: d.access_token, refresh_token: d.refresh_token, email: d.user && d.user.email || email,
+    expires_at: Math.floor(Date.now() / 1000) + (d.expires_in || 3600)});
+  try { localStorage.setItem(PW_LINKED, d.user && d.user.email || email); } catch (e) {}
+  pwMode = false; justSignedIn = true; remoteCache = null; remoteChecked = false;
+  const remote = await syncPull().catch(() => null);
+  if (remote) return syncWithPasscode(pass); // unlocks and loads the synced data with the same passcode
+  syncUI();
 }
 
 // ── Encrypted payload ──
@@ -101,10 +140,11 @@ function syncUI(msg) {
   card.hidden = !sbOn();
   if (!sbOn()) return;
   const s = sbSession(), c = lockConf();
-  const show = id => ['sync-out', 'sync-code', 'sync-create', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
+  const show = id => ['sync-out', 'sync-code', 'sync-pw', 'sync-create', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
   $('sync-setpass').hidden = true;
   let text;
-  if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser.`; }
+  if (!s && pwMode) { show('sync-pw'); text = 'Sign in with your email and passcode. Your passcode stays on this device. It also unlocks your synced data here.'; }
+  else if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser.`; }
   else if (!s) { show('sync-out'); text = 'Already use Portfolio Intel on another device? Sign in with the same email and you\'ll unlock your data with your existing passcode. No need to set a new one. Your data is encrypted with your passcode before it leaves the device.'; }
   else if (!remoteChecked) { show(null); text = 'Checking for your synced data…'; }
   else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter the passcode you use on your other device to load it here.'; }
@@ -131,6 +171,7 @@ async function syncWithPasscode(pass) {
     await vaultUse(key);
     try { sessionStorage.setItem('pi.unlocked', String(Date.now())); } catch (e) {}
     await syncApply(remote, key);
+    if (!pwLinked()) await pwLink(pass);
     location.reload();
     return;
   }
@@ -140,6 +181,7 @@ async function syncWithPasscode(pass) {
   if (pass.length < SYNC_MIN_PASS) return syncUI(`Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. Tap Set passcode to change it, then try again.`);
   localStorage.setItem(LOCK_KEY, JSON.stringify({...c, sync: true}));
   await syncPush();
+  if (!pwLinked()) await pwLink(pass);
 }
 
 function wireAccount() {
@@ -168,6 +210,17 @@ function wireAccount() {
     } catch (err) { syncUI('That code didn\'t work (' + err.message + '). Check it, or tap Back and send a new one.'); }
   };
   $('sync-code-back').onclick = () => { pendingEmail = ''; syncUI(); };
+  $('sync-pw-show').onclick = () => { pwMode = true; $('sync-pw-email').value = $('sync-email').value; syncUI(); setTimeout(() => $($('sync-pw-email').value ? 'sync-pw-in' : 'sync-pw-email').focus(), 50); };
+  $('sync-pw-back').onclick = () => { pwMode = false; syncUI(); };
+  $('sync-pw').onsubmit = async e => {
+    e.preventDefault();
+    const email = $('sync-pw-email').value.trim(), pass = $('sync-pw-in').value;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return syncUI('Enter a valid email address.');
+    if (!pass) return syncUI('Enter your passcode.');
+    $('sync-pw-in').value = '';
+    try { syncUI('Signing in…'); await pwSignIn(email, pass); }
+    catch (err) { syncUI(err.message); }
+  };
   $('sync-pass').onsubmit = async e => {
     e.preventDefault();
     const pass = $('sync-pass-in').value; $('sync-pass-in').value = '';
@@ -192,6 +245,7 @@ function wireAccount() {
       $('sync-new-1').value = $('sync-new-2').value = ''; $('sync-new-meter').textContent = '';
       $('lock-set').textContent = 'Change passcode';
       await syncPush();
+      await pwLink(a);
       syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
     } catch (err) { syncUI('Couldn\'t set up: ' + err.message); }
   };
@@ -200,6 +254,7 @@ function wireAccount() {
   $('sync-signout').onclick = async () => {
     try { await sbFetch('/auth/v1/logout', {method: 'POST'}); } catch (e) {}
     sbSave(null); remoteCache = null; remoteChecked = false;
+    try { localStorage.removeItem(PW_LINKED); } catch (e) {}
     const c = lockConf(); if (c && c.sync) { delete c.sync; localStorage.setItem(LOCK_KEY, JSON.stringify(c)); }
     syncUI('Signed out. Your data stays on this device.');
   };
@@ -245,6 +300,7 @@ function wireWelcome() {
       setTimeout(() => c.classList.remove('flash'), 2500); focusId && $(focusId) && $(focusId).focus(); }, 400);
   };
   $('welcome-email').onclick = () => toCard('sync-email');
+  const wp = $('welcome-pass'); if (wp) wp.onclick = () => { pwMode = true; syncUI(); toCard('sync-pw-email'); };
   $('welcome-skip').onclick = done;
   const pk = $('welcome-pk');
   if (typeof pkOn === 'function' && pkOn()) { pk.hidden = false; pk.onclick = () => { toCard(); pkSignIn().catch(e => pkErr(e, syncUI)); }; }
