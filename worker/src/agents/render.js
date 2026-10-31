@@ -145,6 +145,46 @@ export function disclosuresAnswer(facts, lineOk = () => true) {
   return {text: build(n) + '\n\n' + DISCLAIMER, ids};
 }
 
+// Cash yield ("how much more could my cash earn"): code-built from the cash gap facts in factcheck.
+export function ratesAnswer(facts, lineOk = () => true) {
+  const by = new Map((facts || []).map(f => [f.key, f]));
+  const ok = f => f && f.status === 'verified';
+  const best = by.get('rate:best:apy');
+  if (!ok(best)) {
+    // Rates cache is cold: show what the cash earns now and say the comparison isn't available yet.
+    const out = ['Current savings rates are not available right now, so the comparison can\'t be made yet. Try again in a few minutes.'], ids = [];
+    for (const f of facts || []) {
+      const m = ok(f) && f.key.match(/^cash:(.+):apy$/);
+      const bal = m && by.get(`holding:${m[1]}:value`);
+      if (!m || !ok(bal)) continue;
+      const line = `* ${m[1]}: ${display(bal)} at ${display(f)}.`;
+      if (lineOk(line)) { out.push(line); ids.push(bal.id, f.id); }
+    }
+    return {text: out.join('\n') + '\n\n' + DISCLAIMER, ids};
+  }
+  const ids = [best.id], out = [];
+  const total = by.get('cash_gap:total');
+  if (ok(total)) {
+    out.push(`At the best listed savings rate, ${best.label.replace(/^Best listed APY /, '').replace(/[()]/g, '')} at ${display(best)}, your cash would earn about ${display(total)} more per year than it does now.`);
+    ids.push(total.id);
+    for (const f of facts) {
+      const m = ok(f) && f.key.match(/^cash_gap:(.+)$/);
+      if (!m || m[1] === 'total') continue;
+      const now = by.get(`cash_now:${m[1]}`), bal = by.get(`holding:${m[1]}:value`), apy = by.get(`cash:${m[1]}:apy`);
+      if (![now, bal, apy].every(ok)) continue;
+      const line = `* ${m[1]}: ${display(bal)} at ${display(apy)} earns ${display(now)} a year; about ${display(f)} more at the best rate.`;
+      if (!lineOk(line)) continue;
+      out.push(line); ids.push(f.id, now.id, bal.id, apy.id);
+    }
+  } else {
+    out.push(`The best listed savings rate is ${display(best)}. No cash balances with a yield were sent from this device, so the difference for your cash can't be worked out.`);
+  }
+  const top = facts.filter(f => ok(f) && /^rate:.+:apy$/.test(f.key) && f.key !== 'rate:best:apy').slice(0, 5);
+  if (top.length) { out.push('Top savings rates listed now:'); for (const f of top) { const l = `* ${f.label.replace(/ APY$/, '')}: ${display(f)}`; if (lineOk(l)) { out.push(l); ids.push(f.id); } } }
+  out.push('Rates change often and may have balance limits or conditions. Estimates assume the balance stays the same for a year.');
+  return {text: out.join('\n') + '\n\n' + DISCLAIMER, ids};
+}
+
 export function safeAnswer(facts, lineOk = () => true) {
   const lines = [];
   const shown = [];

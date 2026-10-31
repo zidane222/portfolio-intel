@@ -193,7 +193,7 @@ export async function run(c, deps) {
   const rules = rulesIntent(c.input.question, held);
   // rules pre-pass: no Groq call #1. A Congress word is a sure disclosures question; Groq used to
   // relabel "which of my stocks is Congress trading" as holdings, so no Congress data was fetched.
-  if (['news_read', 'insights', 'insiders', 'disclosures'].includes(rules.type)) return {intent: rules};
+  if (['news_read', 'insights', 'insiders', 'disclosures', 'rates'].includes(rules.type)) return {intent: rules};
   try {
     const out = await deps.ai('/internal/intent', {question: c.input.question, history: c.input.history.slice(-2), tickers: held}, 5000);
     return {intent: normalizeIntent(out && out.intent, rules, held)};

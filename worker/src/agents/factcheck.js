@@ -131,6 +131,26 @@ export function factcheck(c, now = Date.now()) {
   if (held.length) derived.push({key: 'derived:holdings_count', label: 'Number of holdings', unit: 'count', value: held.length, status: 'verified', sources: held.map(f => f.sources[0]), rules: ['derived', 'F10']});
   const trades = facts.filter(f => /^trade:/.test(f.key) && f.status === 'verified');
   if (trades.length) derived.push({key: 'derived:trades_shown', label: 'Disclosed trades shown', unit: 'count', value: trades.length, status: 'verified', sources: [trades[0].sources[0]], rules: ['derived', 'F10']});
+  // Cash gap: what each cash balance would earn per year at the best listed savings rate, minus what
+  // it earns now. Computed in code so the answer never needs a model to type a dollar figure.
+  const rates = facts.filter(f => /^rate:.+:apy$/.test(f.key) && f.status === 'verified' && typeof f.value === 'number');
+  if (rates.length) {
+    const best = rates.reduce((a, b) => (b.value > a.value ? b : a));
+    derived.push({key: 'rate:best:apy', label: `Best listed APY (${best.key.slice(5, -4)})`, unit: 'pct', value: best.value, status: 'verified', sources: [best.sources[0]], rules: ['derived', 'F10']});
+    let total = 0, srcs = [best.sources[0]], any = false;
+    for (const f of facts) {
+      const m = f.key.match(/^cash:(.+):apy$/);
+      if (!m || f.status !== 'verified') continue;
+      const bal = byKey.get(`holding:${m[1]}:value`);
+      if (!bal || bal.status !== 'verified' || !(bal.value > 0)) continue;
+      const now = Math.round(bal.value * f.value) / 100, at = Math.round(bal.value * best.value) / 100;
+      const gap = Math.max(0, Math.round((at - now) * 100) / 100);
+      derived.push({key: `cash_now:${m[1]}`, label: `${m[1]} earns per year now`, unit: 'usd', value: now, status: 'verified', sources: [...bal.sources, ...f.sources], rules: ['derived', 'F10']});
+      derived.push({key: `cash_gap:${m[1]}`, label: `${m[1]} extra per year at the best listed rate`, unit: 'usd', value: gap, status: 'verified', sources: [...bal.sources, ...f.sources, best.sources[0]], rules: ['derived', 'F10']});
+      total += gap; srcs.push(...bal.sources, ...f.sources); any = true;
+    }
+    if (any) derived.push({key: 'cash_gap:total', label: 'Extra per year on all cash at the best listed rate', unit: 'usd', value: Math.round(total * 100) / 100, status: 'verified', sources: srcs, rules: ['derived', 'F10']});
+  }
   for (const d of derived) if (!byKey.has(d.key)) { facts.push(d); byKey.set(d.key, d); }
 
   // F2: keys the intent needs with no evidence become unknown facts.
