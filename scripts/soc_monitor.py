@@ -141,6 +141,12 @@ def evaluate(d, now):
         if (gh.get(k) or 0) > 0:
             add(WARN, f"{gh[k]} open {label} alerts")
 
+    peer = gh.get("peer_meta")
+    if peer == "missing":
+        add(ALERT, "meta supervisor has not run in the last 26 h")
+    elif peer == "failure":
+        add(WARN, "meta supervisor failed on its last run in the last 26 h")
+
     # 4. Data jobs
     for name, hour in DATA_JOBS.items():
         j = (gh.get("data_jobs") or {}).get(name)
@@ -153,6 +159,24 @@ def evaluate(d, now):
 
     sev = max((s for s, _ in f), key=lambda s: RANK[s], default=OK)
     return sev, f
+
+
+def peer_status(runs, now, hours=26):
+    """'success', 'failure', 'running' or 'missing' for the newest run within the window. Pure."""
+    recent = []
+    for r in runs or []:
+        try:
+            t = dt.datetime.fromisoformat(str(r.get("created_at")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if now - t <= dt.timedelta(hours=hours):
+            recent.append((t, r))
+    if not recent:
+        return "missing"
+    if any(r.get("conclusion") == "success" for _, r in recent):
+        return "success"
+    newest = max(recent, key=lambda x: x[0])[1]
+    return "running" if newest.get("status") != "completed" else "failure"
 
 
 # ---------------------------------------------------------------- report (pure)
@@ -377,6 +401,13 @@ def collect_github(token, repo, now):
             out["data_jobs"][name] = "running"
         else:
             out["data_jobs"][name] = "failure"
+    # Peer heartbeat: the meta supervisor must have run in the last 26 h (it checks this job the same way)
+    try:
+        r = gh_api(token, "GET", f"/repos/{repo}/actions/workflows/meta-supervisor.yml/runs?per_page=10")
+        if r.status_code == 200:
+            out["peer_meta"] = peer_status(r.json().get("workflow_runs") or [], now)
+    except Exception:
+        pass
     for key, path in (("dependabot_open", "dependabot/alerts?state=open&per_page=100"),
                       ("code_scanning_open", "code-scanning/alerts?state=open&per_page=100")):
         try:
