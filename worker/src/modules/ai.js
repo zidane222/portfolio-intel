@@ -141,7 +141,7 @@ export async function intent(req, env) {
   const tick = (Array.isArray(body.tickers) ? body.tickers : []).map(t => clean(t, 12)).filter(t => /^[A-Z.\-]{1,6}$/.test(t)).slice(0, 60);
   const user = `<history>\n${historyBlock(body.history).split('\n').slice(-2).join('\n')}\n</history>\n<tickers>${tick.join(',')}</tickers>\n<question>\n${q}\n</question>`;
   try {
-    const out = parseObject(await groqChat(env, INTENT_SYSTEM, user, INTENT_MAX_TOKENS, true, {timeoutMs: 5000, fallback: false}));
+    const out = parseObject(await groqChat(env, INTENT_SYSTEM, user, INTENT_MAX_TOKENS, true, {timeoutMs: 5000, fallback: 'fast'}));
     return json({intent: out});
   } catch (e) {
     console.log('AI intent error', String(e && e.message || e).slice(0, 120));
@@ -166,7 +166,7 @@ export async function build(req, env) {
   const user = `<intent>${type}</intent>\n<facts>\n${JSON.stringify(facts)}\n</facts>\n<history>\n${historyBlock(body.history)}\n</history>\n<question>\n${q}\n</question>${flagBlock}`;
   const timeoutMs = Math.min(8000, Math.max(1000, Number(body.timeout_ms) || 8000));
   try {
-    const o = parseObject(await groqChat(env, BUILD_SYSTEM, user, BUILD_MAX_TOKENS, true, {timeoutMs, fallback: false}));
+    const o = parseObject(await groqChat(env, BUILD_SYSTEM, user, BUILD_MAX_TOKENS, true, {timeoutMs, fallback: 'fast'}));
     const ids = a => (Array.isArray(a) ? a : []).map(String).filter(x => /^f\d{1,3}$/.test(x)).slice(0, 60);
     return json({text: String(o.text || '').slice(0, 4000), used: ids(o.used), unknown_mentioned: ids(o.unknown_mentioned)});
   } catch (e) {

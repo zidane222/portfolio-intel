@@ -76,6 +76,7 @@ jobs:
           node test/test.mjs "$TOKEN"
           node test/disclosures.mjs
           node test/rates.mjs
+          node test/groq-fast.mjs
 
   zap:
     name: Live site scan (OWASP ZAP baseline)
