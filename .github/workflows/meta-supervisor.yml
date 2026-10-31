@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read   # check F: SOC monitor heartbeat
   issues: write
 
 jobs:
@@ -41,4 +42,6 @@ jobs:
           SUPABASE_URL: ${{ secrets.SP }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          cfk: ${{ secrets.cfk || secrets.cf }}   # check E: read-only Cloudflare telemetry, as the SOC monitor
+          cfkd: ${{ secrets.cfkd }}
         run: python3 scripts/meta_supervisor.py

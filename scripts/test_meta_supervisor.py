@@ -409,12 +409,90 @@ class ReconciliationNeverStopsRun(unittest.TestCase):
         with patch("meta_supervisor.check_canary", return_value=[]), \
              patch("meta_supervisor.check_insights_files", return_value=[]), \
              patch("meta_supervisor.check_reconciliation", side_effect=AttributeError("x")), \
+             patch("meta_supervisor.check_ask_health", return_value=[]), \
+             patch("meta_supervisor.check_peer", return_value=[]), \
              patch("meta_supervisor.sync_issue") as sync, \
              patch.dict(os.environ, {"GITHUB_TOKEN": "t", "GITHUB_REPOSITORY": "o/r"}, clear=True), \
              patch("sys.stdout", new=__import__("io").StringIO()):
             self.assertEqual(m.main(), 0)
         self.assertEqual(sync.call_args[0][3], m.ALERT)
         self.assertIn("reconciliation: check failed on trades.json (AttributeError)", sync.call_args[0][4])
+
+
+def _ask_line(status="PASS", intent="ticker", flags=()):
+    return {"$metadata": {"message": json.dumps({"ask": 1, "case_id": "x", "intent": intent, "status": status, "flags": list(flags), "attempts": 1})}}
+
+
+class AskHealthCheck(unittest.TestCase):
+    def test_parses_only_ask_lines(self):
+        ev = [_ask_line(), {"$metadata": {"message": "GET https://internal/health"}}, {"$metadata": {"message": '{"ask":1, broken'}}, {}]
+        self.assertEqual(m.ask_cases(ev), [{"status": "PASS", "intent": "ticker", "flags": []}])
+
+    def test_no_traffic_and_small_samples_are_ok(self):
+        self.assertEqual(m.judge_ask([])[0][0], m.OK)
+        few = m.ask_cases([_ask_line("fallback", flags=["V1"])] * 3)
+        f = m.judge_ask(few)
+        self.assertEqual(f[0][0], m.OK); self.assertIn("too few to judge", f[0][1]); self.assertIn("V1 3", f[0][1])
+
+    def test_fallback_rate_thresholds(self):
+        mk = lambda bad, good: m.ask_cases([_ask_line("fallback", "holdings", ["V1b"])] * bad + [_ask_line()] * good)
+        self.assertEqual(max(m.judge_ask(mk(1, 9)), key=lambda x: m.RANK[x[0]])[0], m.OK)
+        self.assertEqual(m.judge_ask(mk(3, 7))[0][0], m.WARN)
+        self.assertEqual(m.judge_ask(mk(5, 5))[0][0], m.ALERT)
+        self.assertIn("5 of 10", m.judge_ask(mk(5, 5))[0][1])
+
+    def test_one_intent_falling_back_is_named(self):
+        cases = m.ask_cases([_ask_line("fallback", "insiders", ["V1"])] * 3 + [_ask_line()] * 17)
+        f = m.judge_ask(cases)
+        self.assertEqual(f[0][0], m.OK)
+        self.assertTrue(any(s == m.WARN and "Ask intent insiders: 3 of 3" in t for s, t in f))
+
+    def test_intent_and_flags_are_plain_text(self):
+        f = m.judge_ask(m.ask_cases([_ask_line("fallback", "<b>x</b>[l](u)", ["@x"])] * 5))
+        self.assertTrue(all("<" not in t and "[" not in t and "@" not in t for _, t in f))
+
+    def test_missing_cloudflare_settings_warn_without_network(self):
+        self.assertEqual(m.check_ask_health("", "", NOW)[0][0], m.WARN)
+
+    def test_query_falls_back_to_local_filter(self):
+        import soc_monitor as soc
+        calls = []
+        def fake(token, acct, frm, to, filters, limit=100):
+            calls.append(filters)
+            if len(filters) > 1:
+                raise soc.SourceError("cloudflare query failed HTTP 400")
+            return [_ask_line()] * 6
+        with patch.object(soc, "cf_events", side_effect=fake):
+            f = m.check_ask_health("t", "a", NOW)
+        self.assertEqual(len(calls), 2); self.assertEqual(f[0][0], m.OK); self.assertIn("0 of 6", f[0][1])
+        with patch.object(soc, "cf_events", side_effect=soc.SourceError("cloudflare unreachable (ConnectionError)")):
+            self.assertEqual(m.check_ask_health("t", "a", NOW)[0][0], m.WARN)
+
+
+class PeerHeartbeat(unittest.TestCase):
+    def run_(self, hours_ago, conclusion="success", status="completed"):
+        t = (NOW - dt.timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"created_at": t, "conclusion": conclusion, "status": status}
+
+    def test_status(self):
+        self.assertEqual(m.peer_status([self.run_(20)], NOW), "success")
+        self.assertEqual(m.peer_status([self.run_(30)], NOW), "missing")
+        self.assertEqual(m.peer_status([], NOW), "missing")
+        self.assertEqual(m.peer_status([self.run_(2, "failure")], NOW), "failure")
+        self.assertEqual(m.peer_status([self.run_(1, None, "in_progress"), self.run_(25, "failure")], NOW), "running")
+        self.assertEqual(m.peer_status([self.run_(1, "failure"), self.run_(20)], NOW), "success")
+
+    def test_check_peer_severity(self):
+        resp = lambda runs, code=200: MagicMock(status_code=code, json=lambda: {"workflow_runs": runs})
+        with patch("meta_supervisor._gh", return_value=resp([self.run_(20)])):
+            self.assertEqual(m.check_peer("t", "o/r", NOW)[0][0], m.OK)
+        with patch("meta_supervisor._gh", return_value=resp([self.run_(40)])):
+            self.assertEqual(m.check_peer("t", "o/r", NOW)[0][0], m.ALERT)
+        with patch("meta_supervisor._gh", return_value=resp([self.run_(3, "failure")])):
+            self.assertEqual(m.check_peer("t", "o/r", NOW)[0][0], m.WARN)
+        with patch("meta_supervisor._gh", return_value=resp([], 403)):
+            self.assertEqual(m.check_peer("t", "o/r", NOW)[0][0], m.WARN)
+        self.assertEqual(m.check_peer("", "", NOW)[0][0], m.WARN)
 
 
 class OverallSeverity(unittest.TestCase):
@@ -472,6 +550,8 @@ class SecretsNotLeaked(unittest.TestCase):
              patch("meta_supervisor.sync_issue", side_effect=fake_sync), \
              patch("meta_supervisor.check_insights_files", return_value=[(m.OK, "ok")]), \
              patch("meta_supervisor.check_reconciliation", return_value=[(m.OK, "ok")]), \
+             patch("meta_supervisor.check_ask_health", return_value=[(m.OK, "ok")]), \
+             patch("meta_supervisor.check_peer", return_value=[(m.OK, "ok")]), \
              patch.dict(os.environ, env, clear=True), \
              patch("sys.stdout", output), \
              patch("meta_supervisor.dt") as mock_dt:
