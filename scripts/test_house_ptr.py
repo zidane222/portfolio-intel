@@ -107,5 +107,35 @@ class ScrapeReport(unittest.TestCase):
         import json; json.dumps(report)  # serializable into trades.json
 
 
+class OcrRows(unittest.TestCase):
+    def test_typed_rows_parse(self):
+        text = "Apple Inc. (AAPL) SP P 09/12/2026 09/20/2026 $1,001 - $15,000\nMicrosoft (MSFT) JT S 9/15/26 9/22/26\n"
+        rows = h.ocr_rows(text)
+        self.assertEqual([(r[1], r[2]) for r in rows], [('P', '09/12/2026'), ('S', '09/15/2026')])
+        self.assertTrue(rows[0][0].endswith('(AAPL)'))
+
+    def test_partial_sale_and_zero_for_o(self):
+        rows = h.ocr_rows("Oracle (0RCL) Partial Sale 10/02/2026 10/05/2026")
+        self.assertEqual((rows[0][0][-6:], rows[0][1]), ('(ORCL)', 'S (partial)'))
+
+    def test_noise_gives_no_row(self):
+        self.assertEqual(h.ocr_rows("Asset Owner Type Date\nSignature 10/28/2026\nApple (AAPL) 13/45/2026 P"), [])
+        self.assertEqual(h.ocr_rows("Apple (AAPL) 09/12/2026 no type"), [])
+
+    @unittest.skipUnless(h.ocr_available(), 'tesseract or pdftoppm missing')
+    def test_scanned_pdf_end_to_end(self):
+        import io
+        from PIL import Image, ImageDraw, ImageFont
+        img = Image.new('L', (2550, 500), 255)
+        try:
+            f = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 40)
+        except OSError:
+            f = ImageFont.load_default()
+        ImageDraw.Draw(img).text((80, 200), "Apple Inc. (AAPL)  SP  P  09/12/2026  09/20/2026  $1,001 - $15,000", fill=0, font=f)
+        b = io.BytesIO(); img.save(b, 'PDF', resolution=300)
+        rows = h.ocr_rows(h.ocr_pdf_text(b.getvalue()))
+        self.assertEqual([(r[1], r[2]) for r in rows], [('P', '09/12/2026')])
+
+
 if __name__ == '__main__':
     unittest.main()
