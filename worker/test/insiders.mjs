@@ -88,7 +88,7 @@ export default async function ({t, env, withServices}) {
 
     await t('ask: real insiders.json gives a code-built list, largest first, no model call', async () => {
       const {readFileSync} = await import('node:fs');
-      const real = JSON.parse(readFileSync(new URL('../../insiders.json', import.meta.url), 'utf8'));
+      const real = JSON.parse(readFileSync(new URL('./fixtures/insiders-2026-10-30.json', import.meta.url), 'utf8'));
       const newest = Date.parse(real.buys.reduce((m, b) => (b.filed > m ? b.filed : m), ''));
       const shift = d => (Number.isFinite(Date.parse(d)) ? iso(Date.parse(d) + (NOW - DAY - newest)) : d); // fixed relative to NOW so the test never ages out
       memClear(); data = {buys: real.buys.map(b => ({...b, filed: shift(b.filed), date: shift(b.date)})), updated: new Date(NOW).toISOString()}; G.INTENT = []; G.BUILD = []; G.calls = [];
@@ -110,7 +110,7 @@ export default async function ({t, env, withServices}) {
 
     await t('insiders QA: realistic drafts on the real insiders.json, which pass and which still flag', async () => {
       const {validate} = await import('../src/agents/validator.js');
-      const real = JSON.parse(fs.readFileSync(new URL('../../insiders.json', import.meta.url), 'utf8'));
+      const real = JSON.parse(fs.readFileSync(new URL('./fixtures/insiders-2026-10-30.json', import.meta.url), 'utf8'));
       const deps = {now: () => Date.UTC(2026, 9, 30, 12), bindings: {DISCLOSURES: {fetch: async () => ok({buys: real.buys, updated: real.updated})}}};
       const {evidence: [ev]} = await insidersRun({input: {question: 'Any big insider buys this week?'}, intent: {type: 'insiders', tickers: []}}, deps);
       const facts = ev.items.map((it, i) => ({id: 'f' + (i + 1), label: it.label, status: 'verified'}));
@@ -257,7 +257,7 @@ export default async function ({t, env, withServices}) {
     });
 
     await t('insiders QA: real insiders.json gives a checked answer with no typed digits flagged', async () => {
-      const real = JSON.parse(fs.readFileSync(new URL('../../insiders.json', import.meta.url), 'utf8'));
+      const real = JSON.parse(fs.readFileSync(new URL('./fixtures/insiders-2026-10-30.json', import.meta.url), 'utf8'));
       memClear(); data = real; G.INTENT = []; G.BUILD = []; G.calls = [];
       const now = Date.parse(real.updated);
       const {evidence: [ev]} = await insidersRun({input: {question: 'Any big insider buys this week?'}, intent: {type: 'insiders', tickers: []}}, {bindings: withServices(env), now: () => now});
