@@ -42,6 +42,8 @@ function wireLock() {
     }
     if (ok) {
       lockFails = 0; try { sessionStorage.setItem('pi.unlocked', String(Date.now())); } catch (e2) {}
+      // Signed in with sync on: let this passcode sign in on other devices too (once)
+      if (c.sync && typeof pwLinked === 'function' && !pwLinked()) await pwLink($('lock-in').value);
       if (c.encSalt) { await vaultUse(await vaultDerive($('lock-in').value, unb64(c.encSalt))); location.reload(); return; }
       // Older passcode without encryption: turn it on now
       try { c.encSalt = await vaultSeal($('lock-in').value); localStorage.setItem(LOCK_KEY, JSON.stringify(c)); } catch (e2) {}
@@ -69,6 +71,11 @@ function wireLock() {
     const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 210000;
     try { const encSalt = await vaultSeal(a); localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter), encSalt})); sessionStorage.setItem('pi.unlocked', String(Date.now())); }
     catch (err) { $('pass-err').textContent = 'Couldn\'t save on this device.'; return; }
+    // Passcode changed while signed in: the passcode sign-in follows it
+    if (typeof pwLink === 'function' && typeof sbSession === 'function' && sbSession()) {
+      try { localStorage.removeItem('pi.pw.linked'); } catch (e) {}
+      await pwLink(a);
+    }
     $('lock-set').textContent = 'Change passcode'; dlg.close();
   };
 }

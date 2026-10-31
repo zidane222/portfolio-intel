@@ -22,7 +22,7 @@ SOC 2 criteria are the 2017 Trust Services Criteria (revised points of focus 202
 | C-13 | Keyless cloud auth for CI | CC6.1 | PR.AA | In place | Workload Identity Federation for BigQuery | |
 | C-14 | Least privilege service accounts | CC6.3 | PR.AA | In place | BQ: Data Editor + Job User only; per-service secret bindings | |
 | C-15 | MFA on admin accounts (GitHub, Cloudflare, Supabase, Google, Render, Plaid) | CC6.1 | PR.AA | Partial | | Owner to confirm MFA on each, record in EVIDENCE.md |
-| C-16 | User authentication: email one-time code, passkeys | CC6.1 | PR.AA | In place | 29a-account.js, 29c-passkey.js | |
+| C-16 | User authentication: email one-time code, passkeys, email + passcode (login secret derived on device, PBKDF2 600k, never the passcode or data key) | CC6.1 | PR.AA | In place | 29a-account.js, 29c-passkey.js | |
 | C-17 | Tenant isolation: row level security | CC6.1 | PR.AA | In place | supabase/schema.sql | |
 | C-18 | Encryption at rest of user data (client-side AES-GCM) | CC6.1, C1.1 | PR.DS | In place | 02-state.js vault | |
 | C-19 | Encryption in transit (HTTPS, HSTS) | CC6.7 | PR.DS | In place | _headers | HSTS preload optional |
