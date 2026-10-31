@@ -117,6 +117,34 @@ export function insidersAnswer(facts, lineOk = () => true) {
   return {text: build(n) + '\n\n' + DISCLAIMER, ids};
 }
 
+// Congress trades (House and Senate PTRs): a code-built list from checked facts, no builder call.
+// The trade lines already carry every number, so nothing typed by a model reaches the answer.
+export function disclosuresAnswer(facts, lineOk = () => true) {
+  const by = new Map((facts || []).map(f => [f.key, f]));
+  const ok = f => f && f.status === 'verified';
+  const win = by.get('disclosure:window'), scope = by.get('disclosure:scope');
+  if (!ok(win)) return null;
+  const ids = [win.id];
+  const cnt = by.get('count:disclosed');
+  const head = [ok(cnt) ? `${win.value}: ${display(cnt)}.` : `${win.value}.`];
+  if (ok(cnt)) ids.push(cnt.id);
+  const lines = [];
+  for (let i = 1; by.has(`trade:${i}`); i++) {
+    const t = by.get(`trade:${i}`);
+    if (!ok(t) || !lineOk(`${t.value}.`)) continue;
+    lines.push({text: `${lines.length + 1}. ${t.value}.`, ids: [t.id]});
+  }
+  const most = (facts || []).filter(f => ok(f) && /^count:buys:/.test(f.key) && f.value > 1).sort((a, b) => b.value - a.value).slice(0, 3);
+  const tail = [];
+  if (most.length) { tail.push('Bought more than once: ' + most.map(f => `${f.key.slice(11)} (${display(f)})`).join(', ') + '.'); ids.push(...most.map(f => f.id)); }
+  if (ok(scope)) { tail.push(`${scope.value}. Filings can lag the trade date by weeks.`); ids.push(scope.id); }
+  const build = n => [head.join(' '), ...lines.slice(0, n).map(l => l.text), ...tail].join('\n');
+  let n = lines.length;
+  while (n > 1 && build(n).length > 1500) n--;
+  for (const l of lines.slice(0, n)) ids.push(...l.ids);
+  return {text: build(n) + '\n\n' + DISCLAIMER, ids};
+}
+
 export function safeAnswer(facts, lineOk = () => true) {
   const lines = [];
   const shown = [];
