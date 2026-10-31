@@ -60,6 +60,10 @@ Meta supervisor (meta-supervisor.yml, 14:10 UTC daily + manual): scripts/meta_su
   or parses. Year-long known gaps (scanned filings, dates after filing) are noted as OK lines. Senate:
   compared only on days the official site answers; staleness stays with the SOC monitor, which no longer
   judges reconciliation. A crash in check D becomes an ALERT finding. One issue, label meta-supervisor.
+  E Ask health: the gateway's {"ask":1} log lines of the last 24 h (Cloudflare telemetry, read-only cfk/cfkd,
+  the SOC monitor's helpers): WARN at 25% of answers falling back to sources only, ALERT at 50% (5+ cases),
+  WARN for an intent with 3+ cases and 2/3 falling back; top rule IDs listed. F heartbeat: the SOC monitor
+  ran in the last 26 h (ALERT if not); the SOC monitor checks the meta supervisor the same way.
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
 
 Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before

@@ -7,13 +7,17 @@ Checks:
   C. Insights files    - verifies labels, SIMULATED tag and freshness of insights.json and strategies.json.
   D. Source reconciliation - judges the daily cross-check between official House and Senate records
      and FMP, from trades.json on main. The trades job computes it; this check owns the verdict.
+  E. Ask pipeline health - the gateway's per-case log lines from the last 24 h (Cloudflare telemetry):
+     fallback rate, the rules that failed most, and any intent that keeps falling back.
+  F. Peer heartbeat - the SOC monitor ran in the last 26 h (the SOC monitor checks this job the same way).
 
 Stdlib + requests only. No AI. No LLM calls.
-Secrets only from env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN, GITHUB_REPOSITORY.
+Secrets only from env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN, GITHUB_REPOSITORY, cfk, cfkd.
 Exit 0 always (alerts go through a GitHub issue). Exit 1 only on a crash.
 """
 import datetime as dt
 import json
+from collections import Counter
 import os
 import re
 import subprocess
@@ -315,13 +319,109 @@ def check_reconciliation(now, path="trades.json"):
     return findings
 
 
+# ---------------------------------------------------------------- E: Ask pipeline health
+ASK_MIN_CASES = 5           # fewer cases in 24 h: report only, no verdict
+ASK_FALLBACK_WARN = 0.25    # share of cases shown as "sources only"
+ASK_FALLBACK_ALERT = 0.50
+ASK_INTENT_MIN = 3          # an intent with this many cases ...
+ASK_INTENT_WARN = 0.66      # ... and this share falling back is named
+GATEWAY = "portfolio-intel-api"
+
+
+def ask_cases(events):
+    """Parse the gateway's {"ask":1,...} log lines (supervisor.js finish()). Ignores anything else."""
+    out = []
+    for e in events or []:
+        m = (e.get("$metadata") or {}).get("message") or ""
+        if not isinstance(m, str) or not re.search(r'"ask"\s*:\s*1\b', m):
+            continue
+        try:
+            d = json.loads(m[m.index("{"):])
+        except (ValueError, TypeError):
+            continue
+        if d.get("ask") == 1:
+            out.append({"status": str(d.get("status") or ""), "intent": _plain(d.get("intent") or "general", 20),
+                        "flags": [_plain(x, 6) for x in (d.get("flags") or []) if isinstance(x, str)]})
+    return out
+
+
+def judge_ask(cases):
+    """Severity findings from parsed cases. Pure, for tests."""
+    n = len(cases)
+    if n == 0:
+        return [(OK, "Ask: no checked questions in the last 24 h")]
+    fb = [c for c in cases if c["status"] != "PASS"]
+    rate = len(fb) / n
+    flags = Counter(f for c in fb for f in c["flags"])
+    top = ", ".join(f"{k} {v}" for k, v in flags.most_common(3)) or "none"
+    if n < ASK_MIN_CASES:
+        return [(OK, f"Ask: {n} question(s) in 24 h, {len(fb)} shown as sources only (too few to judge). Top rules: {top}")]
+    sev = ALERT if rate >= ASK_FALLBACK_ALERT else WARN if rate >= ASK_FALLBACK_WARN else OK
+    findings = [(sev, f"Ask: {len(fb)} of {n} answers in 24 h fell back to sources only ({100 * rate:.0f}%). Top rules: {top}")]
+    by = {}
+    for c in cases:
+        by.setdefault(c["intent"], [0, 0])
+        by[c["intent"]][0] += 1
+        by[c["intent"]][1] += c["status"] != "PASS"
+    for intent, (k, bad) in sorted(by.items()):
+        if k >= ASK_INTENT_MIN and bad / k >= ASK_INTENT_WARN:
+            findings.append((WARN, f"Ask intent {intent}: {bad} of {k} answers fell back to sources only"))
+    return findings
+
+
+def check_ask_health(token, acct, now):
+    if not token or not acct:
+        return [(WARN, "Ask health: Cloudflare token or account not set (cfk, cfkd)")]
+    import soc_monitor as soc  # same Cloudflare telemetry helpers as the SOC monitor
+    frm = now - dt.timedelta(hours=24)
+    gw = soc._flt("$workers.scriptName", "eq", GATEWAY)
+    try:
+        try:
+            events = soc.cf_events(token, acct, frm, now, [gw, soc._flt("$metadata.message", "includes", '"ask":1')], 1000)
+        except soc.SourceError:
+            events = soc.cf_events(token, acct, frm, now, [gw], 1000)  # filter not supported: parse locally
+    except soc.SourceError as e:
+        return [(WARN, f"Ask health: {_plain(e, 80)}")]
+    findings = judge_ask(ask_cases(events))
+    if len(events or []) >= 1000:
+        findings.append((OK, "Ask: read the newest 1000 log lines only, so counts above may be low on a busy day"))
+    return findings
+
+
+# ---------------------------------------------------------------- F: peer heartbeat
+PEER_MAX_HOURS = 26
+
+
+def peer_status(runs, now, hours=PEER_MAX_HOURS):
+    """Shared with the SOC monitor (one implementation)."""
+    import soc_monitor as soc
+    return soc.peer_status(runs, now, hours)
+
+
+def check_peer(token, repo, now):
+    if not token or not repo:
+        return [(WARN, "SOC monitor heartbeat: GITHUB_TOKEN or GITHUB_REPOSITORY not set")]
+    try:
+        r = _gh(token, "GET", f"/repos/{repo}/actions/workflows/soc-monitor.yml/runs?per_page=10")
+        runs = r.json().get("workflow_runs") if r.status_code == 200 else None
+    except Exception as exc:
+        return [(WARN, f"SOC monitor heartbeat: not readable ({type(exc).__name__})")]
+    if runs is None:
+        return [(WARN, f"SOC monitor heartbeat: not readable (HTTP {r.status_code})")]
+    st = peer_status(runs, now)
+    sev = {"success": OK, "running": OK, "failure": WARN, "missing": ALERT}[st]
+    text = {"success": "SOC monitor ran in the last 26 h", "running": "SOC monitor is running now",
+            "failure": "SOC monitor failed on its last run in the last 26 h", "missing": "SOC monitor has not run in the last 26 h"}[st]
+    return [(sev, text)]
+
+
 # ---------------------------------------------------------------- report
 def render(now, findings, overall):
     yesterday = (now - dt.timedelta(days=1)).strftime("%Y-%m-%d")
     lines = [
         f"# Meta supervisor: {now:%Y-%m-%d} {overall}",
         "",
-        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation.",
+        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation, Ask health, SOC monitor heartbeat.",
         "",
         "## Findings",
     ]
@@ -405,6 +505,15 @@ def main():
         all_findings.extend(check_reconciliation(now))
     except Exception as exc:
         all_findings.append((ALERT, f"reconciliation: check failed on trades.json ({type(exc).__name__})"))
+
+    # E: Ask pipeline health, F: SOC monitor heartbeat. Neither may stop the run.
+    clean = lambda v: re.sub(r"\s+", "", v or "")
+    for name, fn in (("Ask health", lambda: check_ask_health(clean(os.environ.get("cfk") or os.environ.get("cf")), clean(os.environ.get("cfkd")), now)),
+                     ("SOC monitor heartbeat", lambda: check_peer(github_token, github_repo, now))):
+        try:
+            all_findings.extend(fn())
+        except Exception as exc:
+            all_findings.append((WARN, f"{name}: check failed ({type(exc).__name__})"))
 
     overall = max((s for s, _ in all_findings), key=lambda s: RANK[s], default=OK)
     report = render(now, all_findings, overall)

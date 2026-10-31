@@ -140,6 +140,12 @@ class Senate(unittest.TestCase):
     def test_fresh_senate_ok(self):
         self.assertEqual(variant(lambda d: d.update(senate={"count": 1585, "stale": False, "age_days": 1}))[0], m.OK)
 
+    def test_meta_supervisor_heartbeat(self):
+        self.assertEqual(variant(lambda d: d["github"].update(peer_meta="missing"))[0], m.ALERT)
+        self.assertEqual(variant(lambda d: d["github"].update(peer_meta="failure"))[0], m.WARN)
+        self.assertEqual(variant(lambda d: d["github"].update(peer_meta="success"))[0], m.OK)
+        self.assertEqual(variant(lambda d: d["github"].update(peer_meta="running"))[0], m.OK)
+
     def test_fmp_match_is_left_to_meta_supervisor(self):
         # Reconciliation moved to meta_supervisor check D, so a low match no longer warns here
         self.assertEqual(variant(lambda d: d.update(senate={"count": 1600, "stale": False, "age_days": 0,
