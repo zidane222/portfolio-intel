@@ -131,7 +131,11 @@ async function readBody(req) {
 // often ran out mid-answer on a full portfolio and returned empty or cut-off JSON, so Ask showed the
 // sources-only fallback with no check flags. These caps leave room for low-effort reasoning.
 export const INTENT_MAX_TOKENS = 800;
-export const BUILD_MAX_TOKENS = 2000;
+export const BUILD_MAX_TOKENS = 1200;
+// Groq's free tier refuses a request up front when input plus max_tokens exceeds the tokens left in
+// the minute or day. At 2000 (with a 12 KB facts block) every build was refused once quota ran low,
+// while small calls still passed. 1200 with an 8 KB facts block keeps each request well under that.
+const BUILD_FACTS_BYTES = 8000;
 
 export async function intent(req, env) {
   if (!internalOk(req)) return json({error: 'Not found'}, 404);
@@ -159,7 +163,7 @@ export async function build(req, env) {
     label: clean(f.label, 120), value_display: clean(f.value_display, 200), status: ['verified', 'unknown', 'conflicting'].includes(f.status) ? f.status : 'unknown',
     source: clean(f.source, 80), asof: clean(f.asof, 40),
   })).filter(f => f.id);
-  while (facts.length && JSON.stringify(facts).length > 12000) facts = facts.slice(0, -1);
+  while (facts.length && JSON.stringify(facts).length > BUILD_FACTS_BYTES) facts = facts.slice(0, -1);
   const type = clean(body.intent && body.intent.type, 20);
   const flags = (Array.isArray(body.flags) ? body.flags : []).map(f => String(f && f.rule || f)).filter(r => FLAG_HELP[r]);
   const flagBlock = flags.length ? `\n<flags>\nYour last answer failed these checks. Fix them:\n${[...new Set(flags)].map(r => `${r}: ${FLAG_HELP[r]}`).join('\n')}\n</flags>` : '';
@@ -170,7 +174,10 @@ export async function build(req, env) {
     const ids = a => (Array.isArray(a) ? a : []).map(String).filter(x => /^f\d{1,3}$/.test(x)).slice(0, 60);
     return json({text: String(o.text || '').slice(0, 4000), used: ids(o.used), unknown_mentioned: ids(o.unknown_mentioned)});
   } catch (e) {
-    console.log('AI build error', String(e && e.message || e).slice(0, 120));
-    return json({error: 'The assistant is unavailable right now.'}, 502);
+    const msg = String(e && e.message || e);
+    console.log('AI build error', msg.slice(0, 120));
+    // Status and Groq error code only (for example "429 rate_limit_exceeded"), never response text.
+    const code = (msg.match(/\b\d{3}(?: [a-z_]{1,40})?\b/) || [msg.includes('abort') || msg.includes('timeout') ? 'timeout' : msg === 'empty answer' ? 'empty' : 'error'])[0];
+    return json({error: 'The assistant is unavailable right now.', code}, 502);
   }
 }

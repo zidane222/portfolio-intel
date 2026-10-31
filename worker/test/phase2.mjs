@@ -264,7 +264,10 @@ export default async function ({t, worker, env, O, withServices, bind}) {
   await t('ask: builder error twice goes to the safe answer', async () => {
     groqReset(); G.INTENT.push(intentJSON('holdings')); for (let i = 0; i < 4; i++) G.BUILD.push({status: 500}); // two tries, each on both models
     const d = await (await ask({question: 'Am I diversified?', portfolio: PORT})).json();
-    assert.equal(d.check.status, 'fallback'); assert.equal(G.calls.length, 5);
+    // holdings question: a code-built summary instead of the raw sources list, with the AI error code
+    assert.equal(d.check.status, 'summary', JSON.stringify(d.check)); assert.equal(G.calls.length, 5);
+    assert.ok(/By asset class:/.test(d.answer) && d.check.ai_error, JSON.stringify(d));
+    assert.equal(validateFinal(d.answer).status, 'PASS');
   });
   await t('ask: first model error falls to the second model and can still PASS', async () => {
     groqReset(); G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500}); G.BUILD.push({text: 'Most of your portfolio is in cash.', used: []});
@@ -686,12 +689,12 @@ export default async function ({t, worker, env, O, withServices, bind}) {
     groqReset(); memClear();
     G.INTENT.push(intentJSON('holdings')); G.BUILD.push({status: 500});
     const d = await (await ask({question: 'How diversified am I?', portfolio: UAT})).json();
-    assert.equal(d.check.status, 'fallback');
+    assert.equal(d.check.status, 'summary');
     const labels = d.sources.map(s => s.label);
     for (const l of ['Portfolio total value', 'Cash share of portfolio', 'ETF share of portfolio', 'Number of holdings', 'VOO share of portfolio'])
       assert.ok(labels.includes(l), 'missing ' + l + ': ' + labels);
     assert.ok(!labels.some(l => /average cost|shares held/.test(l)), labels.join('|'));
-    assert.ok(d.answer.includes('Cash share of portfolio: 57.33%'), d.answer);
+    assert.ok(d.answer.includes('* Cash: 57.33%') && d.answer.includes('By asset class:'), d.answer);
     assert.equal(validateFinal(d.answer).status, 'PASS');
   });
   await t('UAT bug 1: client allocation is used and not duplicated by derived class shares', async () => {
