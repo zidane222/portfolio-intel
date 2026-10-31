@@ -74,6 +74,7 @@ jobs:
           pip install --quiet cryptography
           TOKEN=$(python3 -c "from cryptography.fernet import Fernet; import base64,hashlib; k=base64.urlsafe_b64encode(hashlib.sha256(b'testsecret:portfolio-intel-token').digest()); print(Fernet(k).encrypt(b'access-sandbox-123').decode())")
           node test/test.mjs "$TOKEN"
+          node test/disclosures.mjs
 
   zap:
     name: Live site scan (OWASP ZAP baseline)
