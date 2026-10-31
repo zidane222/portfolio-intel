@@ -380,4 +380,9 @@ jobs:
           git add trades.json
           git add trump_filings.json sectors.json smart_money.json insiders.json yields.json senate_last.json data_cache 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
-          git push
+          # main can move while the scrape runs (merged PRs, other auto-updates); rebase and retry
+          for i in 1 2 3; do
+            git pull --rebase -q origin main && git push && exit 0
+            echo "::warning::Push attempt $i failed, retrying"; sleep $((i * 10))
+          done
+          echo "::error::Could not push trades.json after 3 attempts"; exit 1
