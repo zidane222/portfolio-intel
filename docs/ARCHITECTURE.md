@@ -133,7 +133,7 @@ Flow for one `POST /api/ask` case:
    `private` (PRIVATE), `insiders` (DISCLOSURES `/api/insiders`: corporate insider buys, not Congress; rules
    route "insider", "Form 4" and officer or director purchases here and skip Groq call #1; window from the
    question, "this week" by default; largest first; joint filings merged; any single buy over $1B held back
-   as a data error and noted). Each failure becomes an evidence row with status `error` or `timeout`.
+   as a data error and noted; the answer is a code-built numbered list from the verified facts with no builder call, unless the data is stale). Each failure becomes an evidence row with status `error` or `timeout`.
 5. `factcheck.js` (rules F1 to F10): sources and as-of dates, unknown for missing keys, cross-source
    tolerance, freshness, range checks, portfolio recompute, parsing, text as text only, cap of 60
    facts, derived facts in code only.

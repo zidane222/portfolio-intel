@@ -30,7 +30,7 @@ export function formatNumber(value, unit) {
     const s = n < 0 ? '-' : '';
     if (a >= 1e9) return `${s}$${comma(a / 1e9, 2)}B`;
     if (a >= 1e6) return `${s}$${comma(a / 1e6, 2)}M`;
-    return `${s}$${comma(a, 2)}`;
+    return `${s}$${comma(a, Number.isInteger(n) && a >= 1000 ? 0 : 2)}`; // whole amounts: $999,996, not $999,996.00
   }
   if (unit === 'pct') return `${comma(n, a >= 100 ? 0 : 2)}%`;
   if (unit === 'count') return comma(Math.round(n), 0);
@@ -86,6 +86,37 @@ export function sourcesFor(facts, ids) {
 
 // Code-only answer: up to 8 verified facts. Lines that fail the safety rules are skipped
 // (lineOk comes from the validator so the safe answer always passes V4 to V11).
+// Insider buys (SEC Form 4): the answer is built here from the checked facts, in the agent's order
+// (largest first), so no model can reorder lines or drop the buyer, role and date. Returns null when
+// the window fact is not verified (for example stale data), and the builder path handles it.
+export function insidersAnswer(facts, lineOk = () => true) {
+  const by = new Map((facts || []).map(f => [f.key, f]));
+  const ok = f => f && f.status === 'verified';
+  const win = by.get('insider:window');
+  if (!ok(win)) return null;
+  const ids = [win.id];
+  const cnt = by.get('count:insider_buys');
+  const head = [ok(cnt) ? `${win.value}: ${display(cnt)}.` : `${win.value}.`];
+  if (ok(cnt)) ids.push(cnt.id);
+  const held = by.get('insider:held_back');
+  if (ok(held)) { head.push(`${held.value}.`); ids.push(held.id); }
+  const lines = [];
+  for (let i = 1; by.has(`insider:${i}`); i++) {
+    const t = by.get(`insider:${i}`), v = by.get(`insider:${i}:value`);
+    if (!ok(t) || !ok(v)) continue;
+    if (!lineOk(`${t.value}, worth ${display(v)}.`)) continue; // one hostile filer name drops its line, not the answer
+    lines.push({text: `${lines.length + 1}. ${t.value}, worth ${display(v)}.`, ids: [t.id, v.id]});
+  }
+  const scope = by.get('insider:scope');
+  const tail = ok(scope) ? [`${scope.value}.`] : [];
+  if (ok(scope)) ids.push(scope.id);
+  const build = n => [head.join(' '), ...lines.slice(0, n).map(l => l.text), ...tail].join('\n');
+  let n = lines.length;
+  while (n > 1 && build(n).length > 1500) n--; // V11 limit on the rendered body is 1600
+  for (const l of lines.slice(0, n)) ids.push(...l.ids);
+  return {text: build(n) + '\n\n' + DISCLAIMER, ids};
+}
+
 export function safeAnswer(facts, lineOk = () => true) {
   const lines = [];
   const shown = [];
