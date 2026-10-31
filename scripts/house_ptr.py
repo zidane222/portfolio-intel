@@ -35,6 +35,7 @@ SKIP = {'ST','OT','SP','JT','OP','PT','RE','CO','FX','HE','PE','CS','PS'}
 # parentheses, a transaction type and a date, so OCR noise yields no row rather than a wrong one.
 OCR_DPI = 300
 OCR_MAX_PAGES = 20
+OCR_SAMPLE_CHARS = 1500
 OCR_DATE = re.compile(r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b')
 OCR_TX = re.compile(r'(?:^|\s)(Partial\s+Sale|S\s*\(partial\)|Purchase|Sale|Exchange|P|S|E)(?=\s)', re.I)
 OCR_TICKER = re.compile(r'\(([A-Z0-9]{1,5}(?:\.[A-Z])?)\)')
@@ -234,6 +235,8 @@ def scrape(year, log=print):
                 time.sleep(3)
         return None, f'download failed ({last})'
 
+    ocr_seen = {}  # url -> OCR text, so the parse report can show what OCR read
+
     def parse_pdf(name, url):
         """Returns (trades, reason). reason says why a filing gave no trades, so gaps show up in the log."""
         trades = []
@@ -247,6 +250,7 @@ def scrape(year, log=print):
                     # Paper filings are scanned images with no text layer; read them with OCR
                     pages = len(pdf.pages)
                     ocr_text = ocr_pdf_text(content)
+                    ocr_seen[url] = ocr_text
                     for asset, tx, d, rest in ocr_rows(ocr_text):
                         t = make_trade(name, asset, tx, d, rest, '')
                         if t:
@@ -288,7 +292,11 @@ def scrape(year, log=print):
         trades, why = parse_pdf(filing['name'], filing['url'])
         all_trades.extend(check_date(t) for t in trades)
         if why.startswith('parse error') or not trades:
-            empty.append({'name': filing['name'], 'url': filing['url'], 'reason': why, 'partial': bool(trades)})
+            entry = {'name': filing['name'], 'url': filing['url'], 'reason': why, 'partial': bool(trades)}
+            if filing['url'] in ocr_seen:
+                # Diagnostic: public filing text, trimmed, so the OCR row parser can be fitted to real forms
+                entry['ocr_sample'] = ocr_seen[filing['url']][:OCR_SAMPLE_CHARS]
+            empty.append(entry)
             log(f"::warning::No trades from {safe(filing['name'])}: {why} {safe(filing['url'])}")
         if (i+1) % 50 == 0:
             log(f"Processed {i+1}/{len(filings)}, trades: {len(all_trades)}")
