@@ -29,6 +29,76 @@ def classify_fund(ticker, name, reported=''):
 
 SKIP = {'ST','OT','SP','JT','OP','PT','RE','CO','FX','HE','PE','CS','PS'}
 
+# ── OCR for scanned paper filings ───────────────────────────────────────────
+# Paper PTRs (McCaul files this way) have no text layer. Render each page with pdftoppm and
+# read it with tesseract (both from apt in the workflow). Rows still have to show a ticker in
+# parentheses, a transaction type and a date, so OCR noise yields no row rather than a wrong one.
+OCR_DPI = 300
+OCR_MAX_PAGES = 20
+OCR_DATE = re.compile(r'\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b')
+OCR_TX = re.compile(r'(?:^|\s)(Partial\s+Sale|S\s*\(partial\)|Purchase|Sale|Exchange|P|S|E)(?=\s)', re.I)
+OCR_TICKER = re.compile(r'\(([A-Z0-9]{1,5}(?:\.[A-Z])?)\)')
+
+
+def ocr_available():
+    import shutil
+    return bool(shutil.which('tesseract') and shutil.which('pdftoppm'))
+
+
+def ocr_pdf_text(content, max_pages=OCR_MAX_PAGES):
+    """Text of a scanned PDF, page by page. Returns '' if OCR tools are missing or fail."""
+    import subprocess, tempfile, glob, os
+    if not ocr_available():
+        return ''
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, 'f.pdf')
+        with open(src, 'wb') as f:
+            f.write(content)
+        try:
+            subprocess.run(['pdftoppm', '-r', str(OCR_DPI), '-gray', '-l', str(max_pages), '-png', src, os.path.join(d, 'p')],
+                           check=True, capture_output=True, timeout=120)
+            out = []
+            for img in sorted(glob.glob(os.path.join(d, 'p*.png'))):
+                r = subprocess.run(['tesseract', img, '-', '--psm', '6'], capture_output=True, timeout=120)
+                out.append(r.stdout.decode('utf-8', 'replace'))
+            return '\n'.join(out)
+        except (subprocess.SubprocessError, OSError):
+            return ''
+
+
+def _ocr_date(m):
+    mo, dy, yr = (int(x) for x in m.groups())
+    if yr < 100:
+        yr += 2000
+    if not (1 <= mo <= 12 and 1 <= dy <= 31 and 2000 <= yr <= 2100):
+        return None
+    return f'{mo:02d}/{dy:02d}/{yr}'
+
+
+def ocr_rows(text):
+    """(asset_text, tx, date, amount_text) per OCR line that holds a ticker, a type and a date.
+    The first date on the line is the transaction date; the notification date follows it."""
+    rows = []
+    for line in text.splitlines():
+        line = re.sub(r'\s+', ' ', line).strip()
+        tk = OCR_TICKER.search(line)
+        dm = next((m for m in OCR_DATE.finditer(line) if _ocr_date(m)), None)
+        if not tk or not dm:
+            continue
+        ticker = tk.group(1).replace('0', 'O')  # OCR reads O as 0 inside tickers
+        if not ticker.isalpha() and '.' not in ticker:
+            continue
+        head = line[:dm.start()]
+        txs = list(OCR_TX.finditer(' ' + head[tk.end():] + ' '))
+        if not txs:
+            continue
+        tx = txs[-1].group(1).strip()
+        tx = 'S (partial)' if 'partial' in tx.lower() else tx[0].upper()
+        asset = line[:tk.start()].strip() + f' ({ticker})'
+        rows.append((asset, tx, _ocr_date(dm), line[dm.end():]))
+    return rows
+
+
 def scrape(year, log=print):
     session = requests.Session()
     all_trades = []
@@ -174,8 +244,18 @@ def scrape(year, log=print):
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 text = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
                 if not text.strip():
-                    # Paper filings are scanned images with no text layer; they need OCR to read
-                    return trades, f'no text layer, likely a scanned paper filing ({len(pdf.pages)} pages)'
+                    # Paper filings are scanned images with no text layer; read them with OCR
+                    pages = len(pdf.pages)
+                    ocr_text = ocr_pdf_text(content)
+                    for asset, tx, d, rest in ocr_rows(ocr_text):
+                        t = make_trade(name, asset, tx, d, rest, '')
+                        if t:
+                            t['ocr'] = True
+                            trades.append(t)
+                    if trades:
+                        return trades, ''
+                    why = 'OCR found no transaction rows' if ocr_text.strip() else 'OCR unavailable or failed'
+                    return trades, f'no text layer, likely a scanned paper filing ({pages} pages); {why}'
                 # Filing date = when the member signed the report, not the notification column
                 sm = re.search(r'Digitally Signed:[^\n]*?(\d{2}/\d{2}/\d{4})', text)
                 filed_date = parse_date(sm.group(1)) if sm else ''

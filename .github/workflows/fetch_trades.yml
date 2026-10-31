@@ -34,6 +34,7 @@ jobs:
           echo "::notice::Supabase keep-awake ping: HTTP $code"
       - name: Install dependencies
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr poppler-utils
           pip install requests beautifulsoup4 lxml pdfplumber pyyaml
           # Keep yesterday's data so new filings can be detected for alerts
           cp trades.json /tmp/old_trades.json 2>/dev/null || echo '{"trades":[]}' > /tmp/old_trades.json
