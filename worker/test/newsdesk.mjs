@@ -297,11 +297,35 @@ export default async function ({t}) {
     assert.throws(() => makeSupabase({SUPABASE_URL: '__SUPABASE_URL__', SUPABASE_SERVICE_KEY: KEY}), /URL not configured/);
     assert.throws(() => makeSupabase({SUPABASE_URL: 'https://evil.com', SUPABASE_SERVICE_KEY: KEY}), /URL not configured/);
     assert.throws(() => makeSupabase({SUPABASE_URL: SB}), /key not configured/);
+    assert.throws(() => makeSupabase({SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: {get() {}}}), /key not configured/);
+    assert.throws(() => makeSupabase({SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: ' "" \n'}), /key not configured/);
     const real = globalThis.fetch;
     globalThis.fetch = async () => new Response('{"message":"secret detail ' + KEY + '"}', {status: 401});
     try { await makeSupabase(ENV).rpc('news_claim', {}); assert.fail('should throw'); }
     catch (e) { assert.equal(e.message, 'Supabase rpc news_claim failed: 401'); assert.ok(!e.message.includes(KEY)); }
     finally { globalThis.fetch = real; }
+  });
+
+  await t('newsdesk supabase client cleans a pasted key and URL; fetch errors name their class', async () => {
+    const real = globalThis.fetch;
+    let seen = null;
+    // Like Workers fetch: building the headers throws on a value with a newline
+    globalThis.fetch = async (u, init) => { new Headers(init.headers); seen = String(u); return new Response('[]', {status: 200}); };
+    try {
+      const sb = makeSupabase({SUPABASE_URL: ' "' + SB + '/rest/v1/"\n', SUPABASE_SERVICE_KEY: '"' + KEY + '"\n'});
+      assert.deepEqual(await sb.rpc('news_claim', {}), []);
+      assert.equal(seen, SB + '/rest/v1/rpc/news_claim');
+      // An interior line break in a pasted key is cleaned before it reaches the header
+      seen = null; await makeSupabase({SUPABASE_URL: SB, SUPABASE_SERVICE_KEY: KEY.slice(0, 5) + '\n ' + KEY.slice(5)}).rpc('news_claim', {});
+      assert.equal(seen, SB + '/rest/v1/rpc/news_claim');
+      const cases = [[new TypeError('Invalid header value ' + KEY), 'TypeError, bad header'], [new Error('Network connection lost.'), 'Error, connection'],
+        [Object.assign(new Error('The operation timed out'), {name: 'TimeoutError'}), 'TimeoutError, timeout'], [new TypeError('Invalid URL'), 'TypeError, bad url']];
+      for (const [err, want] of cases) {
+        globalThis.fetch = async () => { throw err; };
+        try { await makeSupabase(ENV).rpc('news_seed', {}); assert.fail('should throw'); }
+        catch (e) { assert.equal(e.message, `Supabase rpc news_seed failed: network (${want})`); assert.ok(!e.message.includes(KEY)); }
+      }
+    } finally { globalThis.fetch = real; }
   });
 
   await t('newsdesk ids are stable per ticker, day and origin; price ref skips weekends', async () => {
