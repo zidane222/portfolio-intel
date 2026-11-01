@@ -200,10 +200,12 @@ def house_check(trades_path, k, days=21):
     recent = [t for t in ours if t.get('ticker') and (t.get('filed') or '') >= oldest]
     ours_found = sum(1 for t in recent if (last(t.get('representative', '')), norm_ticker(t['ticker']), t.get('date'), (t.get('type') or '')[:4]) in fmp_keys)
     return {'ours_checked': len(recent), 'ours_found_in_fmp': ours_found, 'checked': checked, 'matched': matched,
-            'matched_other_symbol': other_symbol, 'rate': round(matched / checked, 3) if checked else None,
-            # Share users see: official matches plus paper-filing trades filled from FMP
+            'matched_other_symbol': other_symbol,
+            # Headline: trades we hold, official reads first, FMP only for filings we cannot read.
+            # official_rate is what our own scrape read; the official site stays the source of truth.
             'filled_from_fmp': causes.get('filled_from_fmp_paper_filing', 0),
-            'coverage_rate': round((matched + causes.get('filled_from_fmp_paper_filing', 0)) / checked, 3) if checked else None,
+            'rate': round((matched + causes.get('filled_from_fmp_paper_filing', 0)) / checked, 3) if checked else None,
+            'official_rate': round(matched / checked, 3) if checked else None,
             'window_days': days, 'miss_causes': causes, 'misses': misses[:100]}
 
 
