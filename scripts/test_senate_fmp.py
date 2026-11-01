@@ -125,6 +125,57 @@ class HouseCheckMatching(unittest.TestCase):
             self.assertIn(k, r)
 
 
+class HousePaperFill(unittest.TestCase):
+    REPORT = {'empty': [{'name': 'McCaul, Michael T.', 'reason': 'no text layer, likely a scanned paper filing (5 pages); OCR found no transaction rows'},
+                        {'name': 'Greene, Marjorie Taylor', 'reason': 'no transaction rows recognized'}]}
+    FMP = [{"symbol": "AMZN", "transactionDate": "2026-08-20", "lastName": "McCaul", "firstName": "Michael", "type": "Purchase",
+            "disclosureDate": "2026-10-16", "assetDescription": "Amazon.com Inc", "assetType": "Stock", "amount": "$1,001 - $15,000",
+            "link": "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/2026/1.pdf"},
+           {"symbol": "SPGI", "transactionDate": "2026-08-13", "lastName": "McCaul", "firstName": "Michael", "type": "Purchase",
+            "disclosureDate": "2026-10-16", "assetDescription": "S&P Global Inc", "assetType": "Stock", "amount": "$1,001 - $15,000"},
+           {"symbol": "NVDA", "transactionDate": "2026-10-01", "lastName": "Greene", "firstName": "Marjorie", "type": "Purchase",
+            "disclosureDate": "2026-10-10", "assetDescription": "NVIDIA", "assetType": "Stock", "amount": "$1,001 - $15,000"},
+           {"symbol": "TSLA", "transactionDate": "2026-10-01", "lastName": "Khanna", "firstName": "Ro", "type": "Sale",
+            "disclosureDate": "2026-10-10", "assetDescription": "Tesla", "assetType": "Stock", "amount": "$1,001 - $15,000"}]
+
+    def fill(self, ours, saved=(), fmp=None):
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as tf:
+            json.dump({'trades': ours, 'house_parse_report': self.REPORT}, tf)
+        try:
+            with mock.patch.object(f, 'fetch_latest', return_value=self.FMP if fmp is None else fmp):
+                return f.house_paper_fill(tf.name, 'k', saved)
+        finally:
+            os.unlink(tf.name)
+
+    def test_only_members_with_scanned_filings_are_filled(self):
+        kept = self.fill([])
+        self.assertEqual(sorted(t['ticker'] for t in kept), ['AMZN', 'SPGI'])  # Greene's empty filing is not scanned, Khanna has none
+        t = next(x for x in kept if x['ticker'] == 'AMZN')
+        self.assertEqual((t['source'], t['via'], t['paper_filing'], t['representative']), ('house', 'fmp', True, 'McCaul, Michael'))
+        self.assertTrue(t['link'].startswith('https://disclosures-clerk.house.gov/'))
+
+    def test_trades_the_official_scrape_already_has_are_skipped(self):
+        ours = [{'representative': 'McCaul, Michael T.', 'ticker': 'AMZN', 'date': '2026-08-20', 'type': 'Purchase', 'source': 'house'}]
+        self.assertEqual([t['ticker'] for t in self.fill(ours)], ['SPGI'])
+
+    def test_saved_fills_survive_when_fmp_page_rolls_over(self):
+        first = self.fill([])
+        again = self.fill([], saved=first, fmp=[])
+        self.assertEqual(sorted(t['ticker'] for t in again), ['AMZN', 'SPGI'])
+
+    def test_no_link_from_other_hosts(self):
+        fmp = [dict(self.FMP[1], link='https://evil.example/x')]
+        self.assertNotIn('link', self.fill([], fmp=fmp)[0])
+
+    def test_check_counts_fills_apart_from_official_matches(self):
+        ours = [{'representative': 'McCaul, Michael', 'ticker': 'AMZN', 'date': '2026-08-20', 'type': 'Purchase', 'source': 'house', 'via': 'fmp'},
+                {'representative': 'Rulli, Michael', 'ticker': 'GOOG', 'date': '2026-10-16', 'type': 'Sale', 'filed': '2026-10-20'}]
+        fmp = [self.FMP[0], {"symbol": "GOOG", "transactionDate": "2026-10-16", "lastName": "Rulli", "type": "Sale", "disclosureDate": "2026-10-20"}]
+        r = HouseCheckMatching.run_check(self, ours, fmp, self.REPORT)
+        self.assertEqual((r['checked'], r['matched'], r['filled_from_fmp'], r['rate'], r['coverage_rate']), (2, 1, 1, 0.5, 1.0))
+        self.assertEqual(r['misses'], [])
+
+
 class KeyNeverInErrors(unittest.TestCase):
     def test_error_message_has_no_key(self):
         class R:

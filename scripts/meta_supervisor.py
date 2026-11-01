@@ -269,10 +269,13 @@ def check_reconciliation(now, path="trades.json"):
             findings.append((sev, f"House, FMP accuracy: FMP has {of} of {oc} recent official House trades ({100 * of / oc:.0f}%)"))
         checked, matched = hc.get("checked") or 0, hc.get("matched") or 0
         if checked >= MIN_SAMPLE:
-            rate = matched / checked
+            filled = hc.get("filled_from_fmp") or 0
+            rate = (matched + filled) / checked  # what users see; paper filings are filled from FMP
             sev = ALERT if rate < HOUSE_COMPLETE_ALERT else WARN if rate < HOUSE_COMPLETE_WARN else OK
             other = hc.get("matched_other_symbol") or 0
             note = f", {other} under a different symbol" if other else ""
+            if filled:
+                note += f"; plus {filled} from scanned paper filings filled from FMP, {100 * rate:.0f}% shown in the app"
             findings.append((sev, f"House, our completeness: we have {matched} of {checked} recent House trades FMP lists ({100 * rate:.0f}%{note})"))
         causes = hc.get("miss_causes") or {}
         if causes:

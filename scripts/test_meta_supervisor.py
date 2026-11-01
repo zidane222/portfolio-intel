@@ -298,6 +298,13 @@ class ReconciliationCheck(unittest.TestCase):
         self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(matched=48))), m.ALERT)
         self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(matched=80))), m.WARN)
 
+    def test_paper_filing_fills_count_toward_completeness_and_are_named(self):
+        f = self.run_check(lambda d: d["fmp_house_check"].update(matched=60, filled_from_fmp=29))
+        line = next(t for _, t in f if t.startswith("House, our completeness"))
+        self.assertIn("60 of 90", line)
+        self.assertIn("plus 29 from scanned paper filings filled from FMP, 99% shown in the app", line)
+        self.assertNotEqual(next(s for s, t in f if t.startswith("House, our completeness")), m.ALERT)
+
     def test_low_fmp_accuracy_warns(self):
         self.assertEqual(self.worst(self.run_check(lambda d: d["fmp_house_check"].update(ours_found_in_fmp=41))), m.WARN)
 

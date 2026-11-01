@@ -31,7 +31,7 @@ jobs:
         run: cd worker && npm ci
 
       - name: Install Python dependencies
-        run: pip install requests
+        run: pip install requests beautifulsoup4 lxml
 
       - name: Unit tests
         run: python3 -m unittest scripts/test_meta_supervisor.py
