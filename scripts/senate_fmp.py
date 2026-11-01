@@ -148,7 +148,9 @@ def house_check(trades_path, k, days=21):
     since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     fmp = fetch_latest('house-latest', since, k)
     d = json.load(open(trades_path))
-    ours = [t for t in d.get('trades', []) if t.get('source', 'house') == 'house']
+    ours = [t for t in d.get('trades', []) if t.get('source', 'house') == 'house' and t.get('via') != 'fmp']
+    filled = {(str(t.get('representative')).split(',')[0].strip().lower(), norm_ticker(t.get('ticker')), t.get('date'), (t.get('type') or '')[:4])
+              for t in d.get('trades', []) if t.get('via') == 'fmp'}
     def last(n): return str(n).split(',')[0].strip().lower()
     have = {(last(t.get('representative', '')), norm_ticker(t.get('ticker')), t.get('date'), (t.get('type') or '')[:4]) for t in ours}
     by_mdt = {}
@@ -176,6 +178,9 @@ def house_check(trades_path, k, days=21):
             used.add(id(cand[0]))  # one of our trades can stand in for only one FMP row
             matched += 1; other_symbol += 1
             continue
+        if (name, norm_ticker(sym), date, typ) in filled:
+            causes['filled_from_fmp_paper_filing'] = causes.get('filled_from_fmp_paper_filing', 0) + 1
+            continue  # not read by our scrape, but served to users from FMP
         filed = (r.get('disclosureDate') or '')[:10]
         # Our 'filed' is the signature date; FMP's is the Clerk posting date, often a few days later
         if filed and newest_filed and filed > _plus_days(newest_filed, 3):
@@ -196,7 +201,58 @@ def house_check(trades_path, k, days=21):
     ours_found = sum(1 for t in recent if (last(t.get('representative', '')), norm_ticker(t['ticker']), t.get('date'), (t.get('type') or '')[:4]) in fmp_keys)
     return {'ours_checked': len(recent), 'ours_found_in_fmp': ours_found, 'checked': checked, 'matched': matched,
             'matched_other_symbol': other_symbol, 'rate': round(matched / checked, 3) if checked else None,
+            # Share users see: official matches plus paper-filing trades filled from FMP
+            'filled_from_fmp': causes.get('filled_from_fmp_paper_filing', 0),
+            'coverage_rate': round((matched + causes.get('filled_from_fmp_paper_filing', 0)) / checked, 3) if checked else None,
             'window_days': days, 'miss_causes': causes, 'misses': misses[:100]}
+
+
+PAPER_REASON = 'no text layer'
+
+
+def paper_members(d):
+    """Last names of members with at least one scanned paper filing we could not read."""
+    rep = (d.get('house_parse_report') or {}).get('empty', [])
+    return {str(e.get('name', '')).split(',')[0].strip().lower() for e in rep if PAPER_REASON in str(e.get('reason', ''))}
+
+
+def house_paper_fill(trades_path, k, saved=()):
+    """Trades from scanned paper House filings, taken from FMP.
+
+    Paper PTRs have no text layer and list asset names, not tickers, so OCR cannot give reliable
+    rows. For members with such a filing, FMP rows that our official scrape does not already hold
+    are added with via='fmp' and paper_filing=True. FMP's free plan serves only its newest page,
+    so earlier fills are kept in `saved` and re-checked each day. Returns (fills, all_kept)."""
+    d = json.load(open(trades_path))
+    official = [t for t in d.get('trades', []) if t.get('source', 'house') == 'house' and t.get('via') != 'fmp']
+    def last(n): return str(n).split(',')[0].strip().lower()
+    have = {(last(t.get('representative')), norm_ticker(t.get('ticker')), t.get('date'), (t.get('type') or '')[:4]) for t in official}
+    by_mdt = {}
+    for t in official:
+        by_mdt.setdefault((last(t.get('representative')), t.get('date'), (t.get('type') or '')[:4]), []).append(t)
+    def in_official(t):
+        m = (last(t['representative']), t['date'], (t['type'] or '')[:4])
+        return (m[0], norm_ticker(t['ticker']), m[1], m[2]) in have or any(
+            _same_company(o.get('description'), t.get('description')) for o in by_mdt.get(m, []))
+    paper = paper_members(d)
+    new = []
+    for r in fetch_latest('house-latest', '0000', k):
+        t = to_trade(r)
+        if not t or last(t['representative']) not in paper:
+            continue
+        t.update(source='house', via='fmp', paper_filing=True)
+        t.pop('link', None)
+        link = str(r.get('link') or '')
+        if link.startswith('https://disclosures-clerk.house.gov/'):
+            t['link'] = link
+        new.append(t)
+    kept, seen = [], set()
+    for t in new + [dict(x) for x in saved]:
+        if tkey(t) in seen or in_official(t):
+            continue  # once the official scrape reads the trade, the FMP copy is dropped
+        seen.add(tkey(t)); kept.append(t)
+    kept.sort(key=lambda t: t['date'], reverse=True)
+    return kept
 
 
 if __name__ == '__main__':
@@ -204,10 +260,22 @@ if __name__ == '__main__':
     ap.add_argument('--since', default=f'{datetime.date.today().year}-01-01')
     ap.add_argument('--out', default='senate.json')
     ap.add_argument('--house-check', metavar='TRADES_JSON')
+    ap.add_argument('--house-paper-fill', metavar='TRADES_JSON', help='add FMP trades for scanned paper House filings')
+    ap.add_argument('--saved', help='JSON list of earlier paper-filing fills (read and rewritten)')
     ap.add_argument('--known', help='JSON file with earlier Senate trades, for consistent senator names')
     a = ap.parse_args()
     k = key()
-    if a.house_check:
+    if a.house_paper_fill:
+        saved = json.load(open(a.saved)) if a.saved and os.path.exists(a.saved) else []
+        kept = house_paper_fill(a.house_paper_fill, k, saved)
+        d = json.load(open(a.house_paper_fill))
+        d['trades'] = [t for t in d['trades'] if t.get('via') != 'fmp'] + kept
+        d['house_paper_filled'] = len(kept)
+        json.dump(d, open(a.house_paper_fill, 'w'))
+        if a.saved:
+            json.dump(kept, open(a.saved, 'w'))
+        print(f"::notice::House paper filings: {len(kept)} trades from FMP for members with scanned filings")
+    elif a.house_check:
         res = house_check(a.house_check, k)
         print(json.dumps(res))
         print(f"::notice::FMP House cross-check: {res['matched']} of {res['checked']} recent FMP House trades match the official House scrape")

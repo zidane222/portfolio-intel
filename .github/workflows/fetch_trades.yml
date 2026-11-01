@@ -97,6 +97,16 @@ jobs:
           print(f"::notice::Senate: {len(senate)} trades ({len(new)} from FMP in the last 45 days), newest filing {newest}{' (stale)' if stale else ''}")
           PYEOF
 
+      - name: House trades from scanned paper filings (FMP)
+        continue-on-error: true
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          # Paper PTRs have no text layer and list names, not tickers; FMP has already read them.
+          # On failure the job goes on without the fill; house_paper_last.json is left unchanged.
+          [ -f house_paper_last.json ] || echo '[]' > house_paper_last.json
+          python3 scripts/senate_fmp.py --house-paper-fill trades.json --saved house_paper_last.json
+
       - name: FMP accuracy cross-check against the official House scrape
         continue-on-error: true
         env:
@@ -378,7 +388,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add trades.json
-          git add trump_filings.json sectors.json smart_money.json insiders.json yields.json senate_last.json data_cache 2>/dev/null || true
+          git add house_paper_last.json trump_filings.json sectors.json smart_money.json insiders.json yields.json senate_last.json data_cache 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           # main can move while the scrape runs (merged PRs, other auto-updates); rebase and retry
           for i in 1 2 3; do
