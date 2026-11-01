@@ -270,13 +270,13 @@ def check_reconciliation(now, path="trades.json"):
         checked, matched = hc.get("checked") or 0, hc.get("matched") or 0
         if checked >= MIN_SAMPLE:
             filled = hc.get("filled_from_fmp") or 0
-            rate = (matched + filled) / checked  # what users see; paper filings are filled from FMP
+            rate = (matched + filled) / checked  # official reads first, FMP only for filings we cannot read
             sev = ALERT if rate < HOUSE_COMPLETE_ALERT else WARN if rate < HOUSE_COMPLETE_WARN else OK
             other = hc.get("matched_other_symbol") or 0
-            note = f", {other} under a different symbol" if other else ""
+            parts = [f"{matched} read from official filings" + (f" ({other} under a different symbol)" if other else "")]
             if filled:
-                note += f"; plus {filled} from scanned paper filings filled from FMP, {100 * rate:.0f}% shown in the app"
-            findings.append((sev, f"House, our completeness: we have {matched} of {checked} recent House trades FMP lists ({100 * rate:.0f}%{note})"))
+                parts.append(f"{filled} from FMP for scanned paper filings we cannot read")
+            findings.append((sev, f"House, our completeness: we have {matched + filled} of {checked} recent House trades FMP lists ({100 * rate:.0f}%): " + ", ".join(parts)))
         causes = hc.get("miss_causes") or {}
         if causes:
             findings.append((OK, "House misses by cause: " + ", ".join(f"{_plain(k).replace('_', ' ')} {_plain(v, 6)}" for k, v in sorted(causes.items()))))

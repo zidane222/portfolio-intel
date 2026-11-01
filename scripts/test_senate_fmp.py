@@ -172,7 +172,7 @@ class HousePaperFill(unittest.TestCase):
                 {'representative': 'Rulli, Michael', 'ticker': 'GOOG', 'date': '2026-10-16', 'type': 'Sale', 'filed': '2026-10-20'}]
         fmp = [self.FMP[0], {"symbol": "GOOG", "transactionDate": "2026-10-16", "lastName": "Rulli", "type": "Sale", "disclosureDate": "2026-10-20"}]
         r = HouseCheckMatching.run_check(self, ours, fmp, self.REPORT)
-        self.assertEqual((r['checked'], r['matched'], r['filled_from_fmp'], r['rate'], r['coverage_rate']), (2, 1, 1, 0.5, 1.0))
+        self.assertEqual((r['checked'], r['matched'], r['filled_from_fmp'], r['rate'], r['official_rate']), (2, 1, 1, 1.0, 0.5))
         self.assertEqual(r['misses'], [])
 
 
