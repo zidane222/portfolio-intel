@@ -81,12 +81,15 @@ async function askChecked(question, history) {
     const read = d.intent === 'news_read' && d.read && typeof d.read === 'object' ? d.read : null;
     if (read) keepRead(read);
     if (status === 'PASS') return {text: stripDisclaimer(d.answer), sources, check: 'PASS', mode: 'checked', read};
+    // Code-built summary from checked numbers when the AI writer is down: show the text, no Checked badge
+    if (status === 'summary') return {text: stripDisclaimer(d.answer), sources, check: 'summary', mode: 'summary', read};
     return {text: '', sources, check: status || 'fallback', mode: 'fallback', read};
   } catch (e) {
     return {text: await askAI(question, history), sources: [], check: null, mode: 'plain', read: null};
   }
 }
 const FALLBACK_NOTE = 'Shown from sources only, the written answer did not pass our checks.';
+const SUMMARY_NOTE = 'Built from your numbers without the AI writer, which is busy right now.';
 const PLAIN_NOTE = 'Sources unavailable right now.';
 function fmtAsof(a) {
   if (!a) return 'date unknown';
@@ -110,6 +113,7 @@ function sourcesBlock(sources, open) {
 function checkHTML(r) {
   if (r.mode === 'checked') return '<span class="check-badge" title="Every number was checked against its source">Checked</span>';
   if (r.mode === 'fallback') return `<span class="check-note">${esc(FALLBACK_NOTE)}</span>`;
+  if (r.mode === 'summary') return `<span class="check-note">${esc(SUMMARY_NOTE)}</span>`;
   return `<span class="check-note">${esc(PLAIN_NOTE)}</span>`;
 }
 async function ask(q) {
@@ -127,7 +131,7 @@ async function ask(q) {
       $('answer-sources-list').innerHTML = sourcesItems(r.sources);
       src.hidden = false; src.open = r.mode === 'fallback';
     }
-    $('answer-status').textContent = r.mode === 'checked' ? 'Answer ready, checked' : r.mode === 'fallback' ? 'Showing sources only' : 'Answer ready';
+    $('answer-status').textContent = r.mode === 'checked' ? 'Answer ready, checked' : r.mode === 'fallback' ? 'Showing sources only' : r.mode === 'summary' ? 'Answer ready, from your numbers' : 'Answer ready';
   } catch (e) {
     out.hidden = false; out.textContent = 'The assistant is unavailable right now. Try again in a minute.';
     $('answer-status').textContent = 'Assistant unavailable';

@@ -185,6 +185,28 @@ export function ratesAnswer(facts, lineOk = () => true) {
   return {text: out.join('\n') + '\n\n' + DISCLAIMER, ids};
 }
 
+// Portfolio summary built in code from checked facts, used when the AI writer is unavailable.
+export function holdingsAnswer(facts, lineOk = () => true) {
+  const ok = f => f && f.status === 'verified' && typeof f.value === 'number';
+  const by = new Map((facts || []).map(f => [f.key, f]));
+  const total = by.get('portfolio:total');
+  const cls = new Map();
+  for (const f of facts || []) { const m = ok(f) && f.key.match(/^(?:alloc|share_class):(.+)$/); if (m && !cls.has(m[1].toLowerCase())) cls.set(m[1].toLowerCase(), f); }
+  const classes = [...cls.values()].sort((a, b) => b.value - a.value);
+  if (!classes.length) return null;
+  const ids = [], out = [];
+  const count = by.get('derived:holdings_count');
+  out.push(ok(total) ? `Your portfolio totals ${display(total)}${ok(count) ? ` across ${display(count)} holdings` : ''}.` : 'Your portfolio breaks down as follows.');
+  if (ok(total)) ids.push(total.id); if (ok(total) && ok(count)) ids.push(count.id);
+  out.push('By asset class:');
+  for (const f of classes.slice(0, 6)) { const l = `* ${f.label.replace(/ share of portfolio$/, '')}: ${display(f)}`; if (lineOk(l)) { out.push(l); ids.push(f.id); } }
+  const top = (facts || []).filter(f => ok(f) && /^share:/.test(f.key)).sort((a, b) => b.value - a.value).slice(0, 3);
+  if (top.length) { out.push('Largest holdings:'); for (const f of top) { const l = `* ${f.label.replace(/ share of portfolio$/, '')}: ${display(f)} of the portfolio`; if (lineOk(l)) { out.push(l); ids.push(f.id); } } }
+  const lead = classes[0];
+  if (lead.value >= 50) out.push(`More than half of the portfolio sits in one asset class (${lead.label.replace(/ share of portfolio$/, '').toLowerCase()}), so that class drives most of the portfolio's risk and return.`);
+  return {text: out.join('\n') + '\n\n' + DISCLAIMER, ids};
+}
+
 export function safeAnswer(facts, lineOk = () => true) {
   const lines = [];
   const shown = [];

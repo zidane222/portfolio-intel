@@ -8,7 +8,7 @@ import * as intentAgent from './intent.js';
 import * as builder from './builder.js';
 import {run as factcheckRun} from './factcheck.js';
 import {validate, validateFinal, lineSafe} from './validator.js';
-import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor, insidersAnswer, disclosuresAnswer, ratesAnswer} from './render.js';
+import {renderText, safeAnswer, outOfScopeAnswer, sourcesFor, insidersAnswer, disclosuresAnswer, ratesAnswer, holdingsAnswer} from './render.js';
 import {AGENTS, plan} from './registry.js';
 import {validateRenderedRead} from './validator.js';
 import {renderRead, NEWS_LABEL, MESSAGES} from './newsread/render.js';
@@ -68,7 +68,12 @@ function makeAI(c, env, signal) {
       headers: {'Content-Type': 'application/json', 'X-PI-Internal': '1'},
       body: JSON.stringify(body),
     })), left + 250);
-    if (!r.ok) throw new Error('ai HTTP ' + r.status);
+    if (!r.ok) {
+      let code = '';
+      try { code = String((await r.json()).code || '').replace(/[^\w ]/g, '').slice(0, 40); } catch (e) {}
+      c.ai_error = code || 'HTTP ' + r.status;
+      throw new Error('ai HTTP ' + r.status);
+    }
     return await r.json();
   };
 }
@@ -107,7 +112,7 @@ function finish(c, t0, {answer, ids, status, flags, attempts}) {
   c.result = {
     answer,
     sources: sourcesFor(c.facts, ids),
-    check: {status, flags: [...new Set(flags.map(f => f.rule))], attempts},
+    check: {status, flags: [...new Set(flags.map(f => f.rule))], attempts, ...(c.ai_error && status !== 'PASS' ? {ai_error: c.ai_error} : {})},
     intent: c.intent?.type || 'general',
     case_id: c.id,
     ms: Date.now() - t0,
@@ -213,6 +218,12 @@ export async function runCase(input, env, opts = {}) {
         return finish(c, t0, {answer: rendered, ids: [...used], status: 'PASS', flags: [], attempts});
       }
       if (attempts >= 2) break;
+    }
+    // The AI writer failed (no draft reached the validator): portfolio questions get a code-built
+    // summary from checked facts instead of the raw sources list.
+    if (!flags.length && c.intent.type === 'holdings') {
+      const r = holdingsAnswer(c.facts, lineSafe);
+      if (r) return finish(c, t0, {answer: r.text, ids: r.ids, status: 'summary', flags: [], attempts});
     }
     return fallback(c, t0, flags, attempts);
   } catch (e) {
