@@ -12,3 +12,4 @@
 | 8 | Collect vendor SOC 2 reports (C-04) | compliance | Yearly |
 | 9 | Penetration test before Plaid production (G-04) | External | Before other users connect accounts |
 | 10 | 3 to 12 months of clean evidence, then a SOC 2 Type I, then Type II, with a CPA firm | Owner | When needed |
+| 11 | Open: pin GitHub Actions to commit SHAs in meta-supervisor.yml and insights.yml (C-41, R-16). Blocked on access | Owner | Before Phase 5 PR merge or next quarter review |
