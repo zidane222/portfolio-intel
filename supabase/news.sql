@@ -18,7 +18,7 @@ create table if not exists public.news_verdicts (
   run_date       date not null,
   created        timestamptz not null,
   ticker         text not null check (ticker ~ '^[A-Z.-]{1,6}$'),
-  origin         text not null default 'batch' check (origin = 'batch'),  -- on-demand reads never land here
+  origin         text not null default 'batch' check (origin in ('batch', 'shadow')),  -- on-demand reads never land here; shadow = trial provider, never shown
   mode           text check (mode in ('debate', 'collaborate', 'thin')),
   stance         text check (stance in ('positive', 'negative', 'mixed', 'unclear')),
   confidence     text check (confidence in ('low', 'medium', 'high')),
@@ -26,6 +26,7 @@ create table if not exists public.news_verdicts (
   groq_calls     int not null default 0,
   tokens         int not null default 0,
   model          text,
+  provider       text,                          -- groq | gemini; null for rows written before phase 5
   prompt_version text,
   price_ref_date date,
   record         jsonb not null,                -- full pi/news-verdict/v1 record; no user fields
@@ -46,11 +47,26 @@ create table if not exists public.news_jobs (
 
 -- ── Budget: global daily Groq cap shared by batch and on-demand ──────────────────
 create table if not exists public.news_budget (
-  day         date primary key,
+  day         date not null,
+  provider    text not null default 'groq',
   calls       int not null default 0,
   tokens      int not null default 0,
-  batch_calls int not null default 0
+  batch_calls int not null default 0,
+  primary key (day, provider)
 );
+
+-- Upgrades for databases created before phase 5 (no-ops on a new one). Same as supabase/migrations/2026-11-02-news-provider.sql.
+alter table public.news_verdicts drop constraint if exists news_verdicts_origin_check;
+alter table public.news_verdicts add constraint news_verdicts_origin_check check (origin in ('batch', 'shadow'));
+alter table public.news_verdicts add column if not exists provider text;
+alter table public.news_budget add column if not exists provider text not null default 'groq';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.news_budget'::regclass and contype = 'p'
+                 and pg_get_constraintdef(oid) like '%(day, provider)%') then
+    alter table public.news_budget drop constraint if exists news_budget_pkey;
+    alter table public.news_budget add primary key (day, provider);
+  end if;
+end $$;
 
 -- ── 7-day view for the app (served only through pi-newsdesk /reads) ──────────────
 create or replace view public.news_reads_7d with (security_invoker = on) as
@@ -124,18 +140,18 @@ begin
   returning j.ticker, j.attempts;
 end $$;
 
--- Atomically reserves Groq budget. Returns false (and changes nothing) when it would pass a cap.
+-- Atomically reserves budget for one provider (p). Returns false (and changes nothing) when it would pass a cap.
 create or replace function public.news_take(d date, calls int, tokens int, batch boolean,
-                                            cap_calls int, cap_tokens int, cap_batch int)
+                                            cap_calls int, cap_tokens int, cap_batch int, p text default 'groq')
 returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
 declare ok boolean;
 begin
-  if calls < 0 or tokens < 0 then return false; end if;
-  insert into public.news_budget as b (day, calls, tokens, batch_calls)
-  select d, calls, tokens, case when batch then calls else 0 end
+  if calls < 0 or tokens < 0 or p not in ('groq', 'gemini') then return false; end if;
+  insert into public.news_budget as b (day, provider, calls, tokens, batch_calls)
+  select d, p, calls, tokens, case when batch then calls else 0 end
    where calls <= cap_calls and tokens <= cap_tokens and (not batch or calls <= cap_batch)
      and (batch or calls <= cap_calls - cap_batch)
-  on conflict (day) do update
+  on conflict (day, provider) do update
      set calls = b.calls + excluded.calls,
          tokens = b.tokens + excluded.tokens,
          batch_calls = b.batch_calls + excluded.batch_calls
@@ -163,7 +179,9 @@ end $$;
 revoke all on function public.news_universe(int, int) from public, anon, authenticated;
 revoke all on function public.news_seed(date, text[]) from public, anon, authenticated;
 revoke all on function public.news_claim(date, int) from public, anon, authenticated;
-revoke all on function public.news_take(date, int, int, boolean, int, int, int) from public, anon, authenticated;
+-- Drop the pre-phase-5 signature: it would make calls without p ambiguous.
+drop function if exists public.news_take(date, int, int, boolean, int, int, int);
+revoke all on function public.news_take(date, int, int, boolean, int, int, int, text) from public, anon, authenticated;
 revoke all on function public.news_purge() from public, anon, authenticated;
 grant execute on function public.news_universe(int, int), public.news_seed(date, text[]), public.news_claim(date, int),
-  public.news_take(date, int, int, boolean, int, int, int), public.news_purge() to service_role;
+  public.news_take(date, int, int, boolean, int, int, int, text), public.news_purge() to service_role;
