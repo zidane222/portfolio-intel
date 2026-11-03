@@ -571,6 +571,54 @@ class SecretsNotLeaked(unittest.TestCase):
         self.assertNotIn("supabase.co", out)
 
 
+class NewsProviderCheck(unittest.TestCase):
+    def _run(self, data):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.json")
+            if data is not None:
+                with open(path, "w") as f:
+                    json.dump(data, f)
+            return m.check_news_providers(YESTERDAY, path)
+
+    def _data(self, gem=(13, 15), groq=(14, 15), rec="pending"):
+        mk = lambda t: {"verdicts": t[1], "pass": t[0]}
+        return {"trial_start": "2026-10-25", "trial_days": 5, "recommendation": rec,
+                "days": [{"date": YESTERDAY, "providers": {"gemini": mk(gem), "groq": mk(groq)}}]}
+
+    def test_missing_file(self):
+        self.assertEqual(self._run(None), [(m.OK, "news provider trial: not running")])
+
+    def test_no_trial_start(self):
+        self.assertEqual(self._run({"trial_start": None})[0][1], "news provider trial: not running")
+
+    def test_ok_lines_per_provider(self):
+        f = self._run(self._data())
+        self.assertIn((m.OK, "news provider gemini: 13/15 PASS (86%)"), f)
+        self.assertIn((m.OK, "news provider groq: 14/15 PASS (93%)"), f)
+        self.assertFalse([x for x in f if x[0] != m.OK])
+
+    def test_warn_under_80_with_5_verdicts(self):
+        f = self._run(self._data(gem=(7, 10)))
+        self.assertTrue([x for x in f if x[0] == m.WARN and "gemini" in x[1]])
+
+    def test_no_warn_under_5_verdicts(self):
+        f = self._run(self._data(gem=(1, 4)))
+        self.assertFalse([x for x in f if x[0] == m.WARN])
+
+    def test_recommendation_line_when_not_pending(self):
+        f = self._run(self._data(rec="gemini_primary"))
+        self.assertTrue([x for x in f if "recommendation: gemini_primary" in x[1]])
+        self.assertFalse([x for x in self._run(self._data()) if "recommendation" in x[1]])
+
+    def test_bad_json_is_idle(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "c.json")
+            open(path, "w").write("{nope")
+            self.assertEqual(m.check_news_providers(YESTERDAY, path)[0][1], "news provider trial: not running")
+
+
 class RenderCheck(unittest.TestCase):
     def test_no_em_dash_in_report(self):
         findings = [(m.ALERT, "something failed"), (m.OK, "other thing ok")]

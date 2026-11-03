@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # commits news_provider_compare.json
   actions: read   # check F: SOC monitor heartbeat
   issues: write
 
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          ref: main
 
       - uses: actions/setup-python@v5
         with:
@@ -34,7 +34,14 @@ jobs:
         run: pip install requests beautifulsoup4 lxml
 
       - name: Unit tests
-        run: python3 -m unittest scripts/test_meta_supervisor.py
+        run: python3 -m unittest scripts/test_meta_supervisor.py scripts/test_news_provider_compare.py
+
+      - name: News provider comparison
+        # Phase 5 trial. Writes nothing and exits 0 if Supabase is unreachable
+        env:
+          SUPABASE_URL: ${{ secrets.SP }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
+        run: python3 scripts/news_provider_compare.py
 
       - name: Run meta supervisor
         # Secrets only on this step, not on npm ci or pip install
@@ -45,3 +52,17 @@ jobs:
           cfk: ${{ secrets.cfk || secrets.cf }}   # check E: read-only Cloudflare telemetry, as the SOC monitor
           cfkd: ${{ secrets.cfkd }}
         run: python3 scripts/meta_supervisor.py
+
+      - name: Commit news_provider_compare.json
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add news_provider_compare.json 2>/dev/null || true
+          # generated is a timestamp; commit only when something else changed
+          if git diff --staged --quiet; then exit 0; fi
+          git commit -q -m "Auto-update news provider comparison $(date -u '+%Y-%m-%d')"
+          for i in 1 2 3; do
+            git pull --rebase -q origin main && git push && exit 0
+            echo "::warning::Push attempt $i failed, retrying"; sleep $((i * 10))
+          done
+          echo "::error::Could not push news_provider_compare.json after 3 attempts"; exit 1
