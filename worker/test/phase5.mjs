@@ -1,6 +1,7 @@
 // Phase 5 tests: Gemini as a second news provider (docs/plans/phase5-news-dual-provider.md). QA extends this file.
 // Loaded by test/test.mjs. Swaps globalThis.fetch per test and restores it.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {memClear} from '../src/lib/http.js';
 import {geminiChat} from '../src/lib/gemini.js';
 import {providerConfig, chat} from '../src/lib/llm.js';
@@ -30,7 +31,7 @@ const AGENTS = {
 
 // Fake Supabase, Google News, Groq and Gemini. Budgets are kept per provider.
 function world({groq = 'ok', gemini = 'ok', caps = {}} = {}) {
-  const w = {sbCalls: [], gemBodies: [], groq: 0, gem: 0, news: 0, verdicts: [], jobs: new Map(), seeded: false, spent: {},
+  const w = {sbCalls: [], lookups: [], rows: [], gemBodies: [], groq: 0, gem: 0, news: 0, verdicts: [], jobs: new Map(), seeded: false, spent: {},
     mode: {groq, gemini}, caps};
   w.fetch = async (u, init = {}) => {
     u = String(u);
@@ -53,6 +54,11 @@ function world({groq = 'ok', gemini = 'ok', caps = {}} = {}) {
       }
       if (path.startsWith('news_verdicts?on_conflict=')) { w.verdicts.push(...body); return new Response(null, {status: 201}); }
       if (path.startsWith('news_jobs?') && init.method === 'PATCH') { w.jobs.get(decodeURIComponent(path.match(/ticker=eq\.([^&]+)/)[1])).status = body.status; return new Response(null, {status: 204}); }
+      if (path.startsWith('news_verdicts?select=record')) { // on-demand lookup of today's batch row: honours the origin filter like PostgREST
+        const q = new URLSearchParams(path.split('?')[1]); w.lookups.push(path);
+        const origin = (q.get('origin') || '').replace('eq.', '');
+        return ok((w.rows || []).filter(r => !origin || r.origin === origin).map(r => ({record: r.record})));
+      }
       return new Response('{}', {status: 404});
     }
     if (u.startsWith('https://news.google.com/')) {
@@ -218,5 +224,71 @@ export default async function ({t}) {
       for (const bad of ['"user":', '"ip"', 'holdings', 'watchlist', 'portfolio', 'x-forwarded', 'cf-connecting']) assert.ok(!text.includes(bad), bad);
       assert.deepEqual(Object.keys(init.headers).sort(), ['Authorization', 'Content-Type']);
     }
+  });
+
+  await t('budget denied on both providers: batch is skipped and on demand is busy, no provider is called', async () => {
+    const env = {...GEMINI, NEWS_SHADOW: ''};
+    const w = world({caps: {groq: 0, gemini: 0}});
+    const r = await withFetch(w, () => nd.tick(env, deps(env), NOW.getTime()));
+    assert.equal(r.results.length, 2); assert.ok(r.results.every(x => x.status === 'skipped'), JSON.stringify(r.results));
+    assert.equal(w.groq, 0); assert.equal(w.gem, 0); assert.equal(w.verdicts.length, 0, 'nothing stored for a skipped read');
+    const w2 = world({caps: {groq: 0, gemini: 0}});
+    const res = await withFetch(w2, () => nd.read(new Request('https://x/read', {method: 'POST', body: '{"ticker":"AAPL"}', headers: {'X-PI-Internal': '1', 'X-PI-Quota': 'ok'}}), env, deps(env)));
+    const d = await res.json();
+    assert.ok(d.status === 'busy' || d.status === 'fallback', JSON.stringify(d)); assert.notEqual(d.status, 'ok');
+    assert.equal(w2.groq, 0); assert.equal(w2.gem, 0);
+  });
+
+  await t('budget denied on the primary only: nothing is sent to the fallback either', async () => {
+    const env = {...GEMINI, NEWS_SHADOW: ''};
+    const w = world({caps: {groq: 0}});
+    const r = await withFetch(w, () => nd.tick(env, deps(env), NOW.getTime()));
+    assert.ok(r.results.every(x => x.status === 'skipped'));
+    assert.equal(w.groq, 0); assert.equal(w.gem, 0, 'a budget denial is not a provider error, so no failover');
+  });
+
+  await t('shadow rows are never served: on-demand lookup filters origin batch, reads view excludes shadow', async () => {
+    const mk = origin => ({origin, record: {ticker: 'AAPL', origin, status: 'PASS', run_date: '2026-11-02', provider: origin === 'shadow' ? 'gemini' : 'groq'}});
+    // Only a shadow row exists for today: the on-demand path must ignore it and make its own read.
+    const w = world(); w.rows = [mk('shadow')];
+    const env = {...GEMINI};
+    const res = await withFetch(w, () => nd.read(new Request('https://x/read', {method: 'POST', body: '{"ticker":"AAPL"}', headers: {'X-PI-Internal': '1', 'X-PI-Quota': 'ok'}}), env, deps(env)));
+    const d = await res.json();
+    assert.ok(w.lookups.length === 1 && /origin=eq\.batch/.test(w.lookups[0]), w.lookups.join());
+    assert.equal(d.cached, false, 'shadow row was not served as a cached batch verdict');
+    assert.ok(!JSON.stringify(d).includes('"origin":"shadow"') && !JSON.stringify(d).includes('"provider":"gemini"'));
+    assert.equal(w.gem, 0, 'no Gemini call on demand even with a shadow slot configured');
+    // A batch row alongside a shadow row is the one served.
+    const w2 = world(); w2.rows = [mk('shadow'), mk('batch')];
+    const d2 = await (await withFetch(w2, () => nd.read(new Request('https://x/read', {method: 'POST', body: '{"ticker":"AAPL"}', headers: {'X-PI-Internal': '1', 'X-PI-Quota': 'ok'}}), env, deps(env)))).json();
+    assert.equal(d2.cached, true); assert.equal(JSON.stringify(d2).includes('"origin":"shadow"'), false);
+    assert.equal(w2.groq, 0);
+    // /reads reads the news_reads_7d view, so the view itself must exclude shadow (and the worker only reads that view).
+    const sql = readFileSync(new URL('../../supabase/news.sql', import.meta.url), 'utf8');
+    const view = sql.slice(sql.indexOf('news_reads_7d'));
+    assert.match(view.slice(0, 600), /origin\s*=\s*'batch'/);
+    const src = readFileSync(new URL('../src/modules/newsdesk.js', import.meta.url), 'utf8');
+    assert.ok(/select\('news_reads_7d'/.test(src));
+    const w3 = world();
+    const rr = await withFetch(w3, () => nd.reads(new Request('https://x/reads', {method: 'POST', body: '{"tickers":["AAPL"]}', headers: {'X-PI-Internal': '1'}}), env, deps(env)));
+    assert.equal(rr.status, 200); assert.equal(w3.gem, 0);
+  });
+
+  await t('on demand with no Gemini key is unchanged: Groq only, groq budget row, no failover', async () => {
+    const run = async (mode, extra = {}) => {
+      const env = {...BASE, ...extra}, w = world({groq: mode});
+      const res = await withFetch(w, () => nd.read(new Request('https://x/read', {method: 'POST', body: '{"ticker":"AAPL"}', headers: {'X-PI-Internal': '1', 'X-PI-Quota': 'ok'}}), env, deps(env)));
+      return {w, d: await res.json()};
+    };
+    const ok = await run('ok');
+    assert.equal(ok.d.status, 'ok'); assert.equal(ok.w.gem, 0); assert.ok(ok.w.groq >= 1);
+    assert.ok(ok.w.sbCalls.filter(c => c.path === 'rpc/news_take').every(c => c.body.p === 'groq' && c.body.batch === false));
+    assert.equal(ok.d.read.provider, 'groq'); assert.deepEqual(ok.d.read.providers, {judge: 'groq'});
+    const bad = await run('429');
+    assert.equal(bad.d.status, 'fallback'); assert.equal(bad.w.gem, 0);
+    // Gemini slots configured but no key: same outcome as above.
+    const noKey = await run('429', {NEWS_FALLBACK: 'gemini', NEWS_SHADOW: 'gemini', NEWS_SHADOW_UNTIL: '2026-11-10', GEMINI_MODEL: 'gem-test'});
+    assert.equal(noKey.d.status, 'fallback'); assert.equal(noKey.w.gem, 0);
+    assert.ok(!noKey.w.sbCalls.some(c => c.body && c.body.p === 'gemini'));
   });
 }
