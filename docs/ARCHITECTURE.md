@@ -26,7 +26,9 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
    dividends)                    /internal/intent,                                 no public URL)
                                  /internal/build)                                      │
                                                                   Workers KV NEWSREADS ┤ Supabase service key
-                                                                  Supabase news tables ┘ (RLS, definer functions)
+                                                                  Supabase news tables ┤ (RLS, definer functions)
+                                                       Groq + Gemini (free tier, news ┘ reads only; Gemini gets
+                                                       public tickers and headlines only, pi-newsdesk only)
         ▲
         │ fallback on network or 5xx errors
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
@@ -121,9 +123,9 @@ gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` wit
 | Class | Examples | Where it lives | Protection |
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
-| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
+| Credentials | API keys, service role key, Groq key, Gemini key (pi-newsdesk only) | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
 | Account | Email, passkey public keys, hash of the passcode login secret | Supabase Auth | Supabase managed. The login secret is PBKDF2 (600k, salt from the email, separate purpose) of the passcode, so it can't recover the passcode or the data key |
-| Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |
+| Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines, from Groq or Gemini) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier. Only this class goes to Gemini (free tier, prompts may be used by Google), from pi-newsdesk only; Ask and any user data stay on Groq |
 | Confidential (user), news list | The user's own ticker list for News "My reads" | Device vault (`state.newsList`), ciphertext when synced | Sent to the gateway as plain tickers in a POST body to get reads, with no user identifier (control C-39, accepted disclosure) |
 
 ## In-app agent framework (in place, Phase 2)

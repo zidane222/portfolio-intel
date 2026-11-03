@@ -81,6 +81,7 @@ jobs:
           persist-credentials: false
 
       - uses: actions/download-artifact@v4
+        continue-on-error: true   # no artifact when Supabase was unreachable; the next step then exits 0
         with:
           name: news-provider-compare
           path: artifact

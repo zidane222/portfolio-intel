@@ -1,6 +1,6 @@
 # Phase 5: News reads on two AI providers (Groq + Gemini)
 
-Status: plan, waiting for owner approval. Builds on `docs/plans/phase3-news-agents.md`.
+Status: approved, in PR. Builds on `docs/plans/phase3-news-agents.md`.
 
 ## 1. Goal
 
@@ -102,7 +102,7 @@ Primary provider plus failover (D6). No shadow, to protect quota.
   pairs `batch` and `shadow` rows by ticker and reports per provider: verdicts completed,
   PASS rate, fallback rate, validator flags, average AI calls and tokens, and stance agreement
   between the two. Writes `news_provider_compare.json`.
-- `scripts/meta_supervisor.py`: new check E, one line per provider from that file. WARN when a
+- `scripts/meta_supervisor.py`: new check G, one line per provider from that file. WARN when a
   provider's PASS rate is under 80% for the day.
 
 ### Frontend
