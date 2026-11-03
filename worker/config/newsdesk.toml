@@ -36,6 +36,7 @@ GEMINI_MODEL = ""                # owner sets from Google AI Studio before the f
 GEMINI_CALLS_DAY = "90"
 GEMINI_TOKENS_DAY = "180000"
 GEMINI_BATCH_CALLS = "60"
+GEMINI_SHADOW_CALLS = "40"       # separate daily cap for shadow reads (budget row gemini_shadow)
 
 [observability]
 enabled = true

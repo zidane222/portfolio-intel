@@ -152,13 +152,43 @@ export default async function ({t}) {
     assert.equal(w.gem, 0);
   });
 
+  await t('gemini fetch refuses redirects', async () => {
+    let seen; const real = globalThis.fetch;
+    globalThis.fetch = async (u, init) => { seen = init; return new Response(JSON.stringify({choices: [{message: {content: '{}'}}], usage: {}}), {status: 200}); };
+    try { await geminiChat(GEMINI, 's', 'u', 1, true); } finally { globalThis.fetch = real; }
+    assert.equal(seen.redirect, 'error');
+  });
+
+  await t('shadow reads use their own gemini_shadow budget and cannot reduce the Gemini batch share', async () => {
+    assert.deepEqual(nd.caps({GEMINI_SHADOW_CALLS: '7', GEMINI_TOKENS_DAY: '99'}, 'gemini_shadow'), {calls: 7, tokens: 99, batch: 7});
+    assert.equal(nd.caps({}, 'gemini_shadow').calls, 40);
+    const w = world();
+    await withFetch(w, () => nd.tick(GEMINI, deps(GEMINI), NOW.getTime()));
+    const takes = w.sbCalls.filter(c => c.path === 'rpc/news_take').map(c => c.body);
+    assert.ok(takes.some(b => b.p === 'gemini_shadow' && b.cap_calls === 40 && b.cap_batch === 40));
+    assert.ok(!takes.some(b => b.p === 'gemini' && b.cap_calls === 40), 'shadow never draws on the gemini row');
+    for (const f of ['supabase/news.sql', 'supabase/migrations/2026-11-02-news-provider.sql']) {
+      const sql = readFileSync(new URL('../../' + f, import.meta.url), 'utf8');
+      assert.ok(sql.includes("p is null or p not in ('groq', 'gemini', 'gemini_shadow')"), f + ' guard');
+    }
+  });
+
+  await t('shadow error log carries only the error name, never the message', async () => {
+    const logs = []; const w = world();
+    const d = deps(GEMINI); const real = d.chat;
+    d.chat = async (p, ...r) => { if (p === 'gemini') throw new Error('SECRET-PROMPT-TEXT'); return real(p, ...r); };
+    const log = console.log;
+    await withFetch(w, async () => { console.log = (...a) => logs.push(a.join(' ')); try { await nd.tick({...GEMINI, NEWS_FALLBACK: ''}, d, NOW.getTime()); } finally { console.log = log; } });
+    assert.ok(!logs.join('\n').includes('SECRET-PROMPT-TEXT'));
+  });
+
   await t('budgets are separate per provider', async () => {
     const w = world();
     await withFetch(w, () => nd.tick(GEMINI, deps(GEMINI), NOW.getTime()));
     const takes = w.sbCalls.filter(c => c.path === 'rpc/news_take').map(c => c.body);
     assert.ok(takes.some(b => b.p === 'groq' && b.cap_batch === 50 && b.cap_calls === 90));
-    assert.ok(takes.some(b => b.p === 'gemini' && b.cap_batch === 60 && b.cap_calls === 90));
-    assert.equal(w.spent.groq.calls, 2); assert.equal(w.spent.gemini.calls, 2);
+    assert.ok(takes.some(b => b.p === 'gemini_shadow' && b.cap_batch === 40 && b.cap_calls === 40));
+    assert.equal(w.spent.groq.calls, 2); assert.equal(w.spent.gemini_shadow.calls, 2);
     assert.deepEqual(nd.caps({GEMINI_CALLS_DAY: '5', GEMINI_TOKENS_DAY: '6', GEMINI_BATCH_CALLS: '7'}, 'gemini'), {calls: 5, tokens: 6, batch: 7});
     assert.deepEqual(nd.caps({NEWS_CALLS_DAY: '1', NEWS_TOKENS_DAY: '2', NEWS_BATCH_CALLS: '3'}), {calls: 1, tokens: 2, batch: 3});
   });

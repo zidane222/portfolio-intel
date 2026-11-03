@@ -174,6 +174,19 @@ def build(rows, start, end, now):
     }
 
 
+def keep_generated(result, path):
+    """Keep the previous "generated" value when nothing else changed, so the commit step sees no diff."""
+    try:
+        with open(path) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        return result
+    if isinstance(old, dict) and old.get("generated") and \
+            {k: v for k, v in old.items() if k != "generated"} == {k: v for k, v in result.items() if k != "generated"}:
+        result = dict(result, generated=old["generated"])
+    return result
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", default=os.environ.get("NEWS_TRIAL_START", "").strip())
@@ -199,6 +212,7 @@ def main(argv=None):
     except Unreachable as exc:
         print(f"::warning::news provider compare: Supabase unreachable ({exc}); nothing written")
         return 0
+    result = keep_generated(result, args.out)
     with open(args.out, "w") as f:
         json.dump(result, f, indent=2, sort_keys=True)
         f.write("\n")

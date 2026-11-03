@@ -20,7 +20,7 @@ create or replace function public.news_take(d date, calls int, tokens int, batch
 returns boolean language plpgsql security definer set search_path = public, pg_temp as $$
 declare ok boolean;
 begin
-  if calls < 0 or tokens < 0 or p not in ('groq', 'gemini') then return false; end if;
+  if calls < 0 or tokens < 0 or p is null or p not in ('groq', 'gemini', 'gemini_shadow') then return false; end if;
   insert into public.news_budget as b (day, provider, calls, tokens, batch_calls)
   select d, p, calls, tokens, case when batch then calls else 0 end
    where calls <= cap_calls and tokens <= cap_tokens and (not batch or calls <= cap_batch)

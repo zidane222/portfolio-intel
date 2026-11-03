@@ -6,18 +6,21 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # commits news_provider_compare.json
-  actions: read   # check F: SOC monitor heartbeat
-  issues: write
+  contents: read   # workflow default; the commit job raises it for itself only
 
 jobs:
   supervise:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read   # check F: SOC monitor heartbeat
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -53,16 +56,50 @@ jobs:
           cfkd: ${{ secrets.cfkd }}
         run: python3 scripts/meta_supervisor.py
 
+      - name: Upload news_provider_compare.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: news-provider-compare
+          path: news_provider_compare.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+  commit:
+    # Write job, split from the install job (same pattern as CONTROLS C-41): no installs, no secrets except the repo token.
+    needs: supervise
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: meta-supervisor-commit
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: news-provider-compare
+          path: artifact
+
       - name: Commit news_provider_compare.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          [ -f artifact/news_provider_compare.json ] || { echo "No comparison file, nothing to commit"; exit 0; }
+          cp artifact/news_provider_compare.json news_provider_compare.json
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add news_provider_compare.json 2>/dev/null || true
-          # generated is a timestamp; commit only when something else changed
+          git add news_provider_compare.json
+          # the script keeps "generated" when nothing else changed, so an unchanged result is no diff
           if git diff --staged --quiet; then exit 0; fi
           git commit -q -m "Auto-update news provider comparison $(date -u '+%Y-%m-%d')"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           for i in 1 2 3; do
-            git pull --rebase -q origin main && git push && exit 0
+            git pull --rebase -q origin main && git push origin HEAD:main && exit 0
             echo "::warning::Push attempt $i failed, retrying"; sleep $((i * 10))
           done
           echo "::error::Could not push news_provider_compare.json after 3 attempts"; exit 1

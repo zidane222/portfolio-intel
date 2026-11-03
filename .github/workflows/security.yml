@@ -77,6 +77,10 @@ jobs:
           node test/disclosures.mjs
           node test/rates.mjs
           node test/groq-fast.mjs
+      - name: Python tests
+        run: |
+          pip install --quiet requests beautifulsoup4 lxml google-cloud-bigquery
+          python3 -m unittest scripts/test_history_load.py scripts/test_meta_supervisor.py scripts/test_news_provider_compare.py
 
   zap:
     name: Live site scan (OWASP ZAP baseline)

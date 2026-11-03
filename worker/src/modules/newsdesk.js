@@ -51,6 +51,11 @@ export async function verdictId(ticker, runDate, origin) {
 const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : d; };
 // Daily caps per provider (plan D4). Groq keeps the NEWS_* vars; Gemini has its own GEMINI_* vars.
 export function caps(env, provider = 'groq') {
+  // Shadow reads get their own budget row, so they can never use up the batch or failover share of the same provider.
+  if (/_shadow$/.test(provider)) {
+    const n = num(env.GEMINI_SHADOW_CALLS, 40);
+    return {calls: n, tokens: caps(env, provider.replace(/_shadow$/, '')).tokens, batch: n};
+  }
   if (provider === 'gemini') return {calls: num(env.GEMINI_CALLS_DAY, 90), tokens: num(env.GEMINI_TOKENS_DAY, 180000), batch: num(env.GEMINI_BATCH_CALLS, 60)};
   return {calls: num(env.NEWS_CALLS_DAY, 90), tokens: num(env.NEWS_TOKENS_DAY, 180000), batch: num(env.NEWS_BATCH_CALLS, 50)};
 }
@@ -97,7 +102,7 @@ const retryable = e => /^(429|5\d\d)\b|time ?out|timed out|empty answer/i.test(S
 
 // deps.take / deps.groq for runNewsRead, with a flag when the provider's cap said no.
 // `groq` is the name the agents call; it now runs on `provider` and fails over to `fallback`.
-function budgetFor(env, deps, runDate, batch, signal, perCallMs, provider = 'groq', fallback = '') {
+function budgetFor(env, deps, runDate, batch, signal, perCallMs, provider = 'groq', fallback = '', key = provider) {
   const state = {denied: false, calls: 0, tokens: 0, providers: {}};
   const reserve = async (p, calls, tokens) => {
     const c = caps(env, p);
@@ -107,7 +112,7 @@ function budgetFor(env, deps, runDate, batch, signal, perCallMs, provider = 'gro
   };
   const take = async (calls, tokens) => {
     if (state.denied) return false;
-    const ok = await reserve(provider, calls, tokens);
+    const ok = await reserve(key, calls, tokens);
     if (!ok) state.denied = true;
     return ok;
   };
@@ -153,7 +158,8 @@ async function produce(env, deps, ticker, runDate, origin, deadlineMs, opts = {}
   const a = deps.agents;
   const kase = opts.kase ? copyCase(opts.kase) : await prepare(deps, ticker, runDate, origin);
   kase.origin = origin;
-  const b = budgetFor(env, deps, runDate, origin !== 'on_demand', signal, Math.min(15000, deadlineMs), provider, opts.fallback || '');
+  const b = budgetFor(env, deps, runDate, origin !== 'on_demand', signal, Math.min(15000, deadlineMs), provider, opts.fallback || '',
+    origin === 'shadow' ? provider + '_shadow' : provider);
   const out = await a.runNewsRead(kase, {groq: b.groq, take: b.take, now: () => deps.now(), deadline, signal,
     origin, run_date: runDate, model, price_ref_date: priceRefDate(runDate)});
   const record = {
@@ -198,7 +204,7 @@ export async function tick(env, deps, scheduledTime = Date.now()) {
           const {record} = await produce(env, deps, job.ticker, runDate, 'shadow', TICK_DEADLINE_MS, {provider: cfg.shadow, kase});
           if (record.status !== 'skipped' && record.status !== 'error') await sb.upsert('news_verdicts', [verdictRow(record)], 'ticker,run_date,origin');
           return record.status;
-        } catch (e) { console.log('newsdesk shadow error', job.ticker, String(e && e.message || e).slice(0, 120)); return 'error'; }
+        } catch (e) { console.log('newsdesk shadow error', job.ticker, String(e && e.name || 'Error').slice(0, 40)); return 'error'; }
       })() : Promise.resolve(null);
       const [primary, shadow] = await Promise.all([
         produce(env, deps, job.ticker, runDate, 'batch', TICK_DEADLINE_MS, {provider: cfg.primary, fallback: cfg.fallback, kase}).then(v => ({v}), error => ({error})),

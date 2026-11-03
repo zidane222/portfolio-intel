@@ -143,6 +143,16 @@ class Main(unittest.TestCase):
         printed = " ".join(str(x) for call in pr.call_args_list for x in call.args)
         self.assertNotIn("secret-key-123", printed)
 
+    def test_generated_kept_when_nothing_else_changed(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "o.json")
+            old = {"generated": "2026-11-01T14:10:00Z", "a": 1}
+            with open(out, "w") as f:
+                json.dump(old, f)
+            self.assertEqual(c.keep_generated({"generated": "2026-11-02T14:10:00Z", "a": 1}, out)["generated"], old["generated"])
+            self.assertEqual(c.keep_generated({"generated": "2026-11-02T14:10:00Z", "a": 2}, out)["generated"], "2026-11-02T14:10:00Z")
+            self.assertEqual(c.keep_generated({"generated": "x", "a": 1}, os.path.join(d, "missing.json"))["generated"], "x")
+
     def test_no_shadow_rows_pending(self):
         with tempfile.TemporaryDirectory() as d:
             out = os.path.join(d, "o.json")

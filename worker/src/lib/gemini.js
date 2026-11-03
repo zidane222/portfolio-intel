@@ -20,6 +20,7 @@ export async function geminiChat(env, system, user, maxTokens, jsonMode = false,
       headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${key}`},
       body: JSON.stringify(payload),
       signal,
+      redirect: 'error',
     });
     d = await r.json().catch(() => null); // a non-JSON error page must still report its status
   } catch (e) { throw new Error(String(e && e.name === 'TimeoutError' ? 'timeout' : e && e.name || e).slice(0, 60)); }
