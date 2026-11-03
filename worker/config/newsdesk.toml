@@ -2,6 +2,7 @@
 # Daily news-read batch (Cron Trigger) plus on-demand and 7-day reads. Plan: docs/plans/phase3-news-agents.md
 # The deploy workflow adds at deploy time (never committed):
 #   [[secrets_store_secrets]] GROQ_API_KEY, SUPABASE_SERVICE_KEY  (Cloudflare Secrets Store)
+#   [[secrets_store_secrets]] GEMINI_API_KEY                       (Secrets Store; only when it exists, else no Gemini trial)
 #   SUPABASE_URL                                                   (from the GitHub secret SP)
 #   [[kv_namespaces]] id                                           (from repository variable CF_KV_NEWSREADS)
 name = "pi-newsdesk"
@@ -25,6 +26,16 @@ NEWS_TOKENS_DAY = "180000"
 NEWS_BATCH_CALLS = "50"
 NEWS_BATCH_ENABLED = "1"
 NEWS_ONDEMAND_ENABLED = "1"
+# Phase 5: second AI provider for news (docs/plans/phase5-news-dual-provider.md). With no GEMINI_API_KEY
+# or an empty GEMINI_MODEL the Gemini slots switch off and the Worker behaves as Groq only.
+NEWS_PROVIDER = "groq"           # primary for batch and on-demand: groq | gemini
+NEWS_FALLBACK = "gemini"         # second provider for failover, or "" to disable
+NEWS_SHADOW = "gemini"           # provider for the shadow batch, or "" to disable
+NEWS_SHADOW_UNTIL = "2026-11-10" # last run_date with a shadow run (7 batch days)
+GEMINI_MODEL = ""                # owner sets from Google AI Studio before the first deploy
+GEMINI_CALLS_DAY = "90"
+GEMINI_TOKENS_DAY = "180000"
+GEMINI_BATCH_CALLS = "60"
 
 [observability]
 enabled = true
