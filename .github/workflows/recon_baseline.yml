@@ -29,6 +29,13 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: python3 scripts/recon_baseline.py --out-dir recon_out --today "$(date -u +%Y-%m-%d)" --senate-budget 900
 
+      - name: Print report (public filing data only, no keys)
+        if: always()
+        run: |
+          [ -f recon_out/baseline_report.md ] || exit 0
+          cat recon_out/baseline_report.md | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 -c "import json;d=json.load(open('recon_out/baseline_report.json'));[print(c['chamber'],json.dumps({k:c[k] for k in ('totals_12m','comparison','causes','late_filings','notes')}),json.dumps(c.get('scrape_reports')),json.dumps(c['samples_only_fmp'])) for c in d['chambers']]"
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
