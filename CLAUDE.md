@@ -12,6 +12,7 @@ writes code. No agent merges to `main`: every change goes through a pull request
 5. **compliance** records evidence (PR, tests, scans) and updates controls if anything changed.
 6. **architect** gives the final review and opens the PR. The owner merges by saying "yes".
 7. **ux-discovery** runs on request or monthly, producing research, never code.
+8. **competitive-intel** runs on request or monthly: tracks similar apps, writes `docs/research/competitive/YYYY-MM.md`, and files one issue per recommendation with its owner team. Research only, never code.
 
 ## House rules
 - Secrets never go in code, commits or logs. Workers use the Cloudflare Secrets Store, GitHub Actions use repository secrets or Workload Identity Federation.
