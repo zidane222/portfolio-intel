@@ -40,7 +40,7 @@ function baseRecord(c, deps, nowMs) {
     mode_basis: {P: mode.P, N: mode.N, n: mode.n, pubs_pos: mode.pubs_pos, pubs_neg: mode.pubs_neg},
     stance: null, confidence: null, confidence_cap: confidenceCap(pack, mode), summary: null,
     bull: [], bear: [], joint: [],
-    evidence: pack.items.map(i => ({id: i.id, title: i.title, source: i.source, date: i.date, url: i.url, tone: i.tone})),
+    evidence: pack.items.map(i => ({id: i.id, title: i.title, source: i.source, date: i.date, url: i.url, tone: i.tone, figures: i.figures || []})),
     price_ref_date: deps.price_ref_date || priceRefDate(runDate),
     status: 'thin', flags: [], groq_calls: 0, tokens: 0, model: deps.model || null, prompt_version: PROMPT_VERSION,
   };

@@ -21,10 +21,10 @@ export function cleanTitle(s) {
 const NUM = String.raw`(?<![A-Za-z])[$€£]?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|pct|bps|basis points|[kmbt]n?\b|thousand|million|billion|trillion))?`;
 const INDEX_KEEP = /\b(?:S&P\s*500|S&P\s*400|S&P\s*600|Russell\s*(?:1000|2000|3000)|Nasdaq(?:-|\s)100|Dow\s*30|FTSE\s*100|Nikkei\s*225)\b/gi;
 const VERB = {buy: 'acquire', buys: 'acquires', buying: 'acquiring', sell: 'shed', sells: 'sheds', selling: 'shedding', hold: 'keep', holds: 'keeps', holding: 'position'};
-const MODEL_SWAPS = [
+const YEAR = /^(?:19|20)\d{2}$/;
+const RATING_SWAPS = [
   [/\b(?:Q[1-4]|[1-4]Q)\b/g, 'quarterly'], [/\b(?:H[12]|[12]H)\b/g, 'half-year'],
   [/\b(an?)\s+(?:buy|sell|hold)\b/gi, '$1 rating'],
-  [new RegExp(String.raw`\b(?:from|to)\s+` + NUM + String.raw`(?:\s+(?:from|to)\s+` + NUM + ')?', 'gi'), ''],
   [/\bprice targets?\b/gi, 'analyst forecast'], [/\bPTs?\b/g, 'analyst forecast'],
   [/\bupside\b/gi, 'room to rise'], [/\bdownside\b/gi, 'room to fall'],
   [/\b(?:strong\s+)?(?:buy|sell|hold|overweight|underweight|outperform|underperform|neutral|equal[- ]weight)\s+(?:rating|call)\b/gi, 'rating'],
@@ -33,16 +33,37 @@ const MODEL_SWAPS = [
   [/\b(?:buy|sell|hold)(?:s|ing)?\b/gi, m => VERB[m.toLowerCase()]],
   [/\b(?:overweight|underweight|outperform\w*|underperform\w*|accumulat\w*)\b/gi, 'rating'],
   [/\b(?:bullish|bearish)\b/gi, 'notable'],
-  [new RegExp(NUM, 'gi'), m => /^(?:19|20)\d{2}$/.test(m.trim()) ? m : 'some'],
+];
+const WORD_SWAPS = [
   [/\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|hundred|thousand|million|billion|trillion)s?\b/gi, 'some'],
   [/[%$€£#]/g, ' '],
   [/\b(?:some\s+){2,}/gi, 'some '],
 ];
-export function modelTitle(title) {
-  const keep = [];
-  let s = String(title || '').replace(INDEX_KEEP, m => `\uE000${String.fromCharCode(65 + keep.push(m) - 1)}\uE000`);
-  for (const [re, rep] of MODEL_SWAPS) s = s.replace(re, rep);
-  s = s.replace(/\uE000([A-Z])\uE000/g, (_, c) => keep[c.charCodeAt(0) - 65]);
+const MARK = i => `${String.fromCharCode(65 + i)}`;
+const protect = s => { const keep = []; return {s: String(s || '').replace(INDEX_KEEP, m => MARK(keep.push(m) - 1)), keep}; };
+const restore = (s, keep) => s.replace(/([A-Z])/g, (_, c) => keep[c.charCodeAt(0) - 65]);
+
+// Figures in a headline ("$200", "8%", "$53 billion"), in order. Years and index names are not figures.
+export function headlineFigures(title) {
+  const {s, keep} = protect(title);
+  return [...s.matchAll(new RegExp(NUM, 'g'))].map(m => restore(m[0].trim(), keep)).filter(f => !YEAR.test(f));
+}
+
+// figures: [{id: 'h1', text: '$200'}, ...] for this headline. Each figure is shown to the model as
+// its [[hN]] id, which code later swaps back for the exact text, so the model never types a figure.
+export function modelTitle(title, figures = []) {
+  const {s: p, keep} = protect(title);
+  let k = 0;
+  let s = p.replace(new RegExp(NUM, 'g'), m => {
+    if (YEAR.test(m.trim())) return m;
+    const f = figures[k++];
+    return f ? ` [[${f.id}]] ` : 'some';
+  });
+  for (const [re, rep] of RATING_SWAPS) s = s.replace(re, rep);
+  // Words of a figure that stay outside its id (a trailing "billion") would read as typed numbers
+  s = s.replace(/\[\[(h\d{1,2})\]\]/g, '$1');
+  for (const [re, rep] of WORD_SWAPS) s = s.replace(re, rep);
+  s = restore(s, keep).replace(/(h\d{1,2})/g, '[[$1]]');
   return s.replace(/\s+([,.;:!?])/g, '$1').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
 }
 const cleanSource = s => cleanTitle(s).replace(/[^\w &.'/-]/g, '').trim().slice(0, 40) || 'Unknown';
@@ -73,12 +94,14 @@ export function buildPack(ticker, headlines, now = Date.now()) {
   rows.sort((a, b) => b.when - a.when);
   const clusters = [];
   const items = [];
+  let figN = 0;
   for (const r of rows) {
     const k = key(r.title);
     if (clusters.some(c => similar(c, k))) continue; // syndicated copy of a story already in the pack
     clusters.push(k);
+    const figures = headlineFigures(r.title).slice(0, 4).map(text => ({id: `h${++figN}`, text: text.slice(0, 24)}));
     items.push({id: `e${items.length + 1}`, title: r.title, source: r.source, date: new Date(r.when).toISOString().slice(0, 10),
-      url: r.url, tone: tone(r.title), cluster: clusters.length, social: r.social});
+      url: r.url, tone: tone(r.title), cluster: clusters.length, social: r.social, figures});
     if (items.length >= MAX_ITEMS) break;
   }
   return {ticker: t, asof: new Date(nowMs).toISOString().replace(/\.\d{3}Z$/, 'Z'), window_days: WINDOW_DAYS, items};

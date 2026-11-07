@@ -4,10 +4,10 @@
 import assert from 'node:assert/strict';
 import gateway from '../src/index.js';
 import {tone} from '../src/agents/newsread/lexicon.js';
-import {buildPack, cleanTitle, modelTitle} from '../src/agents/newsread/pack.js';
+import {buildPack, cleanTitle, modelTitle, headlineFigures} from '../src/agents/newsread/pack.js';
 import {chooseMode, confidenceCap} from '../src/agents/newsread/mode.js';
 import {runNewsRead, newsCase, MAX_NEWS_CALLS, priceRefDate} from '../src/agents/newsread/supervisor.js';
-import {renderRead, NEWS_LABEL, MESSAGES, citeText} from '../src/agents/newsread/render.js';
+import {renderRead, NEWS_LABEL, MESSAGES, citeText, shortDate as shortDateOf} from '../src/agents/newsread/render.js';
 import {SYSTEM, userMessage, PROMPT_VERSION, MAX_TOKENS} from '../src/agents/newsread/prompts.js';
 import {validateRole, validateNewsRead, validateRenderedRead, newsWordFlags} from '../src/agents/validator.js';
 import {createCase, applyPatch, INTENT_TYPES} from '../src/agents/case.js';
@@ -69,23 +69,33 @@ const shape = r => { assert.deepEqual(Object.keys(r).sort(), [...KEYS].sort()); 
 
 export default async function ({t, worker, env, O, withServices, bind}) {
   // 1 tone
-  await t('p3 modelTitle: no figures or rating words reach the model, meaning kept', async () => {
+  await t('p3 modelTitle: figures reach the model only as [[hN]] ids, rating words are neutral', async () => {
+    const figs = title => headlineFigures(title).map((text, i) => ({id: `h${i + 1}`, text}));
     const cases = {
-      'Morgan Stanley raises Nvidia price target to $200 from $180, keeps Overweight': 'Morgan Stanley raises Nvidia analyst forecast, keeps rating',
+      'Morgan Stanley raises Nvidia price target to $200 from $180, keeps Overweight': 'Morgan Stanley raises Nvidia analyst forecast to [[h1]] from [[h2]], keeps rating',
       'Goldman upgrades Costco to Buy': 'Goldman upgrades Costco to rating',
-      'Chevron to buy Hess in $53 billion deal': 'Chevron to acquire Hess in some deal',
-      'Analysts see 25% upside for AMD': 'Analysts see some room to rise for AMD',
-      'Nasdaq-100 and Russell 2000 slip': 'Nasdaq-100 and Russell 2000 slip',
+      'Chevron to buy Hess in $53 billion deal': 'Chevron to acquire Hess in [[h1]] deal',
+      'Analysts see 25% upside for AMD': 'Analysts see [[h1]] room to rise for AMD',
+      'Nasdaq-100 and Russell 2000 slip in 2026': 'Nasdaq-100 and Russell 2000 slip in 2026',
     };
-    for (const [inp, want] of Object.entries(cases)) assert.equal(modelTitle(inp), want);
-    for (const inp of [...Object.keys(cases), 'Apple shares jump 8% after Q3 beat', 'Berkshire sells 10 million shares in 2024', 'ASML: is it a buy?']) {
-      const out = modelTitle(inp);
+    for (const [inp, want] of Object.entries(cases)) assert.equal(modelTitle(inp, figs(inp)), want);
+    assert.deepEqual(headlineFigures('Chevron to buy Hess in $53 billion deal; S&P 500 up 1.2%'), ['$53 billion', '1.2%']);
+    for (const inp of [...Object.keys(cases), 'Apple shares jump 8% after Q3 beat', 'Berkshire sells 10 million shares', 'ASML: is it a buy?']) {
+      const out = modelTitle(inp, figs(inp)).replace(/\[\[h\d+\]\]/g, '');
       assert.equal(newsWordFlags(out).filter(f => f.rule === 'V19').length, 0, out);
       assert.ok(!/[%$]/.test(out) && !/\d/.test(out.replace(/\b(19|20)\d{2}\b/g, '').replace(/Nasdaq-100|Russell 2000/g, '')), out);
     }
     const pack = buildPack('NVDA', [{title: 'Nvidia price target raised to $200', source: 'Reuters', published: new Date().toISOString()}]);
     assert.ok(pack.items[0].title.includes('$200')); // stored and shown title unchanged
-    assert.ok(!userMessage('bull', pack).includes('$200') && userMessage('bull', pack).includes('analyst forecast'));
+    assert.deepEqual(pack.items[0].figures, [{id: 'h1', text: '$200'}]);
+    const u = userMessage('bull', pack);
+    assert.ok(!u.includes('$200') && u.includes('[[h1]]') && u.includes('analyst forecast'));
+    // A known figure id passes the checks and renders as the exact figure; an unknown one is flagged
+    const ok = validateRole('bull', {points: [{text: 'An analyst lifted the Nvidia forecast to [[h1]] [[e1]]', cites: ['e1']}]}, pack);
+    assert.ok(!ok.flags.some(f => f.rule === 'V1' || f.rule === 'V1b'), JSON.stringify(ok.flags));
+    const bad = validateRole('bull', {points: [{text: 'An analyst lifted the Nvidia forecast to [[h9]] [[e1]]', cites: ['e1']}]}, pack);
+    assert.ok(bad.flags.some(f => f.rule === 'V1'));
+    assert.equal(citeText('Forecast lifted to [[h1]] [[e1]]', pack.items), 'Forecast lifted to $200 (Reuters, ' + shortDateOf(pack.items[0].date) + ')');
   });
   await t('p3 tone: positive, negative, negation, question, listicle', async () => {
     assert.equal(tone('Nvidia beats estimates'), 1);

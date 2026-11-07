@@ -87,6 +87,14 @@ function stanceOf(r) { return STANCES.includes(r.stance) ? r.stance : 'unclear';
 function confOf(r) { return CONFS.includes(r.confidence) ? r.confidence : null; }
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 function evidenceMap(r) { const m = {}; (Array.isArray(r.evidence) ? r.evidence : []).forEach(e => { if (e && e.id) m[e.id] = e; }); return m; }
+// Model text carries [[eN]] headline cites (shown as the list under each point) and [[hN]] figure ids,
+// which become the exact figure from that headline. Unknown ids are dropped.
+function readText(s, ev) {
+  const figs = {};
+  Object.values(ev || {}).forEach(e => (Array.isArray(e.figures) ? e.figures : []).forEach(f => { if (f && f.id) figs[f.id] = String(f.text || ''); }));
+  return String(s || '').replace(/\[\[(h\d{1,2})\]\]/g, (_, id) => figs[id] || '').replace(/\s*\[\[e\d{1,2}\]\]/g, '')
+    .replace(/\s+([,.;:!?])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
 function headlineHTML(e) {
   const url = httpsUrl(e.url);
   const title = url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(e.title)}</a>` : `<span>${esc(e.title)}</span>`;
@@ -97,7 +105,7 @@ function pointsHTML(points, ev) {
   if (!Array.isArray(points) || !points.length) return '<p class="rc-none">No points were made from these headlines.</p>';
   return '<ul class="rc-points">' + points.slice(0, 4).map(p => {
     const cites = (Array.isArray(p.cites) ? p.cites : []).map(id => ev[id]).filter(Boolean);
-    return `<li><p>${esc(p.text)}</p>${cites.length ? `<ul class="rc-cites" aria-label="Cited headlines">${cites.map(headlineHTML).join('')}</ul>` : ''}</li>`;
+    return `<li><p>${esc(readText(p.text, ev))}</p>${cites.length ? `<ul class="rc-cites" aria-label="Cited headlines">${cites.map(headlineHTML).join('')}</ul>` : ''}</li>`;
   }).join('') + '</ul>';
 }
 // Small tone chip, used in lists
@@ -122,7 +130,7 @@ function readCard(r, opts) {
   if (thin) body = `<p class="rc-msg">${esc(READ_MSG.thin)}</p>`;
   else if (fallback) body = `<p class="rc-msg">${esc(READ_MSG.fallback)}</p>`;
   else {
-    if (r.summary) body += `<div class="rc-sec"><h4>${debate ? 'Judge\'s verdict' : 'Joint brief'}</h4><p class="rc-sum">${esc(r.summary)}</p></div>`;
+    if (r.summary) body += `<div class="rc-sec"><h4>${debate ? 'Judge\'s verdict' : 'Joint brief'}</h4><p class="rc-sum">${esc(readText(r.summary, ev))}</p></div>`;
     if (debate) body += `<div class="rc-sides"><div class="rc-sec"><h4>Case for</h4>${pointsHTML(r.bull, ev)}</div><div class="rc-sec"><h4>Case against</h4>${pointsHTML(r.bear, ev)}</div></div>`;
     else if (collab) body += `<div class="rc-sec"><h4>Points from the brief</h4>${pointsHTML(r.joint, ev)}</div>`;
   }

@@ -27,7 +27,8 @@ export function shortDate(d) {
 
 export function citeText(text, evidence) {
   const byId = new Map((evidence || []).map(e => [e.id, e]));
-  return String(text || '').replace(/\s*\[\[(e\d{1,2})\]\]/g, (_, id) => {
+  const figs = new Map((evidence || []).flatMap(e => (e.figures || []).map(f => [f.id, f.text])));
+  return String(text || '').replace(/\[\[(h\d{1,2})\]\]/g, (_, id) => figs.get(id) || '').replace(/\s*\[\[(e\d{1,2})\]\]/g, (_, id) => {
     const e = byId.get(id);
     return e ? ` (${e.source}${shortDate(e.date) ? ', ' + shortDate(e.date) : ''})` : '';
   }).replace(/\(([^()]*)\)\s*\(\1\)/g, '($1)').replace(/[–—]/g, ',').trim();
