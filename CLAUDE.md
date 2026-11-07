@@ -12,6 +12,7 @@ writes code. No agent merges to `main`: every change goes through a pull request
 5. **compliance** records evidence (PR, tests, scans) and updates controls if anything changed.
 6. **architect** gives the final review and opens the PR. The owner merges by saying "yes".
 7. **ux-discovery** runs on request or monthly, producing research, never code.
+8. **data-scientist** defines and measures the data metrics (completeness, match rate, late filings), runs baselines and backfill analysis on BigQuery, and designs the learning agent. It hands build work to architect, never straight to code.
 
 ## House rules
 - Secrets never go in code, commits or logs. Workers use the Cloudflare Secrets Store, GitHub Actions use repository secrets or Workload Identity Federation.
