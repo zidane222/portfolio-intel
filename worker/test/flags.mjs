@@ -220,4 +220,135 @@ await t('pi-flags: missing Supabase key keeps KV audit', async () => {
   assert.equal([...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:')).length, 1);
 });
 
+
+// ---- QA additions (feat/feature-flags)
+await t('qa: registry JSON and JS identical, labels present', async () => {
+  const py = JSON.parse(readFileSync(new URL('../../scripts/flags_registry.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(py), F.NAMES);
+  for (const nm of F.NAMES) {
+    assert.deepEqual(Object.keys(py[nm]).sort(), ['default', 'fail', 'kind'], nm);
+    for (const k of ['default', 'fail', 'kind']) assert.equal(py[nm][k], F.REGISTRY[nm][k], nm + '.' + k);
+    assert.ok(['closed', 'last', 'open'].includes(F.REGISTRY[nm].fail));
+  }
+});
+
+await t('qa: every flag fail mode with KV throwing and no last known', async () => {
+  const st = await F.load({FLAGS: kv({}, {fail: true})});
+  for (const nm of F.NAMES) {
+    const r = F.REGISTRY[nm], want = r.fail === 'closed' ? false : r.default;
+    assert.equal(F.resolve(nm, st), want, nm);
+  }
+  const p = await F.publicFlags({FLAGS: kv({}, {fail: true})});
+  assert.equal(p.v, 0); assert.equal(p.flags.broker, false); assert.equal(p.flags.sync_writes, false);
+  // gateway: broker closed, market open, unflagged rates up, flags route still answers
+  const e = genv({FLAGS: kv({}, {fail: true})});
+  assert.equal((await (await gcall('/api/plaid/status', e)).json()).flag, 'broker');
+  assert.equal((await gcall('/api/prices/AAPL', e)).status, 200);
+  assert.equal((await gcall('/api/top-rates', e)).status, 200);
+  assert.equal((await gcall('/api/flags', e)).status, 200);
+});
+
+await t('qa: maintenance turns off every OWNERS route, not /api/flags, /health or admin', async () => {
+  const {OWNERS} = await import('../src/routes.js');
+  const e = genv({FLAGS: kv({'flags:v1': doc({maintenance: true})})});
+  const paths = ['/api/prices/X', '/api/history/X', '/api/sectors', '/api/dividends/X', '/api/news', '/api/feeds', '/api/top-rates', '/api/ai',
+    '/api/plaid/link', '/api/all-trades', '/api/private', '/api/private/stats', '/api/insights', '/api/insights/strategies',
+    '/api/newsdesk/read', '/api/newsdesk/reads', '/api/ask', '/api/unknown-route'];
+  for (const [re] of OWNERS) assert.ok(paths.some(p => re.test(p)), 'route not covered ' + re);
+  for (const p of paths) for (const method of ['GET', 'POST']) {
+    const r = await gcall(p, e, method === 'POST' ? {method, body: '{}'} : {});
+    assert.equal(r.status, 503, method + ' ' + p); assert.equal((await r.json()).flag, 'maintenance');
+  }
+  assert.equal((await gcall('/health', e)).status, 200);
+  assert.equal((await gcall('/', e)).status, 200);
+  assert.equal((await gcall('/api/flags', e)).status, 200);
+  for (const p of ['/admin', '/admin/', '/admin/flags', '/admin/audit', '/admin/app.js']) assert.equal((await gcall(p, e)).status, 404, p);
+});
+
+await t('qa: admin paths 404 through gateway for every method', async () => {
+  const e = genv({FLAGS: kv()});
+  for (const p of ['/admin', '/admin/', '/admin/flags', '/admin/audit', '/admin/app.js', '/admin/app.css'])
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      const r = await gcall(p, e, method === 'GET' ? {} : {method, body: method === 'DELETE' ? undefined : '{}'});
+      assert.equal(r.status, 404, method + ' ' + p);
+    }
+  assert.ok(!e.FLAGS.m.has('flags:v1'));
+});
+
+await t('qa: JWT missing, bad sig, wrong aud, expired, future nbf, other email are 403 on every route', async () => {
+  _resetJwks();
+  const e = fenv();
+  const now = Math.floor(Date.now() / 1000);
+  const bad = {missing: '', badsig: await jwt(good(), other.privateKey), aud: await jwt({...good(), aud: 'c'.repeat(64)}),
+    expired: await jwt({...good(), exp: now - 1}), noexp: await jwt({...good(), exp: undefined}), nbf: await jwt({...good(), nbf: now + 3600}),
+    email: await jwt({...good(), email: 'Owner@Example.com.evil.com'}), noemail: await jwt({...good(), email: undefined}),
+    tampered: (await jwt(good())).replace(/\.[^.]+\./, '.' + b64u(JSON.stringify({...good(), email: 'x@y.z'})) + '.')};
+  for (const [k, tok] of Object.entries(bad)) for (const [p, m] of [['/admin', 'GET'], ['/admin/flags', 'GET'], ['/admin/audit', 'GET'], ['/admin/flags', 'POST']]) {
+    const r = m === 'POST' ? await post(e, {name: 'ai', on: false, reason: 'test', v: 0}, undefined, tok || null) : await fcall(p, e, {token: tok || null});
+    assert.equal(r.status, 403, k + ' ' + m + ' ' + p);
+  }
+  assert.ok(!e.FLAGS.m.has('flags:v1'));
+  // ADMIN_EMAIL with two entries fails closed
+  assert.equal((await fcall('/admin/flags', fenv({ADMIN_EMAIL: admin + ',b@example.com'}))).status, 403);
+});
+
+await t('qa: actor never taken from body', async () => {
+  const e = fenv();
+  const r = await post(e, {name: 'news', on: false, reason: 'test run', v: 0, by: 'evil@example.com', actor: 'evil@example.com', email: 'evil@example.com'});
+  assert.equal(r.status, 200);
+  const d = await r.json(); assert.equal(d.flags.news.by, admin);
+  const stored = JSON.parse(e.FLAGS.m.get('flags:v1').v); assert.equal(stored.flags.news.by, admin);
+  assert.ok(![...e.FLAGS.m.values()].some(x => x.v.includes('evil@')));
+});
+
+await t('qa: stale v gives 409 and does not write', async () => {
+  const e = fenv({FLAGS: kv({'flags:v1': doc({ai: true})})});
+  for (const v of [0, 2, 4, -1]) {
+    const r = await post(e, {name: 'ai', on: false, reason: 'stale', v});
+    assert.equal(r.status, 409, String(v)); assert.equal((await r.json()).v, 3);
+  }
+  assert.equal(JSON.parse(e.FLAGS.m.get('flags:v1').v).v, 3);
+  assert.equal([...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:')).length, 0);
+  assert.equal((await post(e, {name: 'ai', on: false, reason: 'fresh', v: 3})).status, 200);
+});
+
+await t('qa: reason length boundaries and escaping', async () => {
+  assert.equal(cleanReason('abc'), 'abc'); assert.equal(cleanReason('x'.repeat(200)).length, 200);
+  assert.equal(cleanReason('   ab   '), null); assert.equal(cleanReason('x'.repeat(201)), null);
+  assert.equal(cleanReason('a b\u0085c'), 'a b c');
+  const e = fenv();
+  assert.equal((await post(e, {name: 'ai', on: false, reason: 'x'.repeat(200), v: 0})).status, 200);
+  const xss = '<img src=x onerror=alert(1)>"\'&';
+  const r = await post(e, {name: 'ai', on: true, reason: xss, v: 1});
+  assert.equal(r.status, 200); assert.equal(r.headers.get('Content-Type').split(';')[0], 'application/json');
+  assert.equal((await r.json()).flags.ai.reason, xss);
+  assert.equal((await post(e, {name: 'ai', on: true, reason: 'y'.repeat(3000), v: 2})).status, 413);
+  const js = await (await fcall('/admin/app.js', fenv())).text();
+  assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(/.test(js));
+});
+
+await t('qa: CSRF and Origin on POST, GET has no side effect', async () => {
+  const e = fenv();
+  const b = {name: 'broker', on: false, reason: 'csrf test', v: 0};
+  for (const h of [{}, {'X-PI-Flags': '0', Origin: FURL}, {'X-PI-Flags': '1', Origin: 'null'}, {'X-PI-Flags': '1', Origin: FURL + '.evil.com'},
+    {'X-PI-Flags': '1', Origin: 'http://pi-flags.example.workers.dev'}]) assert.equal((await post(e, b, h)).status, 403, JSON.stringify(h));
+  assert.ok(!e.FLAGS.m.has('flags:v1'));
+  assert.equal((await fcall('/admin/flags?name=broker&on=false', e)).status, 200);
+  assert.ok(!e.FLAGS.m.has('flags:v1'));
+  for (const m of ['PUT', 'DELETE', 'PATCH']) assert.equal((await fcall('/admin/flags', e, {method: m, headers: {'X-PI-Flags': '1', Origin: FURL}})).status, 404, m);
+});
+
+const EM = String.fromCharCode(0x2014);
+await t('qa: no em dash in any user-facing message', async () => {
+  const files = ['../src/lib/flags.js', '../src/services/flags.js', '../src/services/flags-page.js', '../src/lib/access.js', '../src/index.js',
+    '../../js/03-helpers.js', '../../js/29a-account.js', '../../js/30-init.js', '../../backend/main.py', '../../scripts/flags.py'];
+  for (const f of files) { // comments are not user-facing; every other line is checked
+    const code = readFileSync(new URL(f, import.meta.url), 'utf8').split('\n').filter(l => !/^\s*(#|\/\/|\*)/.test(l)).join('\n');
+    assert.ok(!code.includes(EM), f);
+  }
+  assert.ok(!F.DISABLED_MSG.includes(EM));
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  const m = html.match(/id="flag-notice"[^>]*>[^<]*/); if (m) assert.ok(!m[0].includes(EM));
+});
+
 console.log(`${n} flag tests passed`);

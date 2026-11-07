@@ -71,5 +71,45 @@ class Flags(unittest.TestCase):
         self.assertEqual(list(js), list(reg))
 
 
+class FlagsQA(unittest.TestCase):
+    def test_cli_unreachable_prints_warning_and_defaults(self):
+        import subprocess
+        import tempfile
+        with tempfile.NamedTemporaryFile('r', suffix='.out', delete=False) as tf:
+            out_path = tf.name
+        env = dict(os.environ, FLAGS_URL='http://127.0.0.1:9/api/flags', GITHUB_OUTPUT=out_path)
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'flags.py'), '--github-output',
+                            'house_scrape', 'senate_scrape', 'fmp_fill', 'recon_v2'],
+                           env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('::warning::', r.stdout)
+        want = ['house_scrape=true', 'senate_scrape=true', 'fmp_fill=true', 'recon_v2=false']
+        self.assertEqual(open(out_path, encoding='utf-8').read().split(), want)
+        os.unlink(out_path)
+
+    def test_cli_single_flag_unreachable(self):
+        import subprocess
+        env = dict(os.environ, FLAGS_URL='http://127.0.0.1:9/api/flags')
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'flags.py'), 'recon_v2'],
+                           env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.stdout.strip().splitlines(), ['::warning::Feature flags unreachable; using registry defaults', 'false'])
+
+    def test_bad_json_is_unreachable(self):
+        def o(req, timeout):
+            return Resp(b'<html>not json')
+        self.assertIsNone(f.fetch('https://x', opener=o, sleep=lambda s: None))
+
+    def test_recon_v2_off_keeps_house_check(self):
+        wf = open(os.path.join(HERE, '..', '.github', 'workflows', 'fetch_trades.yml'), encoding='utf-8').read()
+        steps = re.split(r'\n\s+- name: ', wf)
+        hc = [s for s in steps if '--house-check' in s]
+        self.assertEqual(len(hc), 1)
+        head = hc[0].split('run:')[0]
+        self.assertNotIn('if:', head, 'house check step must not be gated by a flag')
+        self.assertNotRegex(hc[0], r'if \[ "\$RECON_V2" = (false|true) \]; then[^\n]*(exit|skip)')
+        self.assertIn("d['fmp_house_check']", hc[0])
+        self.assertFalse(f.registry()['recon_v2']['default'])
+
+
 if __name__ == '__main__':
     unittest.main()
