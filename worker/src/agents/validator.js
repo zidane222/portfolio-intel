@@ -196,7 +196,14 @@ const CAP_OK = new Set(('The A An This These That Those Both Neither Either It I
   + MONTHS).split(' '));
 
 const ranks = {low: 0, medium: 1, high: 2};
-const strip = s => String(s || '').replace(CITE, ' ');
+const FIG = /\[\[(h\d{1,2})\]\]/g;
+const strip = s => String(s || '').replace(CITE, ' ').replace(FIG, ' ');
+// [[hN]] figure ids must exist in the pack; code swaps each for the exact headline figure.
+const figIds = pack => new Set((pack && pack.items || []).flatMap(i => (i.figures || []).map(f => f.id)));
+function figureFlags(texts, pack) {
+  const ok = figIds(pack);
+  return texts.some(t => [...String(t || '').matchAll(FIG)].some(m => !ok.has(m[1]))) ? [{rule: 'V1', detail: 'figure id not in pack'}] : [];
+}
 const citesIn = s => [...String(s || '').matchAll(CITE)].map(m => m[1]);
 
 // V1, V1b and V4 to V11 on one role text, with [[eN]] cites removed first (their digits are ids).
@@ -248,6 +255,7 @@ function pointFlags(role, points, ids) {
 
 function textFlags(texts, pack) {
   const flags = [];
+  add(flags, figureFlags(texts, pack));
   for (const t of texts) { add(flags, baseFlags(t)); add(flags, newsWordFlags(t, pack)); }
   return flags;
 }
