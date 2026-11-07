@@ -17,7 +17,8 @@ import * as holdingsAgent from '../src/agents/data/holdings.js';
 import {lineSafe} from '../src/agents/validator.js';
 
 const PAGES = 'https://portfolio-intel-279.pages.dev/private_markets.json';
-const REAL = JSON.parse(readFileSync(fileURLToPath(new URL('../../private_markets.json', import.meta.url)), 'utf8'));
+// Frozen copy of the real file: the live one changes daily, which broke these UAT checks.
+const REAL = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/private-markets-2026-10-30.json', import.meta.url)), 'utf8'));
 const NOW = new Date().toISOString();
 const FIX = {updated: NOW, window_days: 60, done: [1, 2], raises: [
   {f: 'D', d: '2026-10-20', n: 'Alpha Robotics Inc', city: 'Austin', st: 'TX', ind: 'Biotechnology', amt: 1000000, stage: 'Seed / Series A', u: 'https://www.sec.gov/a'},
