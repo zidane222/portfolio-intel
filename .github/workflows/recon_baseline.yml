@@ -1,0 +1,38 @@
+name: Reconciliation baseline (dry run)
+
+# Read-only baseline: official House Clerk and Senate eFD vs FMP, last 12 months.
+# Writes only to the job's artifact. No commits, no Supabase or BigQuery writes.
+on:
+  push:
+    branches: [recon/baseline-dryrun]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr poppler-utils
+          pip install requests beautifulsoup4 lxml pdfplumber pyyaml
+
+      - name: Parser unit tests (offline)
+        run: python3 -m unittest scripts/test_house_ptr.py scripts/test_senate_fmp.py
+
+      - name: Baseline report
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: python3 scripts/recon_baseline.py --out-dir recon_out --today "$(date -u +%Y-%m-%d)" --senate-budget 900
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recon-baseline
+          path: recon_out/
+          if-no-files-found: warn
