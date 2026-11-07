@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import gateway from '../src/index.js';
 import {tone} from '../src/agents/newsread/lexicon.js';
-import {buildPack, cleanTitle} from '../src/agents/newsread/pack.js';
+import {buildPack, cleanTitle, modelTitle} from '../src/agents/newsread/pack.js';
 import {chooseMode, confidenceCap} from '../src/agents/newsread/mode.js';
 import {runNewsRead, newsCase, MAX_NEWS_CALLS, priceRefDate} from '../src/agents/newsread/supervisor.js';
 import {renderRead, NEWS_LABEL, MESSAGES, citeText} from '../src/agents/newsread/render.js';
@@ -69,6 +69,24 @@ const shape = r => { assert.deepEqual(Object.keys(r).sort(), [...KEYS].sort()); 
 
 export default async function ({t, worker, env, O, withServices, bind}) {
   // 1 tone
+  await t('p3 modelTitle: no figures or rating words reach the model, meaning kept', async () => {
+    const cases = {
+      'Morgan Stanley raises Nvidia price target to $200 from $180, keeps Overweight': 'Morgan Stanley raises Nvidia analyst forecast, keeps rating',
+      'Goldman upgrades Costco to Buy': 'Goldman upgrades Costco to rating',
+      'Chevron to buy Hess in $53 billion deal': 'Chevron to acquire Hess in some deal',
+      'Analysts see 25% upside for AMD': 'Analysts see some room to rise for AMD',
+      'Nasdaq-100 and Russell 2000 slip': 'Nasdaq-100 and Russell 2000 slip',
+    };
+    for (const [inp, want] of Object.entries(cases)) assert.equal(modelTitle(inp), want);
+    for (const inp of [...Object.keys(cases), 'Apple shares jump 8% after Q3 beat', 'Berkshire sells 10 million shares in 2024', 'ASML: is it a buy?']) {
+      const out = modelTitle(inp);
+      assert.equal(newsWordFlags(out).filter(f => f.rule === 'V19').length, 0, out);
+      assert.ok(!/[%$]/.test(out) && !/\d/.test(out.replace(/\b(19|20)\d{2}\b/g, '').replace(/Nasdaq-100|Russell 2000/g, '')), out);
+    }
+    const pack = buildPack('NVDA', [{title: 'Nvidia price target raised to $200', source: 'Reuters', published: new Date().toISOString()}]);
+    assert.ok(pack.items[0].title.includes('$200')); // stored and shown title unchanged
+    assert.ok(!userMessage('bull', pack).includes('$200') && userMessage('bull', pack).includes('analyst forecast'));
+  });
   await t('p3 tone: positive, negative, negation, question, listicle', async () => {
     assert.equal(tone('Nvidia beats estimates'), 1);
     assert.equal(tone('Apple faces antitrust lawsuit'), -1);
