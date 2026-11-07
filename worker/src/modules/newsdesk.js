@@ -6,6 +6,7 @@
 // (buildPack, chooseMode, runNewsRead) are injected as deps.agents by services/newsdesk.js.
 import {json, readCapped} from '../lib/http.js';
 import {groqChat, groqModels} from '../lib/groq.js';
+import {chat, providerConfig} from '../lib/llm.js';
 import {makeSupabase} from '../lib/supabase.js';
 import {fetchTickerHeadlines} from './news.js';
 
@@ -48,7 +49,14 @@ export async function verdictId(ticker, runDate, origin) {
 }
 
 const num = (v, d) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : d; };
-export function caps(env) {
+// Daily caps per provider (plan D4). Groq keeps the NEWS_* vars; Gemini has its own GEMINI_* vars.
+export function caps(env, provider = 'groq') {
+  // Shadow reads get their own budget row, so they can never use up the batch or failover share of the same provider.
+  if (/_shadow$/.test(provider)) {
+    const n = num(env.GEMINI_SHADOW_CALLS, 40);
+    return {calls: n, tokens: caps(env, provider.replace(/_shadow$/, '')).tokens, batch: n};
+  }
+  if (provider === 'gemini') return {calls: num(env.GEMINI_CALLS_DAY, 90), tokens: num(env.GEMINI_TOKENS_DAY, 180000), batch: num(env.GEMINI_BATCH_CALLS, 60)};
   return {calls: num(env.NEWS_CALLS_DAY, 90), tokens: num(env.NEWS_TOKENS_DAY, 180000), batch: num(env.NEWS_BATCH_CALLS, 50)};
 }
 
@@ -70,7 +78,7 @@ function cacheStore() {
 
 export function makeDeps(env, agents, extra = {}) {
   let sb = null;
-  return {
+  const d = {
     agents,
     now: () => new Date(),
     cache: cacheStore(),
@@ -78,54 +86,90 @@ export function makeDeps(env, agents, extra = {}) {
     get sb() { return sb || (sb = makeSupabase(env)); },
     headlines: (t, n) => fetchTickerHeadlines(t, n, env),
     groqChat: (system, user, maxTokens, opts) => groqChat(env, system, user, maxTokens, true, opts),
+    // Per-provider chat. Groq goes through deps.groqChat so a test can still stub that seam.
+    chat: (provider, system, user, maxTokens, opts) => provider === 'groq'
+      ? d.groqChat(system, user, maxTokens, opts)
+      : chat(provider, env, system, user, maxTokens, true, opts),
     model: groqModels(env, false)[0],
+    models: {groq: groqModels(env, false)[0], gemini: String(env.GEMINI_MODEL || '').trim()},
     ...extra,
   };
+  return d;
 }
 
-// deps.take / deps.groq for runNewsRead, with a flag when the global cap said no.
-function budgetFor(env, deps, runDate, batch, signal, perCallMs) {
-  const c = caps(env);
-  const state = {denied: false, calls: 0, tokens: 0};
+// Errors worth one retry on the other provider: 429, 5xx, timeout, empty answer (plan D6).
+const retryable = e => /^(429|5\d\d)\b|time ?out|timed out|empty answer/i.test(String(e && e.message || e));
+
+// deps.take / deps.groq for runNewsRead, with a flag when the provider's cap said no.
+// `groq` is the name the agents call; it now runs on `provider` and fails over to `fallback`.
+function budgetFor(env, deps, runDate, batch, signal, perCallMs, provider = 'groq', fallback = '', key = provider) {
+  const state = {denied: false, calls: 0, tokens: 0, providers: {}};
+  const reserve = async (p, calls, tokens) => {
+    const c = caps(env, p);
+    try {
+      return await deps.sb.rpc('news_take', {d: runDate, calls, tokens, batch, p, cap_calls: c.calls, cap_tokens: c.tokens, cap_batch: c.batch}) === true;
+    } catch (e) { console.log('newsdesk take failed', String(e.message || e)); return false; }
+  };
   const take = async (calls, tokens) => {
     if (state.denied) return false;
-    let ok = false;
-    try {
-      ok = await deps.sb.rpc('news_take', {d: runDate, calls, tokens, batch, cap_calls: c.calls, cap_tokens: c.tokens, cap_batch: c.batch}) === true;
-    } catch (e) { console.log('newsdesk take failed', String(e.message || e)); ok = false; }
+    const ok = await reserve(key, calls, tokens);
     if (!ok) state.denied = true;
     return ok;
   };
+  const run = async (p, system, user, maxTokens) => deps.chat(p, system, user, maxTokens, {fallback: batch, timeoutMs: perCallMs, signal});
   const groq = async (role, system, user, maxTokens) => {
-    const text = await deps.groqChat(system, user, maxTokens, {fallback: batch, timeoutMs: perCallMs, signal});
+    let text, used = provider;
+    try { text = await run(provider, system, user, maxTokens); }
+    catch (e) {
+      if (!fallback || !retryable(e) || (signal && signal.aborted)) throw e;
+      const est = Math.ceil((String(system).length + String(user).length) / 4) + (maxTokens | 0);
+      if (!await reserve(fallback, 1, est)) throw e; // fallback budget says no: the primary error stands
+      console.log('newsdesk failover', provider, '->', fallback, String(e.message || e).slice(0, 40));
+      text = await run(fallback, system, user, maxTokens); used = fallback;
+    }
     const tokens = Math.ceil((String(system).length + String(user).length + String(text).length) / 4);
-    state.calls++; state.tokens += tokens;
+    state.calls++; state.tokens += tokens; state.providers[role] = used;
     return {text, tokens};
   };
   return {take, groq, state};
 }
 
-// One ticker end to end: headlines, pack, mode, agents. Returns {record, denied}.
-async function produce(env, deps, ticker, runDate, origin, deadlineMs) {
+// Headlines and case for one ticker, built once so a shadow read judges exactly the same input.
+async function prepare(deps, ticker, runDate, origin) {
   const now = deps.now();
-  const deadline = now.getTime() + deadlineMs;
-  const signal = AbortSignal.timeout(deadlineMs);
   const heads = await deps.headlines(ticker, HEADLINES);
   const a = deps.agents;
   let kase;
   if (typeof a.newsCase === 'function') kase = a.newsCase(ticker, heads || [], now.getTime());
   else { const pack = a.buildPack(ticker, heads || [], now); kase = {ext: {news: {pack, mode: a.chooseMode(pack)}}}; }
   kase.ticker = ticker; kase.origin = origin; kase.run_date = runDate;
-  const b = budgetFor(env, deps, runDate, origin === 'batch', signal, Math.min(15000, deadlineMs));
+  return kase;
+}
+const copyCase = k => { try { return structuredClone(k); } catch { return {...k}; } };
+
+// One ticker end to end: headlines, pack, mode, agents. Returns {record, denied}.
+// opts: {provider, fallback, kase}. kase is a prepared case shared with another read of the same ticker.
+async function produce(env, deps, ticker, runDate, origin, deadlineMs, opts = {}) {
+  const now = deps.now();
+  const deadline = now.getTime() + deadlineMs;
+  const signal = AbortSignal.timeout(deadlineMs);
+  const provider = opts.provider || providerConfig(env).primary;
+  const model = (deps.models && deps.models[provider]) || deps.model;
+  const a = deps.agents;
+  const kase = opts.kase ? copyCase(opts.kase) : await prepare(deps, ticker, runDate, origin);
+  kase.origin = origin;
+  const b = budgetFor(env, deps, runDate, origin !== 'on_demand', signal, Math.min(15000, deadlineMs), provider, opts.fallback || '',
+    origin === 'shadow' ? provider + '_shadow' : provider);
   const out = await a.runNewsRead(kase, {groq: b.groq, take: b.take, now: () => deps.now(), deadline, signal,
-    origin, run_date: runDate, model: deps.model, price_ref_date: priceRefDate(runDate)});
+    origin, run_date: runDate, model, price_ref_date: priceRefDate(runDate)});
   const record = {
     schema: SCHEMA, ...out,
     id: await verdictId(ticker, runDate, origin), run_date: runDate, created: now.toISOString(), ticker, origin,
     price_ref_date: priceRefDate(runDate),
-    model: (out && out.model) || deps.model,
+    model: (out && out.model) || model,
+    provider, providers: b.state.providers,
   };
-  if (b.state.denied && record.status !== 'PASS' && record.status !== 'thin') record.status = origin === 'batch' ? 'skipped' : 'fallback';
+  if (b.state.denied && record.status !== 'PASS' && record.status !== 'thin') record.status = origin === 'on_demand' ? 'fallback' : 'skipped';
   if (!Number.isFinite(record.groq_calls)) record.groq_calls = b.state.calls;
   if (!Number.isFinite(record.tokens)) record.tokens = b.state.tokens;
   delete record.user; delete record.ip; // never store a user field, even if an agent added one
@@ -135,7 +179,7 @@ async function produce(env, deps, ticker, runDate, origin, deadlineMs) {
 export const verdictRow = r => ({
   id: r.id, run_date: r.run_date, created: r.created, ticker: r.ticker, origin: r.origin, mode: r.mode || null,
   stance: r.stance || null, confidence: r.confidence || null, status: r.status, groq_calls: r.groq_calls | 0,
-  tokens: r.tokens | 0, model: r.model || null, prompt_version: r.prompt_version || null, price_ref_date: r.price_ref_date, record: r,
+  tokens: r.tokens | 0, model: r.model || null, provider: r.provider || null, prompt_version: r.prompt_version || null, price_ref_date: r.price_ref_date, record: r,
 });
 
 const JOB_STATUS = {PASS: 'ok', thin: 'thin', fallback: 'fallback', skipped: 'skipped', error: 'error'};
@@ -148,14 +192,30 @@ export async function tick(env, deps, scheduledTime = Date.now()) {
   const seeded = await sb.rpc('news_seed', {d: runDate, fixed: FIXED}); // no-op after the first tick of the day
   const claimed = (await sb.rpc('news_claim', {d: runDate, k: CHUNK})) || [];
   const jobs = claimed.slice(0, CHUNK).filter(j => j && TICKER_RE.test(j.ticker));
+  const cfg = providerConfig(env);
+  const shadowOn = !!(cfg.shadow && cfg.shadowUntil && runDate <= cfg.shadowUntil);
   const results = await Promise.all(jobs.map(async job => {
     const where = `run_date=eq.${runDate}&ticker=eq.${encodeURIComponent(job.ticker)}`;
     try {
-      const {record} = await produce(env, deps, job.ticker, runDate, 'batch', TICK_DEADLINE_MS);
+      const kase = await prepare(deps, job.ticker, runDate, 'batch'); // one fetch, one pack, for both reads
+      // The shadow read never throws and never touches the job status (plan 4.1).
+      const shadowRun = shadowOn ? (async () => {
+        try {
+          const {record} = await produce(env, deps, job.ticker, runDate, 'shadow', TICK_DEADLINE_MS, {provider: cfg.shadow, kase});
+          if (record.status !== 'skipped' && record.status !== 'error') await sb.upsert('news_verdicts', [verdictRow(record)], 'ticker,run_date,origin');
+          return record.status;
+        } catch (e) { console.log('newsdesk shadow error', job.ticker, String(e && e.name || 'Error').slice(0, 40)); return 'error'; }
+      })() : Promise.resolve(null);
+      const [primary, shadow] = await Promise.all([
+        produce(env, deps, job.ticker, runDate, 'batch', TICK_DEADLINE_MS, {provider: cfg.primary, fallback: cfg.fallback, kase}).then(v => ({v}), error => ({error})),
+        shadowRun,
+      ]);
+      if (primary.error) throw primary.error;
+      const record = primary.v.record;
       if (record.status !== 'skipped' && record.status !== 'error') await sb.upsert('news_verdicts', [verdictRow(record)], 'ticker,run_date,origin');
       const status = JOB_STATUS[record.status] || 'error';
       await sb.patch('news_jobs', where, {status});
-      return {ticker: job.ticker, status, groq_calls: record.groq_calls};
+      return {ticker: job.ticker, status, groq_calls: record.groq_calls, shadow};
     } catch (e) {
       console.log('newsdesk batch error', job.ticker, String(e && e.message || e).slice(0, 120));
       // Retry on a later tick until the third attempt (news_claim also reclaims stale 'running').
@@ -200,7 +260,8 @@ export async function read(req, env, deps) {
 
   if (req.headers.get('X-PI-Quota') !== 'ok') return answer('limited', true, null);
 
-  const {record, denied} = await produce(env, deps, ticker, today, 'on_demand', READ_DEADLINE_MS);
+  const cfg = providerConfig(env); // failover but no shadow on demand, to protect quota
+  const {record, denied} = await produce(env, deps, ticker, today, 'on_demand', READ_DEADLINE_MS, {provider: cfg.primary, fallback: cfg.fallback});
   if (record.status === 'thin') { await deps.cache.put(ckey, record, CACHE_SHORT_TTL); return answer('thin', false, record, 0); }
   if (record.status === 'PASS') {
     if (deps.kv) { try { await deps.kv.put(kkey, JSON.stringify(record), {expirationTtl: KV_TTL}); } catch (e) { console.log('newsdesk kv put failed'); } }

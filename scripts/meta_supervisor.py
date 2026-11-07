@@ -9,6 +9,8 @@ Checks:
      and FMP, from trades.json on main. The trades job computes it; this check owns the verdict.
   E. Ask pipeline health - the gateway's per-case log lines from the last 24 h (Cloudflare telemetry):
      fallback rate, the rules that failed most, and any intent that keeps falling back.
+  G. News provider trial - reads news_provider_compare.json (written by news_provider_compare.py just
+     before this script): per-provider PASS rate for yesterday and the trial recommendation.
   F. Peer heartbeat - the SOC monitor ran in the last 26 h (the SOC monitor checks this job the same way).
 
 Stdlib + requests only. No AI. No LLM calls.
@@ -180,6 +182,34 @@ def check_news_judge(supabase_url, supabase_key, yesterday):
         return [(WARN, f"news judge: {not_ok}/{len(rows)} verdicts ({pct}%) failed (fallback or error) for {yesterday}")]
 
     return [(OK, f"news judge: {len(rows)} verdicts for {yesterday}, {not_ok} failed ({pct}%)")]
+
+
+# ---------------------------------------------------------------- check G: news provider trial
+def check_news_providers(yesterday, path="news_provider_compare.json"):
+    """Read the trial comparison file. Returns list of (severity, text)."""
+    idle = [(OK, "news provider trial: not running")]
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return idle
+    if not isinstance(data, dict) or not data.get("trial_start"):
+        return idle
+    day = next((d for d in data.get("days") or [] if d.get("date") == yesterday), None)
+    findings = []
+    if day:
+        for name, p in sorted((day.get("providers") or {}).items()):
+            n, ok = p.get("verdicts") or 0, p.get("pass") or 0
+            pct = ok * 100 // n if n else 0
+            findings.append((OK, f"news provider {name}: {ok}/{n} PASS ({pct}%)"))
+            if n >= 5 and pct < 80:
+                findings.append((WARN, f"news provider {name}: PASS rate {pct}% under 80% ({ok}/{n}) for {yesterday}"))
+    else:
+        findings.append((OK, f"news provider trial: no verdicts for {yesterday}"))
+    rec = data.get("recommendation")
+    if rec and rec != "pending":
+        findings.append((OK, f"news provider trial recommendation: {rec} ({data.get('trial_days')} days)"))
+    return findings
 
 
 # ---------------------------------------------------------------- check C: insights files
@@ -424,7 +454,7 @@ def render(now, findings, overall):
     lines = [
         f"# Meta supervisor: {now:%Y-%m-%d} {overall}",
         "",
-        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation, Ask health, SOC monitor heartbeat.",
+        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation, Ask health, SOC monitor heartbeat, news provider trial.",
         "",
         "## Findings",
     ]
@@ -499,6 +529,12 @@ def main():
         all_findings.extend(check_news_judge(supabase_url, supabase_key, yesterday))
     else:
         all_findings.append((WARN, "news judge: SUPABASE_URL or SUPABASE_SERVICE_KEY not set"))
+
+    # G: news provider trial (file only, no secrets)
+    try:
+        all_findings.extend(check_news_providers(yesterday))
+    except Exception as exc:
+        all_findings.append((WARN, f"news provider trial: check failed ({type(exc).__name__})"))
 
     # C: insights files
     all_findings.extend(check_insights_files(now))

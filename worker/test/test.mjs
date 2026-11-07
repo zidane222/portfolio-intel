@@ -73,6 +73,7 @@ await import('./phase4.mjs').then(m => m.default({t, worker, env, O, withService
 await import('./insights.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./insiders.mjs').then(m => m.default({t, worker, env, O, withServices, bind}));
 await import('./newsdesk.mjs').then(m => m.default({t}));
+await import('./phase5.mjs').then(m => m.default({t}));
 console.log(`\n${n} tests passed`);
 // Secrets Store bindings are objects with get()
 {

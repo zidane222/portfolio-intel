@@ -17,7 +17,8 @@ import * as holdingsAgent from '../src/agents/data/holdings.js';
 import {lineSafe} from '../src/agents/validator.js';
 
 const PAGES = 'https://portfolio-intel-279.pages.dev/private_markets.json';
-const REAL = JSON.parse(readFileSync(fileURLToPath(new URL('../../private_markets.json', import.meta.url)), 'utf8'));
+// Pinned snapshot (all TX raises plus a sample), so the tests do not move when the live file rotates month.
+const REAL = JSON.parse(readFileSync(fileURLToPath(new URL('./fixtures/private_markets-2026-10-30.json', import.meta.url)), 'utf8'));
 const NOW = new Date().toISOString();
 const FIX = {updated: NOW, window_days: 60, done: [1, 2], raises: [
   {f: 'D', d: '2026-10-20', n: 'Alpha Robotics Inc', city: 'Austin', st: 'TX', ind: 'Biotechnology', amt: 1000000, stage: 'Seed / Series A', u: 'https://www.sec.gov/a'},

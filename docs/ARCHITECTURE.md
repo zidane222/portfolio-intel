@@ -26,7 +26,9 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
    dividends)                    /internal/intent,                                 no public URL)
                                  /internal/build)                                      │
                                                                   Workers KV NEWSREADS ┤ Supabase service key
-                                                                  Supabase news tables ┘ (RLS, definer functions)
+                                                                  Supabase news tables ┤ (RLS, definer functions)
+                                                       Groq + Gemini (free tier, news ┘ reads only; Gemini gets
+                                                       public tickers and headlines only, pi-newsdesk only)
         ▲
         │ fallback on network or 5xx errors
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
@@ -72,7 +74,11 @@ runs the news read agents and upserts news_verdicts.
 ```
 
 pi-newsdesk (plan: `docs/plans/phase3-news-agents.md`) is the only service holding
-`SUPABASE_SERVICE_KEY` (with `GROQ_API_KEY`, both from the Secrets Store). It has no public URL; the
+`SUPABASE_SERVICE_KEY` (with `GROQ_API_KEY` and `GEMINI_API_KEY`, all from the Secrets Store).
+Outbound AI hosts: Groq, and Google Gemini (`generativelanguage.googleapis.com`, free tier, Phase 5,
+`docs/plans/phase5-news-dual-provider.md`) from pi-newsdesk only, with public data only (tickers and
+public headlines). Ask stays on Groq. Shadow rows (`origin = 'shadow'`) are never shown to users;
+`news_budget` has one row per day and provider (`groq`, `gemini`, `gemini_shadow`). It has no public URL; the
 gateway reaches it over the `NEWSDESK` binding. Its two routes return 404 without `X-PI-Internal`.
 Storage:
 - Supabase `news_verdicts` (batch reads, 2 years), `news_jobs` (14 days), `news_budget` (30 days)
@@ -80,7 +86,7 @@ Storage:
   through the service role and SECURITY DEFINER functions with a fixed search_path
   (`supabase/news.sql`).
 - Workers KV `NEWSREADS`: key `r:{TICKER}:{YYYY-MM-DD}`, 36 h TTL, on-demand reads written only after
-  a Groq read. No user identifier in key or value. The Cache API sits in front (per data center).
+  an AI read (Groq or Gemini). No user identifier in key or value. The Cache API sits in front (per data center).
 - BigQuery `news_verdicts`: archive copy made by `scripts/history_load.py` (no Groq key in GitHub).
 
 pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pages), with
@@ -97,7 +103,7 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/ask` | gateway (agents/supervisor.js) | `POST {question, history?, portfolio?, client_asof}` → `{answer, sources[], check: {status: PASS|FLAG|fallback, flags, attempts}, intent, case_id, ms}`. Worker only; the app falls back to `/api/ai`. Body at most 32 KB (413) |
 | `/api/private` | private | `GET ?state&city&stage&industry&form&q&limit&offset` → `{updated, total, count, offset, raises[]}` |
 | `/api/newsdesk/reads` | newsdesk (special-cased in `index.js`) | `POST {tickers: [1 to 40]}` → `{updated, window_days: 7, reads: {T: [record...]}}`. Latest batch verdict or today's shared read per ticker. 0 Groq calls, counts against no cap. Body at most 2 KB. Tickers only in the POST body |
-| `/api/newsdesk/read` | newsdesk (special-cased in `index.js`) | `POST {ticker}` → `{status: ok|thin|fallback|limited|busy, cached, groq_calls, quota_left, read, message}`. Gateway order: origin, `api` limit, 1 KB body, ticker regex, pi-market quote check (invalid is 400 with no Groq call), per-visitor quota (`newsread` bucket: 3 a minute, 10 uncached a day; pi-newsdesk gets only `X-PI-Quota: ok|over`, never the IP). pi-newsdesk order: Cache API, KV, today's batch row, then quota, thin check (0 calls), global cap, Groq. 503 when `NEWS_ONDEMAND_ENABLED = "0"` |
+| `/api/newsdesk/read` | newsdesk (special-cased in `index.js`) | `POST {ticker}` → `{status: ok|thin|fallback|limited|busy, cached, groq_calls, quota_left, read, message}`. Gateway order: origin, `api` limit, 1 KB body, ticker regex, pi-market quote check (invalid is 400 with no Groq call), per-visitor quota (`newsread` bucket: 3 a minute, 10 uncached a day; pi-newsdesk gets only `X-PI-Quota: ok|over`, never the IP). pi-newsdesk order: Cache API, KV, today's batch row, then quota, thin check (0 calls), provider cap, Groq or Gemini (failover once on 429, 5xx, timeout or empty). 503 when `NEWS_ONDEMAND_ENABLED = "0"` |
 | `/api/private/stats` | private | Same filters → `{updated, count, total_amt, by_stage, by_form, by_state_top, by_industry_top}` |
 | `/api/insights` | insights | `GET` (no params) → `insights.json` (`pi/insights/v1`) plus `served_asof`, `stale` (generated over 10 days ago). Service answers 404 without `X-PI-Internal: 1` (gateway sets it for public reads, the Ask data agent sends it). Reads only `INSIGHTS_DATA_URL` on Pages, `redirect: 'manual'` and any 3xx refused, 5 MB streamed cap, 1 h cache, last good copy 48 h, else 502 |
 | `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
@@ -117,9 +123,9 @@ gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` wit
 | Class | Examples | Where it lives | Protection |
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
-| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
+| Credentials | API keys, service role key, Groq key, Gemini key (pi-newsdesk only) | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
 | Account | Email, passkey public keys, hash of the passcode login secret | Supabase Auth | Supabase managed. The login secret is PBKDF2 (600k, salt from the email, separate purpose) of the passcode, so it can't recover the passcode or the data key |
-| Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |
+| Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines, from Groq or Gemini) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier. Only this class goes to Gemini (free tier, prompts may be used by Google), from pi-newsdesk only; Ask and any user data stay on Groq |
 | Confidential (user), news list | The user's own ticker list for News "My reads" | Device vault (`state.newsList`), ciphertext when synced | Sent to the gateway as plain tickers in a POST body to get reads, with no user identifier (control C-39, accepted disclosure) |
 
 ## In-app agent framework (in place, Phase 2)

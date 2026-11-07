@@ -287,7 +287,7 @@ NEWS_DAYS = 3
 NEWS_SCHEMA = [('id', 'STRING', 'REQUIRED'), ('run_date', 'DATE', 'REQUIRED'), ('created', 'TIMESTAMP', 'NULLABLE'),
                ('ticker', 'STRING', 'REQUIRED'), ('origin', 'STRING', 'NULLABLE'), ('mode', 'STRING', 'NULLABLE'),
                ('stance', 'STRING', 'NULLABLE'), ('confidence', 'STRING', 'NULLABLE'), ('status', 'STRING', 'NULLABLE'),
-               ('groq_calls', 'INT64', 'NULLABLE'), ('tokens', 'INT64', 'NULLABLE'), ('model', 'STRING', 'NULLABLE'),
+               ('groq_calls', 'INT64', 'NULLABLE'), ('tokens', 'INT64', 'NULLABLE'), ('model', 'STRING', 'NULLABLE'), ('provider', 'STRING', 'NULLABLE'),
                ('prompt_version', 'STRING', 'NULLABLE'), ('price_ref_date', 'DATE', 'NULLABLE'), ('record', 'STRING', 'NULLABLE')]
 
 
@@ -327,6 +327,11 @@ def to_bigquery_news(*_):
         raise
     rows = list({r['id']: r for r in rows}.values())
     table = bq_ensure(client, ds_id, 'news_verdicts', NEWS_SCHEMA, 'run_date')
+    have = {f.name for f in table.schema}
+    if 'provider' not in have:  # table created before phase 5: add the column (nullable, so old rows stay valid)
+        from google.cloud import bigquery
+        table.schema = list(table.schema) + [bigquery.SchemaField('provider', 'STRING', mode='NULLABLE')]
+        table = client.update_table(table, ['schema'])
     bq_merge(client, ds_id, 'news_verdicts', rows, NEWS_SCHEMA, ['id'])
     bq_dedupe(client, ds_id, 'news_verdicts', ['id'], 'run_date')
     stored = bq_count(client, ds_id, 'news_verdicts')
