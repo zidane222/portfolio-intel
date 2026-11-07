@@ -1,0 +1,223 @@
+// Feature flags: registry, gateway checks, pi-flags admin (Access JWT, CSRF, versions, audit). Run: node test/flags.mjs
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import gateway from '../src/index.js';
+import flagsSvc, {cleanReason} from '../src/services/flags.js';
+import * as F from '../src/lib/flags.js';
+import {_resetJwks} from '../src/lib/access.js';
+import {tick} from '../src/modules/newsdesk.js';
+
+let n = 0; const t = async (name, fn) => { F._reset(); await fn(); n++; console.log('ok', name); };
+const O = 'https://portfolio-intel-279.pages.dev';
+
+function kv(init = {}, {fail = false} = {}) {
+  const m = new Map(Object.entries(init).map(([k, v]) => [k, {v: typeof v === 'string' ? v : JSON.stringify(v), meta: null}]));
+  return {
+    m, fail,
+    async get(k, type) { if (this.fail) throw new Error('down'); const e = m.get(k); if (!e) return null; return type === 'json' ? JSON.parse(e.v) : e.v; },
+    async put(k, v, o = {}) { m.set(k, {v, meta: o.metadata || null}); },
+    async list({prefix}) { return {keys: [...m.keys()].filter(k => k.startsWith(prefix)).sort().map(k => ({name: k, metadata: m.get(k).meta})), list_complete: true}; },
+  };
+}
+const doc = flags => ({v: 3, updated: '2026-11-01T00:00:00.000Z', flags: Object.fromEntries(Object.entries(flags).map(([k, on]) => [k, {on, by: 'x', at: 'y', reason: 'zzz'}]))});
+const okSvc = {fetch: async () => new Response(JSON.stringify({ok: 1}), {status: 200, headers: {'Content-Type': 'application/json'}})};
+const genv = extra => ({ALLOWED_ORIGINS: O, MARKET: okSvc, NEWS: okSvc, RATES: okSvc, AI_SVC: okSvc, BROKER: okSvc, DISCLOSURES: okSvc, PRIVATE: okSvc, INSIGHTS: okSvc, NEWSDESK: okSvc, ...extra});
+let ip = 0;
+const gcall = (path, e, init = {}) => gateway.fetch(new Request('https://w.dev' + path, {...init, headers: {Origin: O, 'CF-Connecting-IP': '9.9.' + (ip++ % 250) + '.1', ...(init.headers || {})}}), e);
+
+await t('registry matches scripts/flags_registry.json', async () => {
+  const py = JSON.parse(readFileSync(new URL('../../scripts/flags_registry.json', import.meta.url), 'utf8'));
+  const js = Object.fromEntries(Object.entries(F.REGISTRY).map(([k, r]) => [k, {default: r.default, fail: r.fail, kind: r.kind}]));
+  assert.deepEqual(py, js);
+  assert.deepEqual(F.NAMES, ['maintenance', 'broker', 'sync_writes', 'ai', 'news', 'disclosures', 'market', 'house_scrape', 'senate_scrape', 'fmp_fill', 'recon_v2']);
+});
+
+await t('no binding: defaults, routes work', async () => {
+  const p = await F.publicFlags({});
+  assert.equal(p.flags.broker, true); assert.equal(p.flags.maintenance, false); assert.equal(p.flags.recon_v2, false);
+  assert.equal((await gcall('/api/plaid/status', genv({}))).status, 200);
+});
+
+await t('flag off gives the disabled answer', async () => {
+  const e = genv({FLAGS: kv({'flags:v1': doc({broker: false})})});
+  const r = await gcall('/api/plaid/status', e);
+  assert.equal(r.status, 503); assert.equal(r.headers.get('Retry-After'), '60'); assert.equal(r.headers.get('X-PI-Flag'), 'off');
+  assert.deepEqual(await r.json(), {error: 'This feature is turned off for now. Try again later.', disabled: true, flag: 'broker'});
+  assert.equal((await gcall('/api/prices/AAPL', e)).status, 200);
+});
+
+await t('ai covers /api/ask and /api/ai, news covers newsdesk', async () => {
+  const e = genv({FLAGS: kv({'flags:v1': doc({ai: false, news: false})})});
+  for (const p of ['/api/ask', '/api/ai']) assert.equal((await (await gcall(p, e, {method: 'POST', body: '{}'})).json()).flag, 'ai');
+  for (const p of ['/api/news', '/api/feeds', '/api/newsdesk/read']) assert.equal((await (await gcall(p, e, {method: 'POST', body: '{}'})).json()).flag, 'news');
+});
+
+await t('maintenance turns every route off but not health or /api/flags', async () => {
+  const e = genv({FLAGS: kv({'flags:v1': doc({maintenance: true})})});
+  for (const p of ['/api/prices/AAPL', '/api/top-rates', '/api/private', '/api/insights', '/api/all-trades', '/api/plaid/status']) {
+    const r = await gcall(p, e); assert.equal(r.status, 503, p); assert.equal((await r.json()).flag, 'maintenance');
+  }
+  assert.equal((await gcall('/health', e)).status, 200);
+  const f = await gcall('/api/flags', e);
+  assert.equal(f.status, 200); assert.equal(f.headers.get('Cache-Control'), 'public, max-age=30');
+  const d = await f.json();
+  assert.deepEqual(Object.keys(d).sort(), ['flags', 'updated', 'v']);
+  assert.equal(d.flags.maintenance, true);
+  assert.ok(Object.values(d.flags).every(v => typeof v === 'boolean'));
+  assert.ok(!JSON.stringify(d).includes('reason'));
+});
+
+await t('/api/flags: GET only, bad origin 403, no origin ok, rate limited', async () => {
+  const e = genv({FLAGS: kv()});
+  assert.equal((await gcall('/api/flags', e, {method: 'POST'})).status, 404);
+  assert.equal((await gcall('/api/flags', e, {headers: {Origin: 'https://evil.example'}})).status, 403);
+  const noOrigin = () => gateway.fetch(new Request('https://w.dev/api/flags', {headers: {'CF-Connecting-IP': '7.7.7.7'}}), e);
+  assert.equal((await noOrigin()).status, 200);
+  let last; for (let i = 0; i < 31; i++) last = await noOrigin();
+  assert.equal(last.status, 429);
+});
+
+await t('admin paths 404 through the gateway', async () => {
+  const e = genv({FLAGS: kv()});
+  for (const p of ['/admin', '/admin/flags', '/api/admin/flags', '/api/flags/admin']) assert.equal((await gcall(p, e)).status, 404, p);
+});
+
+await t('fail-safe: unreadable KV, no last known: closed off, others default', async () => {
+  const st = await F.load({FLAGS: kv({}, {fail: true})});
+  assert.equal(st.state, 'error');
+  assert.equal(F.resolve('broker', st), false); assert.equal(F.resolve('sync_writes', st), false);
+  assert.equal(F.resolve('market', st), true); assert.equal(F.resolve('maintenance', st), false);
+});
+
+await t('fail-safe: last known value wins when KV goes down', async () => {
+  const store = kv({'flags:v1': doc({broker: true, market: false, maintenance: true})});
+  await F.load({FLAGS: store}, 0);
+  store.fail = true;
+  const st = await F.load({FLAGS: store}, F.CACHE_MS + 1);
+  assert.equal(st.state, 'error');
+  assert.equal(F.resolve('broker', st), true); assert.equal(F.resolve('market', st), false); assert.equal(F.resolve('maintenance', st), true);
+});
+
+await t('30 s isolate cache', async () => {
+  const store = kv({'flags:v1': doc({market: false})});
+  let reads = 0; const g = store.get.bind(store); store.get = async (...a) => { reads++; return g(...a); };
+  await F.load({FLAGS: store}, 1000); await F.load({FLAGS: store}, 1000 + F.CACHE_MS - 1);
+  assert.equal(reads, 1);
+  await F.load({FLAGS: store}, 1000 + F.CACHE_MS + 1); assert.equal(reads, 2);
+});
+
+await t('invalid stored doc is treated as unreadable', async () => {
+  const st = await F.load({FLAGS: kv({'flags:v1': {v: 'x', flags: {broker: {on: 'yes'}}}})});
+  assert.equal(st.state, 'error'); assert.equal(F.resolve('broker', st), false);
+});
+
+await t('pi-newsdesk cron skips when the news flag is off', async () => {
+  const r = await tick({NEWS_BATCH_ENABLED: '1', FLAGS: kv({'flags:v1': doc({news: false})})}, {sb: null});
+  assert.deepEqual(r, {skipped: 'flag'});
+  const r2 = await tick({NEWS_BATCH_ENABLED: '0', FLAGS: kv()}, {sb: null});
+  assert.deepEqual(r2, {skipped: 'disabled'});
+});
+
+// ---- pi-flags admin
+const team = 'https://pitest.cloudflareaccess.com', aud = 'a'.repeat(64), admin = 'owner@example.com';
+const pair = await crypto.subtle.generateKey({name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256'}, true, ['sign', 'verify']);
+const other = await crypto.subtle.generateKey({name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256'}, true, ['sign', 'verify']);
+const pub = {...(await crypto.subtle.exportKey('jwk', pair.publicKey)), kid: 'k1'};
+const b64u = b => Buffer.from(b).toString('base64url');
+async function jwt(claims, key = pair.privateKey, head = {alg: 'RS256', kid: 'k1'}) {
+  const s = b64u(JSON.stringify(head)) + '.' + b64u(JSON.stringify(claims));
+  return s + '.' + b64u(new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(s))));
+}
+const good = () => ({aud: [aud], iss: team, email: admin, exp: Math.floor(Date.now() / 1000) + 600, iat: Math.floor(Date.now() / 1000)});
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (u, init) => {
+  if (String(u) === team + '/cdn-cgi/access/certs') return new Response(JSON.stringify({keys: [pub]}), {status: 200});
+  if (String(u).includes('supabase.co')) { globalThis.__sb = {u: String(u), body: JSON.parse(init.body), auth: init.headers.Authorization}; return new Response('null', {status: 200}); }
+  return realFetch(u, init);
+};
+const FURL = 'https://pi-flags.example.workers.dev';
+const fenv = extra => ({ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud, ADMIN_EMAIL: admin, SUPABASE_URL: 'https://abc.supabase.co', FLAGS: kv(), ...extra});
+const fcall = async (path, e, {token, method = 'GET', body, headers = {}} = {}) => flagsSvc.fetch(new Request(FURL + path, {method, body,
+  headers: {...(token === undefined ? {'Cf-Access-Jwt-Assertion': await jwt(good())} : token ? {'Cf-Access-Jwt-Assertion': token} : {}), ...headers}}), e);
+const post = (e, b, h = {'X-PI-Flags': '1', Origin: FURL}, token) => fcall('/admin/flags', e, {method: 'POST', body: JSON.stringify(b), headers: {'Content-Type': 'application/json', ...h}, token});
+
+await t('pi-flags: fails closed without Access settings', async () => {
+  _resetJwks();
+  for (const miss of ['ACCESS_TEAM_DOMAIN', 'ACCESS_AUD', 'ADMIN_EMAIL']) {
+    const e = fenv({[miss]: '__PLACEHOLDER__'});
+    for (const p of ['/admin', '/admin/flags', '/admin/audit', '/admin/app.js']) assert.equal((await fcall(p, e)).status, 403, miss + p);
+  }
+});
+
+await t('pi-flags: bad tokens are 403', async () => {
+  _resetJwks();
+  const e = fenv();
+  const bad = [null, 'garbage', await jwt(good(), other.privateKey), await jwt({...good(), aud: ['b'.repeat(64)]}), await jwt({...good(), exp: 1}),
+    await jwt({...good(), iss: 'https://evil.cloudflareaccess.com'}), await jwt({...good(), email: 'someone@example.com'}),
+    await jwt(good(), pair.privateKey, {alg: 'none', kid: 'k1'}), await jwt(good(), pair.privateKey, {alg: 'RS256', kid: 'nope'})];
+  for (const tok of bad) assert.equal((await fcall('/admin/flags', e, {token: tok || ''})).status, 403);
+  assert.equal((await fcall('/admin/flags', e)).status, 200);
+});
+
+await t('pi-flags: page has strict CSP and no inline script', async () => {
+  const r = await fcall('/admin', fenv());
+  assert.equal(r.status, 200);
+  const csp = r.headers.get('Content-Security-Policy');
+  assert.ok(csp.includes("script-src 'self'") && csp.includes("default-src 'none'") && csp.includes("frame-ancestors 'none'"));
+  const html = await r.text();
+  assert.ok(!/<script>/.test(html) && !/innerHTML/.test(html) && !/https?:\/\//.test(html));
+  const js = await (await fcall('/admin/app.js', fenv())).text();
+  assert.ok(!js.includes('innerHTML'));
+});
+
+await t('pi-flags: POST needs CSRF header and same Origin', async () => {
+  const e = fenv();
+  const b = {name: 'broker', on: false, reason: 'Plaid outage', v: 0};
+  assert.equal((await post(e, b, {Origin: FURL})).status, 403);
+  assert.equal((await post(e, b, {'X-PI-Flags': '1', Origin: 'https://evil.example'})).status, 403);
+  assert.equal((await post(e, b, {'X-PI-Flags': '1'})).status, 403);
+  assert.equal((await post(e, b)).status, 200);
+});
+
+await t('pi-flags: input checks', async () => {
+  const e = fenv();
+  for (const b of [{name: 'nope', on: true, reason: 'abc', v: 0}, {name: 'ai', on: 'yes', reason: 'abc', v: 0}, {name: 'ai', on: true, reason: 'ab', v: 0},
+    {name: 'ai', on: true, reason: 'x'.repeat(201), v: 0}, {name: 'ai', on: true, reason: 'abc'}, {name: 'ai', on: true, reason: 7, v: 0}]) {
+    assert.equal((await post(e, b)).status, 400, JSON.stringify(b).slice(0, 60));
+  }
+  assert.equal(cleanReason('  a\u0000b\nc  '), 'a b c');
+  assert.equal(cleanReason('<b>hi</b>'), '<b>hi</b>'); // stored as text, rendered with textContent
+});
+
+await t('pi-flags: version check, write, audit in KV and Supabase', async () => {
+  globalThis.__sb = null;
+  const e = fenv({SUPABASE_FLAGS_KEY: 'test-flags-key'});
+  const r1 = await post(e, {name: 'ai', on: false, reason: 'Groq bill spike', v: 0});
+  assert.equal(r1.status, 200);
+  const d1 = await r1.json();
+  assert.equal(d1.v, 1); assert.equal(d1.flags.ai.on, false); assert.equal(d1.flags.ai.by, admin); assert.equal(d1.flags.ai.reason, 'Groq bill spike');
+  const stale = await post(e, {name: 'ai', on: true, reason: 'back on', v: 0});
+  assert.equal(stale.status, 409); assert.equal((await stale.json()).v, 1);
+  assert.equal((await post(e, {name: 'ai', on: true, reason: 'back on', v: 1})).status, 200);
+  const keys = [...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:'));
+  assert.equal(keys.length, 2); assert.ok(keys.every(k => /^audit:\d{4}-\d{2}-\d{2}T[\d:.]+Z:[0-9a-f]{12}$/.test(k)));
+  const a = await (await fcall('/admin/audit', e)).json();
+  assert.equal(a.audit.length, 2); assert.equal(a.audit[0].on, true); assert.equal(a.audit[0].by, admin);
+  assert.ok(globalThis.__sb.u.endsWith('/rest/v1/rpc/flag_audit_add'));
+  assert.equal(globalThis.__sb.auth, 'Bearer test-flags-key');
+  assert.deepEqual(Object.keys(globalThis.__sb.body).sort(), ['p_actor', 'p_at', 'p_flag', 'p_id', 'p_on', 'p_reason', 'p_v']);
+  assert.equal((await fcall('/admin/audit?since=bad', e)).status, 400);
+  // gateway sees the new value
+  F._reset();
+  assert.equal((await F.publicFlags({FLAGS: e.FLAGS})).flags.ai, true);
+});
+
+await t('pi-flags: missing Supabase key keeps KV audit', async () => {
+  globalThis.__sb = null;
+  const e = fenv();
+  assert.equal((await post(e, {name: 'market', on: false, reason: 'Yahoo down', v: 0})).status, 200);
+  assert.equal(globalThis.__sb, null);
+  assert.equal([...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:')).length, 1);
+});
+
+console.log(`${n} flag tests passed`);

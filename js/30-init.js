@@ -1,6 +1,43 @@
 // ─────────────────────────────────────────────
 //  INIT
 // ─────────────────────────────────────────────
+// ── Feature flags ──
+// GET /api/flags at boot and every 60 s. Closed flags (broker, sync_writes) read off until the
+// gateway or the Render fallback has answered once; the rest use their defaults.
+const FLAG_DEFAULTS = {maintenance: false, broker: true, sync_writes: true, ai: true, news: true, disclosures: true, market: true};
+const FLAG_CLOSED = ['broker', 'sync_writes'];
+const FLAG_TEXT = {maintenance: 'Portfolio Intel is in maintenance. Live data is paused; your saved data is safe on this device.',
+  broker: 'Brokerage linking is turned off for now.', sync_writes: 'Cloud sync uploads are paused. Changes stay on this device and upload later.',
+  ai: 'The assistant is turned off for now.', news: 'News is turned off for now.', disclosures: 'Congressional trades are turned off for now.',
+  market: 'Live prices are turned off for now.'};
+let FLAGS = null;
+function flagOn(name) {
+  if (FLAGS && typeof FLAGS[name] === 'boolean') return FLAGS[name];
+  if (!FLAGS && FLAG_CLOSED.includes(name)) return false;
+  return name in FLAG_DEFAULTS ? FLAG_DEFAULTS[name] : true;
+}
+function renderFlagNotice() {
+  const el = $('flag-notice'); if (!el) return;
+  const off = flagOn('maintenance') ? ['maintenance'] : Object.keys(FLAG_TEXT).filter(n => n !== 'maintenance' && FLAGS && !flagOn(n));
+  el.textContent = off.map(n => FLAG_TEXT[n]).join(' ');
+  el.hidden = !off.length;
+}
+async function loadFlags() {
+  const wasHeld = !flagOn('sync_writes');
+  try {
+    const d = await getJSON(BACKEND_URL + '/api/flags', {timeout: 8000});
+    if (d && d.flags && typeof d.flags === 'object') {
+      const next = {};
+      for (const [k, v] of Object.entries(d.flags)) if (typeof v === 'boolean') next[k] = v;
+      FLAGS = next;
+    }
+  } catch (e) { /* keep the last known values */ }
+  renderFlagNotice();
+  if (wasHeld && flagOn('sync_writes') && typeof syncHeld !== 'undefined' && syncHeld && typeof syncSoon === 'function') syncSoon();
+}
+const flagsReady = loadFlags();
+setInterval(() => { if (!document.hidden) loadFlags(); }, 60 * 1000);
+
 function refreshAll() {
   renderReviewSec();
   renderCash(); renderDividends(); loadRisk();

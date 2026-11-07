@@ -51,11 +51,96 @@ def origin_allowed():
         return False
     return origin in ALLOWED_ORIGINS or bool(re.fullmatch(r'https://[a-z0-9-]+\.portfolio-intel-279\.pages\.dev', origin))
 
+# ── FEATURE FLAGS ────────────────────────────────────────
+# The gateway's GET /api/flags is polled every 60 s in the background (worker/src/lib/flags.js is the
+# registry; scripts/flags_registry.json is its copy). Routes answer the same disabled reply as the
+# gateway. Until the gateway has answered once, closed flags (broker, sync_writes) read off and the
+# others read their defaults. FLAGS_POLL=0 turns the poller off (tests).
+import threading as _threading
+_FLAGS_URL = os.environ.get('FLAGS_URL', 'https://portfolio-intel-api.viphashkahn.workers.dev/api/flags')
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts', 'flags_registry.json')) as _fh:
+        FLAG_REGISTRY = json.load(_fh)
+except Exception:  # backend deployed without scripts/: keep the same list inline
+    FLAG_REGISTRY = {n: {'default': d, 'fail': f} for n, d, f in (
+        ('maintenance', False, 'last'), ('broker', True, 'closed'), ('sync_writes', True, 'closed'), ('ai', True, 'open'),
+        ('news', True, 'open'), ('disclosures', True, 'open'), ('market', True, 'open'), ('house_scrape', True, 'open'),
+        ('senate_scrape', True, 'open'), ('fmp_fill', True, 'open'), ('recon_v2', False, 'open'))}
+FLAGS_STATE = {'flags': None, 'v': 0, 'updated': None}
+
+def flags_poll_once(get=None):
+    get = get or requests.get
+    try:
+        r = get(_FLAGS_URL, timeout=5, headers={'User-Agent': 'portfolio-intel-render'})
+        d = r.json() if r.status_code == 200 else None
+        f = d.get('flags') if isinstance(d, dict) else None
+        if isinstance(f, dict):
+            FLAGS_STATE.update(flags={k: v for k, v in f.items() if isinstance(v, bool)}, v=int(d.get('v') or 0), updated=d.get('updated'))
+            return True
+    except Exception:
+        pass
+    return False
+
+def flag_on(name):
+    live = FLAGS_STATE['flags']
+    if live is not None and name in live:
+        return live[name]
+    reg = FLAG_REGISTRY.get(name)
+    if not reg:
+        return True
+    return False if (live is None and reg.get('fail') == 'closed') else reg['default']
+
+def _flags_loop():
+    while True:
+        flags_poll_once()
+        _time.sleep(60)
+
+if os.environ.get('FLAGS_POLL', '1') != '0':
+    _threading.Thread(target=_flags_loop, daemon=True).start()
+
+_ROUTE_FLAGS = [
+    (re.compile(r'^/api/(prices|history|sectors|dividends)(/|$)'), 'market'),
+    (re.compile(r'^/api/(news|feeds|newsdesk)(/|$)'), 'news'),
+    (re.compile(r'^/api/ai$'), 'ai'),
+    (re.compile(r'^/api/plaid/'), 'broker'),
+    (re.compile(r'^/api/(all-trades|house-trades|senate-trades)$'), 'disclosures'),
+]
+
+def flag_blocking(path):
+    if not path.startswith('/api/') or path == '/api/flags':
+        return None
+    if flag_on('maintenance'):
+        return 'maintenance'
+    for rx, name in _ROUTE_FLAGS:
+        if rx.match(path) and not flag_on(name):
+            return name
+    return None
+
+def disabled_reply(name):
+    resp = jsonify({'error': 'This feature is turned off for now. Try again later.', 'disabled': True, 'flag': name})
+    resp.status_code = 503
+    resp.headers['Retry-After'] = '60'
+    resp.headers['X-PI-Flag'] = 'off'
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
 @app.before_request
 def guard():
     if flask_request.path.startswith('/api/') and flask_request.method != 'OPTIONS':
         if rate_limited('api'):
             return jsonify({'error': 'Too many requests. Try again in a minute.'}), 429
+        off = flag_blocking(flask_request.path)
+        if off:
+            return disabled_reply(off)
+
+@app.route('/api/flags')
+def flags_public():
+    origin = flask_request.headers.get('Origin')
+    if origin and not origin_allowed():
+        return jsonify({'error': 'Not allowed'}), 403
+    resp = jsonify({'v': FLAGS_STATE['v'], 'updated': FLAGS_STATE['updated'], 'flags': {n: flag_on(n) for n in FLAG_REGISTRY}})
+    resp.headers['Cache-Control'] = 'public, max-age=30'
+    return resp
 
 @app.after_request
 def security_headers(resp):

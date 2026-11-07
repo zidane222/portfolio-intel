@@ -12,6 +12,7 @@ import {marketHasQuote, newsdeskRead} from './agents/data/newsread.js';
 import {MESSAGES} from './agents/newsread/render.js';
 import {OWNERS, ownerOf} from './routes.js';
 import {handleAsk} from './agents/supervisor.js';
+import {publicFlags, flagsFor, firstOff, disabled} from './lib/flags.js';
 
 async function health(env) {
   const checks = await Promise.all(OWNERS.map(async ([, name, binding]) => {
@@ -99,17 +100,29 @@ export async function newsdeskReadsRoute(req, env) {
   return passJSON(r);
 }
 
+// GET /api/flags: names and on/off only (never who, when or why). Read by the app, the Render
+// fallback, the GitHub jobs and the SOC monitor. Browsers must send an allowed Origin; server
+// callers send none. Admin routes live only on pi-flags; the gateway answers 404 for them.
+export async function flagsRoute(req, env) {
+  if (req.method !== 'GET') return json({error: 'Not found'}, 404);
+  if (req.headers.get('Origin') && !originOk(req, env)) return json({error: 'Not allowed'}, 403);
+  if (rateLimited(req, 'flags')) return json({error: 'Too many requests. Try again in a minute.'}, 429);
+  return json(await publicFlags(env), 200, {'Cache-Control': 'public, max-age=30'});
+}
+
 export default {
   async fetch(req, env) {
     req = stripInternal(req);
     const url = new URL(req.url);
     const cors = corsHeaders(req, env);
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers: cors});
-    let res;
+    let res, off;
     try {
       if (url.pathname === '/' || url.pathname === '/health') res = await health(env);
       else if (!url.pathname.startsWith('/api/')) res = json({error: 'Not found'}, 404);
       else if (rateLimited(req, 'api')) res = json({error: 'Too many requests. Try again in a minute.'}, 429);
+      else if (url.pathname === '/api/flags') res = await flagsRoute(req, env);
+      else if ((off = await firstOff(env, flagsFor(url.pathname, (ownerOf(url.pathname) || [])[3])))) res = disabled(off);
       else if (url.pathname === '/api/ask') {
         if (req.method !== 'POST') res = json({error: 'Not found'}, 404);
         else if (!originOk(req, env)) res = json({error: 'Not allowed'}, 403);

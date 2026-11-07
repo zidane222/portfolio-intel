@@ -4,6 +4,7 @@
 // Everything with a network side effect comes in through `deps` (see makeDeps), so tests can
 // stub Supabase, KV, the Cache API, headlines and Groq. The pure news-read agents
 // (buildPack, chooseMode, runNewsRead) are injected as deps.agents by services/newsdesk.js.
+import {flagOn} from '../lib/flags.js';
 import {json, readCapped} from '../lib/http.js';
 import {groqChat, groqModels} from '../lib/groq.js';
 import {makeSupabase} from '../lib/supabase.js';
@@ -143,6 +144,7 @@ const JOB_STATUS = {PASS: 'ok', thin: 'thin', fallback: 'fallback', skipped: 'sk
 // ── batch tick ──────────────────────────────────────────
 export async function tick(env, deps, scheduledTime = Date.now()) {
   if (String(env.NEWS_BATCH_ENABLED) !== '1') return {skipped: 'disabled'};
+  if (!(await flagOn(env, 'news'))) return {skipped: 'flag'}; // AND with the news feature flag (lib/flags.js)
   const runDate = day(scheduledTime);
   const sb = deps.sb;
   const seeded = await sb.rpc('news_seed', {d: runDate, fixed: FIXED}); // no-op after the first tick of the day

@@ -29,6 +29,10 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
                                                                   Supabase news tables ┘ (RLS, definer functions)
         ▲
         │ fallback on network or 5xx errors
+Feature flags: pi-flags Worker (workers.dev URL behind Cloudflare Access, the only KV writer)
+  → Workers KV FLAGS (flags:v1, audit:*) → read by the gateway (30 s cache), pi-newsdesk cron;
+  public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor. Audit also to Supabase
+  flag_audit (SUPABASE_FLAGS_KEY), archived to BigQuery by history_load.py
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
   "no stored reads" and "paused", no Groq, no storage)
 
@@ -102,8 +106,28 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/insights` | insights | `GET` (no params) → `insights.json` (`pi/insights/v1`) plus `served_asof`, `stale` (generated over 10 days ago). Service answers 404 without `X-PI-Internal: 1` (gateway sets it for public reads, the Ask data agent sends it). Reads only `INSIGHTS_DATA_URL` on Pages, `redirect: 'manual'` and any 3xx refused, 5 MB streamed cap, 1 h cache, last good copy 48 h, else 502 |
 | `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
+| `/api/flags` | gateway (`index.js`, `lib/flags.js`) | `GET` → `{v, updated, flags: {name: bool}}` only (no who, when or why). `flags` rate bucket 30/min, `Cache-Control: public, max-age=30`. Browsers need an allowed Origin; server callers send none. Never flaggable. Render serves the same shape from its last poll |
+| any flaggable route, flag off | gateway and Render | HTTP 503, `Retry-After: 60`, `X-PI-Flag: off`, `{"error": "This feature is turned off for now. Try again later.", "disabled": true, "flag": "<name>"}`. The app does not fall back to Render on this answer |
+| `/admin`, `/admin/*` | none (404 at the gateway) | Live only on pi-flags |
 | `/api/all-trades` | disclosures | Congressional trades |
 | `/api/insiders` (binding only) | disclosures | `GET` → `{buys[], updated}` from `insiders.json` (SEC Form 4 open-market buys, built by `scripts/smart_money.py`); the `seen` index is not returned. Used by the `insiders` Ask agent; no public gateway route |
+
+pi-flags admin routes (own workers.dev URL, every route 403 unless a valid Cloudflare Access JWT
+is present: RS256 signature against the team JWKS, `aud` = `ACCESS_AUD`, `iss` = team domain, `exp`,
+email from the token equal to the one `ADMIN_EMAIL`; any missing setting is 403):
+
+| Route | Contract |
+|---|---|
+| `GET /admin` (+ `/admin/app.js`, `/admin/app.css`) | Mobile page, CSP `default-src 'none'; script-src 'self'`, text set with textContent only |
+| `GET /admin/flags` | `{v, updated, flags: {name: {on, default, fail, kind, label, by, at, reason}}}` |
+| `POST /admin/flags` | `{name, on, reason (3 to 200 chars), v}` with header `X-PI-Flags: 1` and `Origin` equal to the Worker origin (else 403). 2 KB cap. 409 `{error, v}` when `v` is stale. Writes `flags:v1` with `v + 1`, then the audit record |
+| `GET /admin/audit?since=ISO` | `{audit: [record...]}`, newest first, at most 20 |
+
+Audit record: `{id (uuid), at (ISO), name, on, by (actor email from the JWT), reason, v}`. KV key
+`audit:{ISO}:{12 hex}` with no TTL (value and metadata). Supabase `flag_audit` (`supabase/flags.sql`:
+RLS on, no policies, grants revoked from anon and authenticated, insert only through SECURITY DEFINER
+`flag_audit_add`, 450 MB guard), archived to BigQuery `flag_audit` (MERGE on id, 3-day window, 9 GB
+guard), Supabase rows over 1 year purged after a good merge.
 
 Render fallback: `POST /api/newsdesk/reads` returns empty reads and `POST /api/newsdesk/read` returns
 503 "News reads are paused." with the same origin, size and ticker checks, no Groq call, nothing
@@ -112,12 +136,37 @@ stored, tickers not logged.
 `/internal/intent` and `/internal/build` exist only on pi-ai. They are not in `OWNERS`, so the
 gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` with `X-PI-Internal: 1`.
 
+## Feature flags registry
+
+One registry: `worker/src/lib/flags.js` (`REGISTRY`), copied in `scripts/flags_registry.json`;
+`worker/test/flags.mjs` and `scripts/test_flags.py` fail if they differ. KV namespace `pi-flags`,
+binding `FLAGS`, key `flags:v1` = `{v, updated, flags: {name: {on, by, at, reason}}}`. The deploy
+workflow adds the binding from repository variable `CF_KV_FLAGS`; without it pi-flags is skipped and
+every flag reads its default. Owner setup: `docs/runbooks/feature-flags.md`.
+
+| Flag | Default | Fail mode | Where |
+|---|---|---|---|
+| maintenance | off | last | Gateway and Render: every `/api/*` route except `/api/flags` |
+| broker | on | closed | `/api/plaid/*` |
+| sync_writes | on | closed | Client only (`js/29a-account.js`): uploads pause, data stays encrypted on the device. Hard stop in Supabase is a follow-up |
+| ai | on | open | `/api/ask`, `/api/ai` |
+| news | on | open | `/api/news`, `/api/feeds`, `/api/newsdesk/*`, pi-newsdesk cron (ANDed with `NEWS_*_ENABLED`) |
+| disclosures | on | open | `/api/all-trades` (Render also house and senate routes) |
+| market | on | open | `/api/prices`, `/api/history`, `/api/sectors`, `/api/dividends` |
+| house_scrape, senate_scrape, fmp_fill | on | open | fetch_trades steps (`scripts/flags.py`) |
+| recon_v2 | off | open | fetch_trades house check (v2 not built; the current check runs) |
+
+Reading: 30 s isolate cache, then KV (KV itself propagates in about 60 s). KV unreadable or invalid:
+the last known value in the isolate, else off for closed flags and the default for the rest. No
+binding: defaults. Health, `/api/flags` and the monitors are never flaggable.
+
 ## Data classification
 
 | Class | Examples | Where it lives | Protection |
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
-| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers |
+| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers; pi-flags has its own separate Supabase key (SUPABASE_FLAGS_KEY) |
+| Owner (admin) | Owner email in flag audit records, admin allowlist | KV audit keys, Supabase flag_audit, BigQuery flag_audit, GitHub secret FLAGS_ADMIN_EMAIL | Not public: GET /api/flags returns booleans only; audit read only behind Access |
 | Account | Email, passkey public keys, hash of the passcode login secret | Supabase Auth | Supabase managed. The login secret is PBKDF2 (600k, salt from the email, separate purpose) of the passcode, so it can't recover the passcode or the data key |
 | Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |
 | Confidential (user), news list | The user's own ticker list for News "My reads" | Device vault (`state.newsList`), ciphertext when synced | Sent to the gateway as plain tickers in a POST body to get reads, with no user identifier (control C-39, accepted disclosure) |

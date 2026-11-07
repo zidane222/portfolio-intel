@@ -26,6 +26,7 @@ jobs:
           pip install --quiet cryptography
           TOKEN=$(python3 -c "from cryptography.fernet import Fernet; import base64,hashlib; k=base64.urlsafe_b64encode(hashlib.sha256(b'testsecret:portfolio-intel-token').digest()); print(Fernet(k).encrypt(b'access-sandbox-123').decode())")
           node test/test.mjs "$TOKEN"
+          node test/flags.mjs
       - name: Deploy services, then the gateway
         run: |
           set -o pipefail
@@ -78,6 +79,29 @@ jobs:
             SERVICES="$SERVICES newsdesk"
           fi
 
+          # Feature flags (docs/runbooks/feature-flags.md). Without CF_KV_FLAGS, pi-flags is skipped and no
+          # FLAGS binding is added, so every flag reads its default and the app works as before.
+          FLAGS_KV="$(printf '%s' "$CF_KV_FLAGS_RAW" | tr -d '[:space:]')"
+          if printf '%s' "$FLAGS_KV" | grep -qE '^[0-9a-f]{32}$'; then
+            kv_flags() { printf '\n[[kv_namespaces]]\nbinding = "FLAGS"\nid = "%s"\n' "$FLAGS_KV" >> "$1"; }
+            kv_flags wrangler.toml
+            kv_flags config/flags.toml
+            case " $SERVICES " in *" newsdesk "*) kv_flags config/newsdesk.toml ;; esac
+            esc() { printf '%s' "$1" | tr -d '[:space:]' | sed 's/[&#\\]/\\&/g'; }
+            sed -i "s#__ACCESS_TEAM__#$(esc "$ACCESS_TEAM_RAW")#; s#__ACCESS_AUD__#$(esc "$ACCESS_AUD_RAW")#; s#__ADMIN_EMAIL__#$(esc "$FLAGS_ADMIN_RAW")#; s#__SUPABASE_URL__#$SB_URL#" config/flags.toml
+            [ -n "$ACCESS_AUD_RAW" ] && [ -n "$FLAGS_ADMIN_RAW" ] || echo "::warning::pi-flags: Access AUD or admin email not set; the admin page answers 403 until they are (docs/runbooks/feature-flags.md)."
+            if [ -z "${names+x}" ]; then
+              names="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/secrets_store/stores/$STORE_ID/secrets?per_page=100" \
+                | jq -r '.result[]?.name' 2>/dev/null)" || names=""
+            fi
+            if printf '%s\n' "$names" | grep -qx SUPABASE_FLAGS_KEY; then link config/flags.toml SUPABASE_FLAGS_KEY
+            else echo "::warning::pi-flags: Secrets Store has no SUPABASE_FLAGS_KEY; audit goes to KV only."; fi
+            SERVICES="$SERVICES flags"
+          else
+            echo "::warning::Skipping pi-flags: repository variable CF_KV_FLAGS is not set. Every flag reads its default."
+          fi
+
           deploy() {
             npx wrangler deploy "$@" 2>&1 | tee deploy.log || {
               grep -iE "error|✘|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -6 | sed "s/^/::error::[$*] /"
@@ -86,7 +110,7 @@ jobs:
           }
           for svc in $SERVICES; do
             deploy -c config/$svc.toml
-            echo "::notice::Deployed pi-$svc (private)"
+            [ "$svc" = flags ] && echo "::notice::Deployed pi-flags (behind Cloudflare Access)" || echo "::notice::Deployed pi-$svc (private)"
           done
           deploy
           grep -oE "https://[a-z0-9.-]+\.workers\.dev" deploy.log | head -1 | sed 's/^/::notice::Gateway URL /'
@@ -96,3 +120,7 @@ jobs:
           CF_STORE_RAW: ${{ secrets.cfks }}
           CF_KV_NEWSREADS_RAW: ${{ vars.CF_KV_NEWSREADS || 'addea482de704c589301b70f09787a68' }}  # KV id is not secret; a repo variable overrides it
           SB_URL_RAW: ${{ secrets.SP }}
+          CF_KV_FLAGS_RAW: ${{ vars.CF_KV_FLAGS }}
+          ACCESS_TEAM_RAW: ${{ vars.CF_ACCESS_TEAM }}
+          ACCESS_AUD_RAW: ${{ vars.CF_ACCESS_AUD }}
+          FLAGS_ADMIN_RAW: ${{ secrets.FLAGS_ADMIN_EMAIL }}
