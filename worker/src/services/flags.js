@@ -9,7 +9,7 @@ import {json, readCapped} from '../lib/http.js';
 import {resolveSecrets} from '../lib/secrets.js';
 import {verifyAccess} from '../lib/access.js';
 import {makeSupabase} from '../lib/supabase.js';
-import {KEY, REGISTRY, NAMES, validDoc} from '../lib/flags.js';
+import {KEY, REGISTRY, NAMES, cleanDoc} from '../lib/flags.js';
 import {PAGE, SCRIPT, STYLE} from './flags-page.js';
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -29,8 +29,9 @@ export function emptyDoc() { return {v: 0, updated: null, flags: {}}; }
 async function readDoc(env) {
   const d = await env.FLAGS.get(KEY, 'json');
   if (d === null) return emptyDoc();
-  if (!validDoc(d)) throw new Error('stored flags are not valid');
-  return d;
+  const c = cleanDoc(d); // drops names no longer in REGISTRY; a POST then writes the cleaned doc
+  if (c === null) throw new Error('stored flags are not valid');
+  return c;
 }
 
 function view(doc) {

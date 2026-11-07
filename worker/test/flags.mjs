@@ -373,6 +373,36 @@ await t('qa: CSRF and Origin on POST, GET has no side effect', async () => {
   for (const m of ['PUT', 'DELETE', 'PATCH']) assert.equal((await fcall('/admin/flags', e, {method: m, headers: {'X-PI-Flags': '1', Origin: FURL}})).status, 404, m);
 });
 
+// ---- removed or renamed flags left in KV
+const stale = () => { const d = doc({broker: true, sync_writes: true}); d.flags.old_flag = {on: false, by: 'x', at: 'y', reason: 'gone'}; return d; };
+await t('gateway read ignores a flag name no longer in the registry', async () => {
+  F._reset();
+  const st = await F.load({FLAGS: kv({'flags:v1': stale()})});
+  assert.equal(st.state, 'ok'); assert.ok(!('old_flag' in st.doc.flags));
+  assert.equal(F.resolve('broker', st), true); assert.equal(F.resolve('sync_writes', st), true);
+  F._reset();
+  const e = genv({FLAGS: kv({'flags:v1': stale()})});
+  assert.equal((await gcall('/api/plaid/status', e)).status, 200);
+  F._reset();
+  const bad = stale(); bad.flags.broker = {on: 'yes'}; // known names are still validated
+  assert.equal((await F.load({FLAGS: kv({'flags:v1': bad})})).state, 'error');
+  F._reset();
+});
+
+await t('admin GET and POST work with a stale flag name in KV', async () => {
+  globalThis.__sb = null;
+  const e = fenv({FLAGS: kv({'flags:v1': stale()})});
+  const g = await fcall('/admin/flags', e);
+  assert.equal(g.status, 200);
+  const gd = await g.json();
+  assert.equal(gd.v, 3); assert.ok(!('old_flag' in gd.flags)); assert.equal(gd.flags.broker.on, true);
+  const r = await post(e, {name: 'ai', on: false, reason: 'clean up stale flag', v: 3});
+  assert.equal(r.status, 200);
+  const stored = await e.FLAGS.get('flags:v1', 'json');
+  assert.equal(stored.v, 4); assert.equal(stored.flags.ai.on, false); assert.ok(!('old_flag' in stored.flags));
+  assert.equal((await fcall('/admin/flags', e)).status, 200);
+});
+
 const EM = String.fromCharCode(0x2014);
 await t('qa: no em dash in any user-facing message', async () => {
   const files = ['../src/lib/flags.js', '../src/services/flags.js', '../src/services/flags-page.js', '../src/lib/access.js', '../src/index.js',

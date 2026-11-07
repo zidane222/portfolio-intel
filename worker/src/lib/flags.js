@@ -36,12 +36,22 @@ export function disabled(name) {
   return json({error: DISABLED_MSG, disabled: true, flag: name}, 503, {'Retry-After': '60', 'X-PI-Flag': 'off', 'Cache-Control': 'no-store'});
 }
 
-// A stored document is valid when it has a numeric version and a flags object of booleans.
-export function validDoc(d) {
-  if (!d || typeof d !== 'object' || !Number.isInteger(d.v) || d.v < 0) return false;
-  if (!d.flags || typeof d.flags !== 'object' || Array.isArray(d.flags)) return false;
-  return Object.entries(d.flags).every(([k, f]) => NAMES.includes(k) && f && typeof f.on === 'boolean');
+// Read a stored document: it needs a numeric version and a flags object, and every known flag
+// in it must hold a boolean. Names no longer in REGISTRY (removed or renamed flags) are dropped,
+// so one stale name never makes the whole document unreadable. Returns the cleaned doc or null.
+export function cleanDoc(d) {
+  if (!d || typeof d !== 'object' || Array.isArray(d) || !Number.isInteger(d.v) || d.v < 0) return null;
+  if (!d.flags || typeof d.flags !== 'object' || Array.isArray(d.flags)) return null;
+  const flags = {};
+  for (const n of NAMES) {
+    if (!Object.prototype.hasOwnProperty.call(d.flags, n)) continue;
+    const f = d.flags[n];
+    if (!f || typeof f !== 'object' || typeof f.on !== 'boolean') return null;
+    flags[n] = f;
+  }
+  return {...d, flags};
 }
+export function validDoc(d) { return cleanDoc(d) !== null; }
 
 // Isolate state. MEM is the 10 s cache; LAST is the last good document read from KV.
 let MEM = {at: 0, doc: null, state: 'unset'};
@@ -56,7 +66,7 @@ export async function load(env, now = Date.now()) {
   let doc = null, state = 'ok';
   try {
     doc = await env.FLAGS.get(KEY, 'json');
-    if (doc !== null && !validDoc(doc)) { doc = null; state = 'error'; }
+    if (doc !== null) { doc = cleanDoc(doc); if (doc === null) state = 'error'; }
   } catch (e) { state = 'error'; }
   if (state === 'ok' && doc) LAST = doc;
   MEM = {at: now, doc, state};
