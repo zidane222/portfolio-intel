@@ -252,7 +252,8 @@ function wireAccount() {
       $('lock-set').textContent = 'Change passcode';
       await syncPush();
       await pwLink(a);
-      syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
+      if (!syncHeld) syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
+      else syncUI('Sync uploads are paused. Your changes are saved on this device and will upload later.');
     } catch (err) { syncUI('Couldn\'t set up: ' + err.message); }
   };
   $('sync-now').onclick = syncPush;

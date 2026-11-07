@@ -6,10 +6,10 @@ export const PAGE = `<!doctype html>
 <link rel="stylesheet" href="/admin/app.css"></head>
 <body><main>
 <h1>Feature flags</h1>
-<p class="note">Changes reach the app within about 60 seconds.</p>
+<p class="note">Changes reach the app within about a minute.</p>
 <p id="status" role="status" aria-live="polite"></p>
 <label for="reason">Reason (3 to 200 characters, required)</label>
-<input id="reason" maxlength="200" autocomplete="off" placeholder="Why are you changing this?">
+<input id="reason" required minlength="3" maxlength="200" aria-describedby="status" autocomplete="off" placeholder="Why are you changing this?">
 <ul id="flags"></ul>
 <h2>Last 20 changes</h2>
 <ol id="audit"></ol>
@@ -28,20 +28,25 @@ button:focus-visible,input:focus-visible{outline:3px solid #7aa2ff;outline-offse
 export const SCRIPT = `(function(){
 var state=null;var $=function(id){return document.getElementById(id)};
 function say(t){$('status').textContent=t}
+var ENDED='Your session ended. Reload the page to sign in again.';
+function body(r){var ct=r.headers.get('content-type')||'';if(ct.indexOf('application/json')<0){var e=new Error(ENDED);e.ended=true;throw e}return r.json()}
 function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e}
 function render(){var ul=$('flags');ul.textContent='';Object.keys(state.flags).forEach(function(n){var f=state.flags[n];
 var li=el('li','flag');var left=el('div');left.appendChild(el('div','name',n));left.appendChild(el('div','meta',f.label));
 if(f.at)left.appendChild(el('div','meta','Last change '+f.at.slice(0,16).replace('T',' ')+' UTC: '+(f.reason||'')));
 var b=el('button',f.on?'on':'off',f.on?'On':'Off');b.type='button';b.setAttribute('aria-pressed',f.on?'true':'false');
-b.setAttribute('aria-label',n+' is '+(f.on?'on':'off')+'. Tap to turn '+(f.on?'off':'on'));
+b.setAttribute('aria-label',n);b.setAttribute('data-flag',n);
 b.onclick=function(){flip(n,!f.on,b)};li.appendChild(left);li.appendChild(b);ul.appendChild(li)})}
-function audit(){fetch('/admin/audit',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){var ol=$('audit');ol.textContent='';
-(d.audit||[]).forEach(function(a){ol.appendChild(el('li',null,a.at.slice(0,16).replace('T',' ')+' '+a.name+' '+(a.on?'on':'off')+' by '+a.by+': '+a.reason))})}).catch(function(){})}
-function load(){fetch('/admin/flags',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
-.then(function(d){state=d;render();audit()}).catch(function(e){say('Could not load flags: '+e.message)})}
-function flip(n,on,b){var reason=$('reason').value.trim();if(reason.length<3){say('Type a reason first (3 to 200 characters).');$('reason').focus();return}
+function refocus(n){var b=document.querySelector('#flags button[data-flag="'+n+'"]');if(b)b.focus()}
+function audit(){var ol=$('audit');fetch('/admin/audit',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return body(r)}).then(function(d){ol.textContent='';
+(d.audit||[]).forEach(function(a){ol.appendChild(el('li',null,a.at.slice(0,16).replace('T',' ')+' '+a.name+' '+(a.on?'on':'off')+' by '+a.by+': '+a.reason))})}).catch(function(e){ol.textContent='';ol.appendChild(el('li',null,e.ended?ENDED:'Could not load recent changes.'))})}
+function load(){fetch('/admin/flags',{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return body(r)})
+.then(function(d){state=d;render();audit()}).catch(function(e){say(e.ended?ENDED:'Could not load flags: '+e.message)})}
+$('reason').oninput=function(){if($('reason').value.trim().length>=3)$('reason').removeAttribute('aria-invalid')};
+function flip(n,on,b){var reason=$('reason').value.trim();if(reason.length<3){$('reason').setAttribute('aria-invalid','true');say('Type a reason first (3 to 200 characters).');$('reason').focus();return}
+$('reason').removeAttribute('aria-invalid');
 b.disabled=true;say('Saving...');fetch('/admin/flags',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-PI-Flags':'1'},
-body:JSON.stringify({name:n,on:on,reason:reason,v:state.v})}).then(function(r){return r.json().then(function(d){return{r:r,d:d}})})
+body:JSON.stringify({name:n,on:on,reason:reason,v:state.v})}).then(function(r){return body(r).then(function(d){return{r:r,d:d}})})
 .then(function(x){if(x.r.status===409){say(x.d.error);load();return}if(!x.r.ok){say(x.d.error||'Save failed');b.disabled=false;return}
-state=x.d;$('reason').value='';render();audit();say(n+' is now '+(on?'on':'off')+'.')}).catch(function(){say('Save failed. Check your connection.');b.disabled=false})}
+state=x.d;$('reason').value='';render();refocus(n);audit();say(n+' is now '+(on?'on':'off')+'.')}).catch(function(e){say(e.ended?ENDED:'Save failed. Check your connection.');b.disabled=false})}
 load()})();`;

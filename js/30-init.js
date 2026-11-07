@@ -19,8 +19,9 @@ function flagOn(name) {
 function renderFlagNotice() {
   const el = $('flag-notice'); if (!el) return;
   const off = flagOn('maintenance') ? ['maintenance'] : Object.keys(FLAG_TEXT).filter(n => n !== 'maintenance' && FLAGS && !flagOn(n));
-  el.textContent = off.map(n => FLAG_TEXT[n]).join(' ');
-  el.hidden = !off.length;
+  const text = off.map(n => FLAG_TEXT[n]).join(' ');
+  if (el.textContent !== text) el.textContent = text;
+  if (el.hidden !== !off.length) el.hidden = !off.length;
 }
 async function loadFlags() {
   const wasHeld = !flagOn('sync_writes');

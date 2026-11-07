@@ -7,7 +7,7 @@
 // Covers: boot shows the notice banner when a flag is off (and hides it when all are on);
 // a disabled answer (503, disabled: true) never falls back to Render, while a plain 503 does;
 // sync upload paused while sync_writes is off, then resumed when it flips back on, with only
-// enc1: ciphertext sent. Fails on console errors or an em dash in the banner.
+// enc1: ciphertext sent. Passcode setup while paused does not claim "All set". Fails on console errors or an em dash in the banner.
 import {execSync} from 'node:child_process';
 const pw = await import(execSync('npm root -g').toString().trim() + '/playwright/index.mjs');
 const {chromium} = pw.default || pw;
@@ -108,6 +108,25 @@ async function open(flags, extra = {}) {
   const stillLocal = await page.evaluate(async p => JSON.parse(await vaultDecrypt(p)).watch, payload).catch(() => null);
   check(Array.isArray(stillLocal) && stillLocal[0] === SECRET, 'ciphertext decrypts on device to the kept data');
   check(st.errors.length === 0, 'no console errors (sync)', st.errors.join(' | ').slice(0, 200));
+  await ctx.close();
+}
+
+// 4. Passcode setup while sync_writes is off: no "All set", paused notice stays
+{
+  const {ctx, page, st} = await open({...ALL_ON, sync_writes: false});
+  await page.evaluate(() => {
+    localStorage.setItem('pi.sb.session', JSON.stringify({access_token: 't', refresh_token: 'r', expires_at: Math.floor(Date.now() / 1000) + 3600}));
+    const f = document.getElementById('sync-create'); f.hidden = false;
+    document.getElementById('sync-new-1').value = document.getElementById('sync-new-2').value = 'correct horse battery 42';
+    document.getElementById('sync-new-ack').checked = true;
+    f.requestSubmit();
+  });
+  await page.waitForFunction(() => /paused|All set|set up/.test(document.getElementById('sync-text').textContent), null, {timeout: 20000}).catch(() => {});
+  await page.waitForTimeout(1500);
+  const t = await page.textContent('#sync-text');
+  check(!/All set/.test(t) && /Sync uploads are paused/.test(t), 'passcode setup with sync_writes off keeps the paused notice', t);
+  check(st.sbBodies.length === 0, 'passcode setup with sync_writes off sends no data', String(st.sbBodies.length));
+  check(!t.includes('—'), 'paused notice has no em dash');
   await ctx.close();
 }
 
