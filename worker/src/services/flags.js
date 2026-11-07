@@ -50,9 +50,27 @@ export const AUDIT_PREFIX = 'audit:r:';
 const MAX_MS = 9999999999999;
 export const auditKey = at => `${AUDIT_PREFIX}${String(MAX_MS - Date.parse(at)).padStart(13, '0')}:${rand()}`;
 
+// KV metadata is capped at 1024 bytes of JSON. The value keeps the full record; the metadata (what
+// /admin/audit lists) trims the reason by UTF-8 bytes, then drops it, so a long non-ASCII reason plus
+// a long email never fails the write. rt: true marks a trimmed reason.
+export const META_MAX = 1000; // margin under the 1024 byte limit
+const u8len = s => new TextEncoder().encode(s).length;
+export function auditMeta(rec) {
+  if (u8len(JSON.stringify(rec)) <= META_MAX) return rec;
+  const cps = [...String(rec.reason || '')];
+  let lo = 0, hi = cps.length;
+  while (lo < hi) { // longest prefix that fits
+    const mid = Math.ceil((lo + hi) / 2);
+    if (u8len(JSON.stringify({...rec, reason: cps.slice(0, mid).join(''), rt: true})) <= META_MAX) lo = mid; else hi = mid - 1;
+  }
+  const m = {...rec, reason: cps.slice(0, lo).join(''), rt: true};
+  if (u8len(JSON.stringify(m)) <= META_MAX) return m;
+  return {id: rec.id, at: rec.at, name: rec.name, on: rec.on, v: rec.v, by: String(rec.by || '').slice(0, 200), reason: '', rt: true};
+}
+
 // KV record first. Throws when KV cannot store it, so the caller never changes a flag without one.
 async function writeAuditKv(env, rec) {
-  await env.FLAGS.put(auditKey(rec.at), JSON.stringify(rec), {metadata: rec});
+  await env.FLAGS.put(auditKey(rec.at), JSON.stringify(rec), {metadata: auditMeta(rec)});
 }
 
 async function writeAuditSupabase(env, rec) {

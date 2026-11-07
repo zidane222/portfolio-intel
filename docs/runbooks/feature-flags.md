@@ -66,9 +66,13 @@ Cloudflare Access is not set up yet. Until it is, the admin page answers 403 for
 8. **Optional: Supabase audit table.** In Supabase SQL Editor run `supabase/flags.sql` once. Then create a
    separate secret key for pi-flags (Project settings > API keys > Secret keys > New, name it pi-flags) and
    add it to the Cloudflare Secrets Store as `SUPABASE_FLAGS_KEY`. Without it the audit stays in KV only.
+   This key is service_role equivalent: it bypasses RLS. It is a separate key only so it can be rotated
+   and revoked on its own without touching the main service key. A custom role limited to
+   flag_audit_add is a follow-up.
    The daily fetch_trades job copies flag_audit to BigQuery and removes Supabase rows over 1 year.
 9. **Deploy.** Run the Deploy API Worker workflow (or push to main). It binds the KV namespace to the
-   gateway, pi-newsdesk and pi-flags, fills in the Access settings, and links the Supabase key if it exists.
+   gateway, pi-newsdesk and pi-flags (the gateway and pi-newsdesk bindings are writable; they only read
+   by convention, since KV bindings have no read only mode), fills in the Access settings, and links the Supabase key if it exists.
 10. **Test.** Open `https://pi-flags.<subdomain>.workers.dev/admin` in a private window. You should see the
     GitHub login, then the flags page. Another GitHub account must get "Not allowed".
 

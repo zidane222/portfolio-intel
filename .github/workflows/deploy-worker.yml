@@ -88,7 +88,7 @@ jobs:
             kv_flags config/flags.toml
             case " $SERVICES " in *" newsdesk "*) kv_flags config/newsdesk.toml ;; esac
             esc() { printf '%s' "$1" | tr -d '[:space:]' | sed 's/[&#\\]/\\&/g'; }
-            sed -i "s#__ACCESS_TEAM__#$(esc "$ACCESS_TEAM_RAW")#; s#__ACCESS_AUD__#$(esc "$ACCESS_AUD_RAW")#; s#__ADMIN_EMAIL__#$(esc "$FLAGS_ADMIN_RAW")#; s#__SUPABASE_URL__#$SB_URL#" config/flags.toml
+            sed -i "s#__ACCESS_TEAM__#$(esc "$ACCESS_TEAM_RAW")#; s#__ACCESS_AUD__#$(esc "$ACCESS_AUD_RAW")#; s#__ADMIN_EMAIL__#$(esc "$FLAGS_ADMIN_RAW")#; s#__SUPABASE_URL__#$(esc "$SB_URL")#" config/flags.toml
             [ -n "$ACCESS_AUD_RAW" ] && [ -n "$FLAGS_ADMIN_RAW" ] || echo "::warning::pi-flags: Access AUD or admin email not set; the admin page answers 403 until they are (docs/runbooks/feature-flags.md)."
             if [ -z "${names+x}" ]; then
               names="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \

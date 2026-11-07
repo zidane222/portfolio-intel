@@ -4,7 +4,10 @@
 const TEAM_RE = /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/;
 const AUD_RE = /^[a-f0-9]{64}$/;
 let JWKS = {team: '', at: 0, keys: []};
-export function _resetJwks() { JWKS = {team: '', at: 0, keys: []}; }
+// Last forced refetch (unknown kid, for example after Access rotates its keys). At most one a minute per isolate.
+let FORCED_AT = -Infinity;
+const FORCE_GAP_MS = 60 * 1000;
+export function _resetJwks() { JWKS = {team: '', at: 0, keys: []}; FORCED_AT = -Infinity; }
 
 const b64u = s => {
   const t = String(s).replace(/-/g, '+').replace(/_/g, '/');
@@ -21,8 +24,8 @@ export function accessConfig(env) {
   return {team, aud, admin: admins[0]};
 }
 
-async function keys(team, fetcher, now) {
-  if (JWKS.team === team && now - JWKS.at < 10 * 60 * 1000 && JWKS.keys.length) return JWKS.keys;
+async function keys(team, fetcher, now, force = false) {
+  if (!force && JWKS.team === team && now - JWKS.at < 10 * 60 * 1000 && JWKS.keys.length) return JWKS.keys;
   const r = await fetcher(`${team}/cdn-cgi/access/certs`, {redirect: 'manual', signal: AbortSignal.timeout(5000)});
   if (!r.ok) throw new Error('certs ' + r.status);
   const d = await r.json();
@@ -41,7 +44,13 @@ export async function verifyAccess(req, env, {fetcher = fetch, now = Date.now()}
   try {
     const head = parse(parts[0]), body = parse(parts[1]);
     if (head.alg !== 'RS256' || typeof head.kid !== 'string') return null;
-    const jwk = (await keys(cfg.team, fetcher, now)).find(k => k.kid === head.kid);
+    const fetchedAt = JWKS.at;
+    let jwk = (await keys(cfg.team, fetcher, now)).find(k => k.kid === head.kid);
+    // Unknown kid from cached keys: refetch once, rate limited. Still null (403) if it is not there.
+    if (!jwk && JWKS.at === fetchedAt && now - FORCED_AT >= FORCE_GAP_MS) {
+      FORCED_AT = now;
+      jwk = (await keys(cfg.team, fetcher, now, true)).find(k => k.kid === head.kid);
+    }
     if (!jwk) return null;
     const key = await crypto.subtle.importKey('jwk', {kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true},
       {name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256'}, false, ['verify']);

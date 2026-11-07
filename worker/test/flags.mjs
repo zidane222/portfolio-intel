@@ -416,4 +416,59 @@ await t('qa: no em dash in any user-facing message', async () => {
   const m = html.match(/id="flag-notice"[^>]*>[^<]*/); if (m) assert.ok(!m[0].includes(EM));
 });
 
+// ---- appsec fixes: JWKS refetch on unknown kid, audit metadata size
+import {verifyAccess} from '../src/lib/access.js';
+import {auditMeta} from '../src/services/flags.js';
+await t('access: unknown kid refetches JWKS once, at most once a minute, still fails closed', async () => {
+  _resetJwks();
+  let calls = 0, set = [pub];
+  const fetcher = async () => { calls++; return new Response(JSON.stringify({keys: set}), {status: 200}); };
+  const e = {ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: aud, ADMIN_EMAIL: admin};
+  const req = tok => new Request(FURL + '/admin', {headers: {'Cf-Access-Jwt-Assertion': tok}});
+  const t0 = Date.now();
+  assert.ok(await verifyAccess(req(await jwt(good())), e, {fetcher, now: t0}));
+  assert.equal(calls, 1);
+  const pub2 = {...(await crypto.subtle.exportKey('jwk', other.publicKey)), kid: 'k2'};
+  set = [pub, pub2]; // Access rotated in a new key
+  const tok2 = await jwt(good(), other.privateKey, {alg: 'RS256', kid: 'k2'});
+  assert.ok(await verifyAccess(req(tok2), e, {fetcher, now: t0 + 1000}));
+  assert.equal(calls, 2);
+  const tokX = await jwt(good(), other.privateKey, {alg: 'RS256', kid: 'kX'});
+  assert.equal(await verifyAccess(req(tokX), e, {fetcher, now: t0 + 2000}), null);
+  assert.equal(calls, 2, 'no second forced refetch inside a minute');
+  assert.equal(await verifyAccess(req(tokX), e, {fetcher, now: t0 + 3000}), null);
+  assert.equal(calls, 2);
+  assert.equal(await verifyAccess(req(tokX), e, {fetcher, now: t0 + 62000}), null);
+  assert.equal(calls, 3, 'one forced refetch after a minute');
+  const down = async () => { calls++; return new Response('x', {status: 500}); };
+  assert.equal(await verifyAccess(req(tokX), e, {fetcher: down, now: t0 + 130000}), null);
+  _resetJwks();
+});
+
+await t('audit: long non-ASCII reason plus long email fits KV metadata, value keeps the full record', async () => {
+  const u8 = s => new TextEncoder().encode(s).length;
+  const rec = {id: crypto.randomUUID(), at: new Date().toISOString(), name: 'ai', on: true, by: 'a'.repeat(64) + '@' + 'b'.repeat(330) + '.com',
+    reason: '\u4e2d'.repeat(150) + '\u{1F600}'.repeat(25), v: 7}; // 200 UTF-16 units, 550 bytes
+  const m = auditMeta(rec);
+  assert.ok(u8(JSON.stringify(m)) <= 1024 && m.rt === true && rec.reason.startsWith(m.reason));
+  assert.ok(!/[\uD800-\uDBFF]$/.test(m.reason), 'no split surrogate');
+  assert.deepEqual(auditMeta({...rec, reason: 'short', by: 'o@x.io'}), {...rec, reason: 'short', by: 'o@x.io'});
+  const huge = auditMeta({...rec, by: 'c'.repeat(2000)});
+  assert.ok(u8(JSON.stringify(huge)) <= 1024);
+  // end to end: KV that enforces the 1024 byte metadata cap
+  const longAdmin = 'o'.repeat(64) + '@' + 'x'.repeat(330) + '.com';
+  _resetJwks();
+  const e = fenv({ADMIN_EMAIL: longAdmin});
+  const put = e.FLAGS.put.bind(e.FLAGS);
+  e.FLAGS.put = async (k, v, o = {}) => { if (o.metadata && u8(JSON.stringify(o.metadata)) > 1024) throw new Error('metadata too large'); return put(k, v, o); };
+  const reason = '\u4e2d'.repeat(150) + '\u{1F600}'.repeat(25);
+  const r = await post(e, {name: 'ai', on: false, reason, v: 0}, undefined, await jwt({...good(), email: longAdmin}));
+  assert.equal(r.status, 200);
+  const k = [...e.FLAGS.m.keys()].find(x => x.startsWith('audit:r:'));
+  const stored = JSON.parse(e.FLAGS.m.get(k).v);
+  assert.equal(stored.reason, reason); assert.equal(stored.by, longAdmin);
+  assert.equal(e.FLAGS.m.get(k).meta.rt, true);
+  assert.ok(u8(JSON.stringify(e.FLAGS.m.get(k).meta)) <= 1024);
+});
+
 console.log(`${n} flag tests passed`);

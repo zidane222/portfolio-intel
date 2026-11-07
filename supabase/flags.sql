@@ -7,6 +7,9 @@
 -- pi-flags writes through flag_audit_add (SECURITY DEFINER, fixed search_path) with its own
 -- Supabase secret key (SUPABASE_FLAGS_KEY in the Cloudflare Secrets Store). scripts/history_load.py
 -- reads rows for the BigQuery archive and purges old rows through flag_audit_purge.
+-- SUPABASE_FLAGS_KEY is service_role equivalent: it bypasses RLS and can do anything the service key
+-- can. It is separate only so it can be rotated and revoked on its own. Follow-up: a custom role that
+-- can only execute flag_audit_add.
 -- Rows hold the owner's email (actor) and a short reason. No user data.
 --
 -- Check after running (should return no rows; anon select and rpc should be denied):
