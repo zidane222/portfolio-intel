@@ -30,7 +30,7 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
         ▲
         │ fallback on network or 5xx errors
 Feature flags: pi-flags Worker (workers.dev URL behind Cloudflare Access, the only KV writer)
-  → Workers KV FLAGS (flags:v1, audit:*) → read by the gateway (30 s cache), pi-newsdesk cron;
+  → Workers KV FLAGS (flags:v1, audit:*) → read by the gateway (10 s isolate cache), pi-newsdesk cron;
   public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor. Audit also to Supabase
   flag_audit (SUPABASE_FLAGS_KEY), archived to BigQuery by history_load.py
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
@@ -106,7 +106,7 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 | `/api/insights` | insights | `GET` (no params) → `insights.json` (`pi/insights/v1`) plus `served_asof`, `stale` (generated over 10 days ago). Service answers 404 without `X-PI-Internal: 1` (gateway sets it for public reads, the Ask data agent sends it). Reads only `INSIGHTS_DATA_URL` on Pages, `redirect: 'manual'` and any 3xx refused, 5 MB streamed cap, 1 h cache, last good copy 48 h, else 502 |
 | `/api/insights/strategies` | insights | `GET` → `strategies.json` (`pi/strategies/v1`) plus `served_asof`, `stale`. Same rules |
 | `/api/plaid/*` | broker | Plaid link and holdings (sandbox) |
-| `/api/flags` | gateway (`index.js`, `lib/flags.js`) | `GET` → `{v, updated, flags: {name: bool}}` only (no who, when or why). `flags` rate bucket 30/min, `Cache-Control: public, max-age=30`. Browsers need an allowed Origin; server callers send none. Never flaggable. Render serves the same shape from its last poll |
+| `/api/flags` | gateway (`index.js`, `lib/flags.js`) | `GET` → `{v, updated, flags: {name: bool}}` only (no who, when or why). `flags` rate bucket 30/min, `Cache-Control: public, max-age=15`. Browsers need an allowed Origin; server callers send none. Never flaggable. Render serves the same shape from its last poll |
 | any flaggable route, flag off | gateway and Render | HTTP 503, `Retry-After: 60`, `X-PI-Flag: off`, `{"error": "This feature is turned off for now. Try again later.", "disabled": true, "flag": "<name>"}`. The app does not fall back to Render on this answer |
 | `/admin`, `/admin/*` | none (404 at the gateway) | Live only on pi-flags |
 | `/api/all-trades` | disclosures | Congressional trades |
@@ -120,11 +120,11 @@ email from the token equal to the one `ADMIN_EMAIL`; any missing setting is 403)
 |---|---|
 | `GET /admin` (+ `/admin/app.js`, `/admin/app.css`) | Mobile page, CSP `default-src 'none'; script-src 'self'`, text set with textContent only |
 | `GET /admin/flags` | `{v, updated, flags: {name: {on, default, fail, kind, label, by, at, reason}}}` |
-| `POST /admin/flags` | `{name, on, reason (3 to 200 chars), v}` with header `X-PI-Flags: 1` and `Origin` equal to the Worker origin (else 403). 2 KB cap. 409 `{error, v}` when `v` is stale. Writes `flags:v1` with `v + 1`, then the audit record |
-| `GET /admin/audit?since=ISO` | `{audit: [record...]}`, newest first, at most 20 |
+| `POST /admin/flags` | `{name, on, reason (3 to 200 chars), v}` with header `X-PI-Flags: 1` and `Origin` equal to the Worker origin (else 403). 2 KB cap. 409 `{error, v}` when `v` is stale. Writes the KV audit record first (503 and no flag change if that fails), then `flags:v1` with `v + 1`, then the Supabase row (best effort). The version check is a read then a write, not atomic; fine with one admin |
+| `GET /admin/audit?since=ISO` | `{audit: [record...]}`, newest first, at most 20, from one KV list page |
 
 Audit record: `{id (uuid), at (ISO), name, on, by (actor email from the JWT), reason, v}`. KV key
-`audit:{ISO}:{12 hex}` with no TTL (value and metadata). Supabase `flag_audit` (`supabase/flags.sql`:
+`audit:r:{13-digit 9999999999999 minus epoch ms}:{12 hex}` with no TTL (value and metadata), so key order is newest first. Supabase `flag_audit` keeps the full history. Supabase `flag_audit` (`supabase/flags.sql`:
 RLS on, no policies, grants revoked from anon and authenticated, insert only through SECURITY DEFINER
 `flag_audit_add`, 450 MB guard), archived to BigQuery `flag_audit` (MERGE on id, 3-day window, 9 GB
 guard), Supabase rows over 1 year purged after a good merge.
@@ -143,6 +143,17 @@ One registry: `worker/src/lib/flags.js` (`REGISTRY`), copied in `scripts/flags_r
 binding `FLAGS`, key `flags:v1` = `{v, updated, flags: {name: {on, by, at, reason}}}`. The deploy
 workflow adds the binding from repository variable `CF_KV_FLAGS`; without it pi-flags is skipped and
 every flag reads its default. Owner setup: `docs/runbooks/feature-flags.md`.
+
+Propagation: pi-flags writes KV; other Cloudflare locations can serve the old value for up to about
+60 s (KV's documented eventual consistency). Add the gateway isolate cache (10 s) and the
+`/api/flags` browser cache (15 s): a change is usually live within a minute and within about 90 s at
+worst. The Render fallback polls every 60 s, so it can lag up to about 2.5 minutes.
+
+Documented exceptions:
+- pi-flags is reachable on its own workers.dev URL, not only through the gateway binding. It is the
+  owner admin page and is gated by Cloudflare Access plus the JWT check in `lib/access.js`; the
+  gateway answers 404 for `/admin/*` and never forwards to it.
+- Flag tests live in `worker/test/flags.mjs` (run by `security.yml`), not `worker/test/test.mjs`. qa owns tests.
 
 | Flag | Default | Fail mode | Where |
 |---|---|---|---|

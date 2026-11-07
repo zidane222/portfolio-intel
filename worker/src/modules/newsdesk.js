@@ -181,7 +181,8 @@ const statusOf = r => r.status === 'PASS' ? 'ok' : r.status === 'thin' ? 'thin' 
 
 export async function read(req, env, deps) {
   if (!internal(req)) return json({error: 'Not found'}, 404);
-  if (String(env.NEWS_ONDEMAND_ENABLED) !== '1') return json({error: 'News reads are paused.'}, 503);
+  // AND with the news feature flag, as the batch tick does (lib/flags.js)
+  if (String(env.NEWS_ONDEMAND_ENABLED) !== '1' || !(await flagOn(env, 'news'))) return json({error: 'News reads are paused.'}, 503);
   const {tooLarge, data} = await bodyJson(req, 1024);
   if (tooLarge) return json({error: 'Request too large'}, 413);
   const ticker = String(data && data.ticker || '').trim().toUpperCase();

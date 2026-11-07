@@ -1,7 +1,10 @@
 # Feature flags: owner setup and use
 
 Feature flags let you turn one part of Portfolio Intel off from your phone, without a deploy.
-A change reaches the app, the Render fallback and the jobs within about 60 seconds.
+A change usually reaches the app and the jobs within a minute, and within about 90 seconds at worst.
+Workers KV takes up to about 60 seconds to reach every Cloudflare location, then the gateway cache (10 s)
+and the /api/flags browser cache (15 s) add a little. The Render fallback polls every 60 seconds, so it
+can take up to about 2.5 minutes.
 
 ## What each flag does
 
@@ -38,7 +41,8 @@ Cloudflare Access is not set up yet. Until it is, the admin page answers 403 for
    - `CF_ACCESS_TEAM` = your team domain, for example `https://yourteam.cloudflareaccess.com` (step 4).
    - `CF_ACCESS_AUD` = the Access application AUD tag (step 6).
 3. **Add a GitHub repository secret** `FLAGS_ADMIN_EMAIL` = the one email allowed to change flags
-   (the email on your GitHub account). It is kept out of the code and the commits.
+   (the email on your GitHub account). Store it in lowercase with no spaces or line breaks, so it matches
+   the token and GitHub masks it in logs. It is kept out of the code and the commits.
 4. **Turn on Zero Trust (Free plan).** Cloudflare dashboard > Zero Trust. Pick a team name and the
    Free plan (up to 50 users, no charge; a payment card may be asked for). The team domain is
    `https://<team name>.cloudflareaccess.com`.
@@ -73,8 +77,10 @@ Cloudflare Access is not set up yet. Until it is, the admin page answers 403 for
 1. Open `https://pi-flags.<subdomain>.workers.dev/admin` (save it to your home screen).
 2. Sign in with GitHub if asked (sessions last 1 hour).
 3. Type a reason (3 to 200 characters), then tap the On or Off button next to the flag.
-4. The change shows in the list and in "Last 20 changes". The app follows within about 60 seconds.
+4. The change shows in the list and in "Last 20 changes". The app follows within about a minute (90 seconds at worst).
    If someone else changed a flag since you loaded the page, you get a "Reload and try again" message.
+   The version check is not atomic (two saves in the same instant can both pass). That is fine with one admin.
+   If the audit record cannot be saved, the flag is not changed and you see "Could not record the change".
 
 ## How the jobs behave
 

@@ -8,6 +8,7 @@ import {makeSupabase} from '../src/lib/supabase.js';
 import {makeService} from '../src/lib/service.js';
 import {resolveSecrets} from '../src/lib/secrets.js';
 import * as nd from '../src/modules/newsdesk.js';
+import {_reset as flagsReset} from '../src/lib/flags.js';
 
 const SB = 'https://abcdefgh.supabase.co';
 const KEY = 'service-role-test-key-not-real';
@@ -204,6 +205,11 @@ export default async function ({t}) {
       assert.equal((await nd.read(req('/read', {ticker: 'ab$'}, INT), ENV, deps(ENV))).status, 400);
       assert.equal((await nd.read(req('/read', JSON.stringify({ticker: 'A', pad: 'x'.repeat(2000)}), INT), ENV, deps(ENV))).status, 413);
       assert.equal((await nd.read(req('/read', {ticker: 'NVDA'}, INT), {...ENV, NEWS_ONDEMAND_ENABLED: '0'}, deps(ENV))).status, 503);
+      // news flag off pauses on-demand reads too, like the batch tick
+      flagsReset();
+      const FLAGS = {get: async () => ({v: 1, updated: null, flags: {news: {on: false, by: 'x', at: 'y', reason: 'zzz'}}})};
+      assert.equal((await nd.read(req('/read', {ticker: 'NVDA'}, INT), {...ENV, FLAGS}, deps(ENV))).status, 503);
+      flagsReset();
     });
     assert.equal(w.fetches.length, 0);
   });

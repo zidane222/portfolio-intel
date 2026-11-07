@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import gateway from '../src/index.js';
-import flagsSvc, {cleanReason} from '../src/services/flags.js';
+import flagsSvc, {cleanReason, auditKey} from '../src/services/flags.js';
 import * as F from '../src/lib/flags.js';
 import {_resetJwks} from '../src/lib/access.js';
 import {tick} from '../src/modules/newsdesk.js';
@@ -16,7 +16,8 @@ function kv(init = {}, {fail = false} = {}) {
     m, fail,
     async get(k, type) { if (this.fail) throw new Error('down'); const e = m.get(k); if (!e) return null; return type === 'json' ? JSON.parse(e.v) : e.v; },
     async put(k, v, o = {}) { m.set(k, {v, meta: o.metadata || null}); },
-    async list({prefix}) { return {keys: [...m.keys()].filter(k => k.startsWith(prefix)).sort().map(k => ({name: k, metadata: m.get(k).meta})), list_complete: true}; },
+    lists: 0,
+    async list({prefix, limit = 1000}) { this.lists++; const all = [...m.keys()].filter(k => k.startsWith(prefix)).sort(); return {keys: all.slice(0, limit).map(k => ({name: k, metadata: m.get(k).meta})), list_complete: all.length <= limit, cursor: all.length > limit ? 'c' : undefined}; },
   };
 }
 const doc = flags => ({v: 3, updated: '2026-11-01T00:00:00.000Z', flags: Object.fromEntries(Object.entries(flags).map(([k, on]) => [k, {on, by: 'x', at: 'y', reason: 'zzz'}]))});
@@ -59,7 +60,7 @@ await t('maintenance turns every route off but not health or /api/flags', async 
   }
   assert.equal((await gcall('/health', e)).status, 200);
   const f = await gcall('/api/flags', e);
-  assert.equal(f.status, 200); assert.equal(f.headers.get('Cache-Control'), 'public, max-age=30');
+  assert.equal(f.status, 200); assert.equal(f.headers.get('Cache-Control'), 'public, max-age=15');
   const d = await f.json();
   assert.deepEqual(Object.keys(d).sort(), ['flags', 'updated', 'v']);
   assert.equal(d.flags.maintenance, true);
@@ -98,7 +99,7 @@ await t('fail-safe: last known value wins when KV goes down', async () => {
   assert.equal(F.resolve('broker', st), true); assert.equal(F.resolve('market', st), false); assert.equal(F.resolve('maintenance', st), true);
 });
 
-await t('30 s isolate cache', async () => {
+await t('10 s isolate cache', async () => {
   const store = kv({'flags:v1': doc({market: false})});
   let reads = 0; const g = store.get.bind(store); store.get = async (...a) => { reads++; return g(...a); };
   await F.load({FLAGS: store}, 1000); await F.load({FLAGS: store}, 1000 + F.CACHE_MS - 1);
@@ -200,7 +201,7 @@ await t('pi-flags: version check, write, audit in KV and Supabase', async () => 
   assert.equal(stale.status, 409); assert.equal((await stale.json()).v, 1);
   assert.equal((await post(e, {name: 'ai', on: true, reason: 'back on', v: 1})).status, 200);
   const keys = [...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:'));
-  assert.equal(keys.length, 2); assert.ok(keys.every(k => /^audit:\d{4}-\d{2}-\d{2}T[\d:.]+Z:[0-9a-f]{12}$/.test(k)));
+  assert.equal(keys.length, 2); assert.ok(keys.every(k => /^audit:r:\d{13}:[0-9a-f]{12}$/.test(k)));
   const a = await (await fcall('/admin/audit', e)).json();
   assert.equal(a.audit.length, 2); assert.equal(a.audit[0].on, true); assert.equal(a.audit[0].by, admin);
   assert.ok(globalThis.__sb.u.endsWith('/rest/v1/rpc/flag_audit_add'));
@@ -220,6 +221,40 @@ await t('pi-flags: missing Supabase key keeps KV audit', async () => {
   assert.equal([...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:')).length, 1);
 });
 
+
+await t('pi-flags: failed audit write leaves the flag unchanged', async () => {
+  const e = fenv();
+  const put = e.FLAGS.put.bind(e.FLAGS);
+  e.FLAGS.put = async (k, v, o) => { if (k.startsWith('audit:')) throw new Error('kv down'); return put(k, v, o); };
+  const r = await post(e, {name: 'ai', on: false, reason: 'test outage', v: 0});
+  assert.equal(r.status, 503);
+  assert.equal(e.FLAGS.m.has(F.KEY), false);
+  assert.equal([...e.FLAGS.m.keys()].filter(k => k.startsWith('audit:')).length, 0);
+});
+
+await t('pi-flags: audit is written before the flag', async () => {
+  const e = fenv(); const order = [];
+  const put = e.FLAGS.put.bind(e.FLAGS);
+  e.FLAGS.put = async (k, v, o) => { order.push(k.startsWith('audit:') ? 'audit' : k); return put(k, v, o); };
+  assert.equal((await post(e, {name: 'ai', on: false, reason: 'order check', v: 0})).status, 200);
+  assert.deepEqual(order, ['audit', F.KEY]);
+});
+
+await t('pi-flags: audit list reads one page, newest first, since filter', async () => {
+  const e = fenv();
+  const base = Date.parse('2026-11-01T00:00:00.000Z');
+  for (let i = 0; i < 45; i++) {
+    const at = new Date(base + i * 60000).toISOString();
+    const rec = {id: 'id' + i, at, name: 'ai', on: i % 2 === 0, by: admin, reason: 'r' + i, v: i + 1};
+    await e.FLAGS.put(auditKey(at), JSON.stringify(rec), {metadata: rec});
+  }
+  e.FLAGS.lists = 0;
+  const a = (await (await fcall('/admin/audit', e)).json()).audit;
+  assert.equal(e.FLAGS.lists, 1); assert.equal(a.length, 20);
+  assert.equal(a[0].id, 'id44'); assert.equal(a[19].id, 'id25');
+  const s = (await (await fcall('/admin/audit?since=' + new Date(base + 41 * 60000).toISOString(), e)).json()).audit;
+  assert.deepEqual(s.map(x => x.id), ['id44', 'id43', 'id42']);
+});
 
 // ---- QA additions (feat/feature-flags)
 await t('qa: registry JSON and JS identical, labels present', async () => {

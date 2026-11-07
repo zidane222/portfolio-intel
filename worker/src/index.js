@@ -12,7 +12,7 @@ import {marketHasQuote, newsdeskRead} from './agents/data/newsread.js';
 import {MESSAGES} from './agents/newsread/render.js';
 import {OWNERS, ownerOf} from './routes.js';
 import {handleAsk} from './agents/supervisor.js';
-import {publicFlags, flagsFor, firstOff, disabled} from './lib/flags.js';
+import {publicFlags, flagsFor, firstOff, disabled, FLAGS_MAX_AGE} from './lib/flags.js';
 
 async function health(env) {
   const checks = await Promise.all(OWNERS.map(async ([, name, binding]) => {
@@ -107,7 +107,7 @@ export async function flagsRoute(req, env) {
   if (req.method !== 'GET') return json({error: 'Not found'}, 404);
   if (req.headers.get('Origin') && !originOk(req, env)) return json({error: 'Not allowed'}, 403);
   if (rateLimited(req, 'flags')) return json({error: 'Too many requests. Try again in a minute.'}, 429);
-  return json(await publicFlags(env), 200, {'Cache-Control': 'public, max-age=30'});
+  return json(await publicFlags(env), 200, {'Cache-Control': `public, max-age=${FLAGS_MAX_AGE}`});
 }
 
 export default {

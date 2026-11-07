@@ -3,7 +3,8 @@
 // Access configured everything answers 403. The gateway never forwards to this Worker.
 // Routes: GET /admin (page), /admin/app.js, /admin/app.css, GET /admin/flags, GET /admin/audit?since=ISO,
 //         POST /admin/flags {name, on, reason, v} with header X-PI-Flags: 1 and a same-origin Origin.
-// Audit: KV audit:{ISO}:{rand} (no TTL) and, when SUPABASE_FLAGS_KEY is bound, a Supabase flag_audit row.
+// Audit: KV audit:r:{inverted ms}:{rand} (no TTL, newest sorts first) written BEFORE the flag change, and,
+// when SUPABASE_FLAGS_KEY is bound, a Supabase flag_audit row (the full history).
 import {json, readCapped} from '../lib/http.js';
 import {resolveSecrets} from '../lib/secrets.js';
 import {verifyAccess} from '../lib/access.js';
@@ -42,29 +43,36 @@ function view(doc) {
 
 const rand = () => [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
 
-async function writeAudit(env, rec) {
-  const key = `audit:${rec.at}:${rand()}`;
-  await env.FLAGS.put(key, JSON.stringify(rec), {metadata: rec});
-  if (env.SUPABASE_FLAGS_KEY && typeof env.SUPABASE_FLAGS_KEY === 'string') {
-    try {
-      const sb = makeSupabase({SUPABASE_URL: env.SUPABASE_URL, SUPABASE_SERVICE_KEY: env.SUPABASE_FLAGS_KEY});
-      await sb.rpc('flag_audit_add', {p_id: rec.id, p_at: rec.at, p_flag: rec.name, p_on: rec.on, p_actor: rec.by, p_reason: rec.reason, p_v: rec.v});
-    } catch (e) { console.log('flag audit to Supabase failed', String(e && e.message || e).slice(0, 80)); } // message has op and status only
-  }
+// Reverse-timestamp key: KV lists keys in ascending order, so the newest record is first and
+// /admin/audit reads one page of 20 instead of every key.
+export const AUDIT_PREFIX = 'audit:r:';
+const MAX_MS = 9999999999999;
+export const auditKey = at => `${AUDIT_PREFIX}${String(MAX_MS - Date.parse(at)).padStart(13, '0')}:${rand()}`;
+
+// KV record first. Throws when KV cannot store it, so the caller never changes a flag without one.
+async function writeAuditKv(env, rec) {
+  await env.FLAGS.put(auditKey(rec.at), JSON.stringify(rec), {metadata: rec});
 }
 
+async function writeAuditSupabase(env, rec) {
+  if (!env.SUPABASE_FLAGS_KEY || typeof env.SUPABASE_FLAGS_KEY !== 'string') return;
+  try {
+    const sb = makeSupabase({SUPABASE_URL: env.SUPABASE_URL, SUPABASE_SERVICE_KEY: env.SUPABASE_FLAGS_KEY});
+    await sb.rpc('flag_audit_add', {p_id: rec.id, p_at: rec.at, p_flag: rec.name, p_on: rec.on, p_actor: rec.by, p_reason: rec.reason, p_v: rec.v});
+  } catch (e) { console.log('flag audit to Supabase failed', String(e && e.message || e).slice(0, 80)); } // message has op and status only
+}
+
+// One list call: newest first by key order. since (ISO) keeps only records after it.
 export async function listAudit(env, since, limit = 20) {
+  const page = await env.FLAGS.list({prefix: AUDIT_PREFIX, limit});
   const out = [];
-  let cursor;
-  const floor = since ? `audit:${since}` : 'audit:';
-  for (let i = 0; i < 20; i++) {
-    const page = await env.FLAGS.list({prefix: 'audit:', cursor, limit: 1000});
-    for (const k of page.keys) if (k.name > floor && k.metadata) out.push(k.metadata);
-    if (page.list_complete || !page.cursor) break;
-    cursor = page.cursor;
+  for (const k of page.keys) {
+    const m = k.metadata;
+    if (!m) continue;
+    if (since && !(m.at > since)) break; // keys are newest first, so everything after is older
+    out.push(m);
   }
-  out.sort((a, b) => (a.at < b.at ? 1 : -1));
-  return out.slice(0, limit);
+  return out;
 }
 
 async function postFlag(req, env, actor, url) {
@@ -84,8 +92,14 @@ async function postFlag(req, env, actor, url) {
   if (b.v !== doc.v) return json({error: 'Someone changed the flags since you loaded them. Reload and try again.', v: doc.v}, 409);
   const at = new Date().toISOString();
   const next = {v: doc.v + 1, updated: at, flags: {...doc.flags, [b.name]: {on: b.on, by: actor.email, at, reason}}};
+  const rec = {id: crypto.randomUUID(), at, name: b.name, on: b.on, by: actor.email, reason, v: next.v};
+  try { await writeAuditKv(env, rec); } catch (e) {
+    console.log('flag audit write failed, flag not changed', String(e && e.message || e).slice(0, 80));
+    return json({error: 'Could not record the change, so the flag was not changed. Try again.'}, 503, {'Cache-Control': 'no-store'});
+  }
+  // If this put fails the audit holds a record for v that never landed; the flags doc v shows the truth.
   await env.FLAGS.put(KEY, JSON.stringify(next));
-  await writeAudit(env, {id: crypto.randomUUID(), at, name: b.name, on: b.on, by: actor.email, reason, v: next.v});
+  await writeAuditSupabase(env, rec);
   console.log('flag changed', JSON.stringify({name: b.name, on: b.on, v: next.v})); // no actor, no reason
   return json(view(next), 200, {'Cache-Control': 'no-store'});
 }

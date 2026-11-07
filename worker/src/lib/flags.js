@@ -10,7 +10,10 @@
 import {json} from './http.js';
 
 export const KEY = 'flags:v1';
-export const CACHE_MS = 30 * 1000;
+// Isolate cache. With /api/flags max-age (FLAGS_MAX_AGE) and KV propagation (up to about 60 s) this keeps
+// a change visible within about a minute in most cases and about 90 s at worst.
+export const CACHE_MS = 10 * 1000;
+export const FLAGS_MAX_AGE = 15;
 
 export const REGISTRY = {
   maintenance:   {default: false, fail: 'last',   kind: 'route', label: 'Maintenance: every flaggable route off'},
@@ -40,7 +43,7 @@ export function validDoc(d) {
   return Object.entries(d.flags).every(([k, f]) => NAMES.includes(k) && f && typeof f.on === 'boolean');
 }
 
-// Isolate state. MEM is the 30 s cache; LAST is the last good document read from KV.
+// Isolate state. MEM is the 10 s cache; LAST is the last good document read from KV.
 let MEM = {at: 0, doc: null, state: 'unset'};
 let LAST = null;
 export function _reset() { MEM = {at: 0, doc: null, state: 'unset'}; LAST = null; } // tests
