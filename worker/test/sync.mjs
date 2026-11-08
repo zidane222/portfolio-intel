@@ -365,4 +365,102 @@ await t('clients refuse a base URL outside Jira Cloud or dev.azure.com', async (
   assert.equal(r2.skipped, 'ado_secret_missing');
 });
 
+// ---------- QA additions (AB#230): owner rules not covered above
+const extWrites = w => w.writes.length;
+const newJiraStory = (key, extra = {}) => ({key, fields: {summary: 'New ' + key, status: {name: 'backlog'}, issuetype: {name: 'Story'}, labels: [], updated: '2026-11-08T12:01:00.000+0000', created: '2026-11-08T12:01:00.000+0000', description: null, ...extra}});
+const newAdo = (id, type, tags, extra = {}) => ({id, rev: 1, fields: {'System.WorkItemType': type, 'System.Title': 'New ' + id, 'System.State': 'New', 'System.Tags': tags, 'System.ChangedDate': '2026-11-08T12:02:00Z', 'System.CreatedDate': '2026-11-08T12:02:00Z', ...extra}});
+
+await t('qa: dry run after first live with creates pending still makes zero writes and touches only run:last', async () => {
+  const w = world(); const e = env({FLAGS: liveFlags()});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  w.J.set('KAN-21', newJiraStory('KAN-21'));
+  w.A.set(310, newAdo(310, 'Bug', 'customer-visible'));
+  w.A.get(101).fields['System.Title'] = 'KAN-2 Renamed in ADO'; w.A.get(101).rev = 9; w.A.get(101).fields['System.ChangedDate'] = '2026-11-08T12:03:00Z';
+  const n0 = extWrites(w); const puts0 = e.SYNC.puts.length; const snap = JSON.stringify([...e.SYNC.m.entries()].filter(([k]) => k !== 'run:last'));
+  flagsReset(); e.FLAGS = flagsKv({sync: true, sync_dryrun: true});
+  const r = await tick(e, {fetch: w.fetch, now: NOW + 300000, log: quiet().log});
+  assert.equal(r.dryrun, true); assert.ok(r.planned >= 3, 'plans the create both ways and the rename');
+  assert.equal(extWrites(w), n0, 'no Jira or ADO write');
+  assert.deepEqual(e.SYNC.puts.slice(puts0), ['run:last']);
+  assert.equal(JSON.stringify([...e.SYNC.m.entries()].filter(([k]) => k !== 'run:last')), snap, 'pair, index, cursor and meta unchanged');
+});
+
+await t('qa: sync flag off writes nothing anywhere, not even run:last', async () => {
+  const w = world(); const e = env({FLAGS: flagsKv({sync: false, sync_dryrun: false})});
+  const r = await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  assert.equal(r.skipped, 'sync_off'); assert.equal(w.calls.length, 0); assert.equal(e.SYNC.puts.length, 0);
+});
+
+await t('qa: KV reads fine but writes fail: no Jira or ADO write happens', async () => {
+  const w = world(); const store = kv();
+  store.put = async () => { throw new Error('down'); };
+  const e = env({FLAGS: liveFlags(), SYNC: store});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log}).catch(() => {});
+  assert.equal(extWrites(w), 0);
+});
+
+await t('qa: crash after ADO create, before the Jira label: no duplicate ADO item', async () => {
+  const w = world(); const e = env({FLAGS: liveFlags()});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  w.J.set('KAN-22', newJiraStory('KAN-22'));
+  const crashing = async (u, init) => { if (init.method === 'PUT' && String(u).endsWith('/issue/KAN-22')) throw new Error('boom'); return w.fetch(u, init); };
+  flagsReset(); const r = await tick(e, {fetch: crashing, now: NOW + 300000, log: quiet().log});
+  assert.ok(r.errors.length >= 1);
+  for (let i = 2; i < 5; i++) { flagsReset(); await tick(e, {fetch: w.fetch, now: NOW + i * 300000, log: quiet().log}); }
+  const made = [...w.A.values()].filter(i => M.parseTags(i.fields['System.Tags']).includes('jira-KAN-22'));
+  assert.equal(made.length, 1);
+  assert.ok(w.J.get('KAN-22').fields.labels.includes('ado-' + made[0].id));
+});
+
+await t('qa: Epic created on the other side never closes it, either way, over many ticks', async () => {
+  const w = world(); const e = env({FLAGS: liveFlags()});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  w.J.set('KAN-23', {key: 'KAN-23', fields: {summary: 'Done epic', status: {name: 'Done'}, issuetype: {name: 'Epic'}, labels: [], updated: '2026-11-08T12:01:00.000+0000', created: '2026-11-08T12:01:00.000+0000', description: null}});
+  w.A.set(320, newAdo(320, 'Epic', '', {'System.State': 'Closed'}));
+  for (let i = 1; i < 5; i++) { flagsReset(); await tick(e, {fetch: w.fetch, now: NOW + i * 300000, log: quiet().log}); }
+  const a23 = [...w.A.values()].find(i => M.parseTags(i.fields['System.Tags']).includes('jira-KAN-23'));
+  assert.ok(a23, 'ADO copy made'); assert.notEqual(a23.fields['System.State'], 'Closed');
+  const j320 = [...w.J.values()].find(i => (i.fields.labels || []).includes('ado-320'));
+  assert.ok(j320, 'Jira copy made'); assert.notEqual(j320.fields.status.name, 'Done');
+  assert.equal(w.writes.filter(x => x.p.endsWith('/transitions') && x.body.transition.id === M.TRANSITIONS.Done).length, 0);
+});
+
+await t('qa: a new Jira Bug never creates an ADO item', async () => {
+  const w = world(); const e = env({FLAGS: liveFlags()});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  w.J.set('KAN-24', newJiraStory('KAN-24', {issuetype: {name: 'Bug'}}));
+  flagsReset(); await tick(e, {fetch: w.fetch, now: NOW + 300000, log: quiet().log});
+  assert.equal(w.writes.filter(x => x.sys === 'ado' && /workitems\/\$/.test(x.p)).length, 0);
+});
+
+await t('qa: item created at or before meta:first_live is never created on the other side', async () => {
+  const w = world(); const first = new Date(NOW).toISOString();
+  const e = env({FLAGS: liveFlags(), SYNC: kv({'meta:first_live': first})});
+  w.J.set('KAN-25', newJiraStory('KAN-25', {created: first.replace('Z', '+0000'), updated: '2026-11-08T12:05:00.000+0000'}));
+  w.A.set(330, newAdo(330, 'User Story', '', {'System.CreatedDate': first}));
+  await tick(e, {fetch: w.fetch, now: NOW + 300000, log: quiet().log});
+  assert.equal(w.writes.filter(x => x.p === '/rest/api/3/issue' || /workitems\/\$/.test(x.p)).length, 0);
+});
+
+await t('qa: pairing uses the ADO jira-KAN tag; Jira text like "Azure DevOps Epic 35" is ignored', async () => {
+  const adf = txt => ({type: 'doc', version: 1, content: [{type: 'paragraph', content: [{type: 'text', text: txt}]}]});
+  const jira = [{key: 'KAN-30', fields: {summary: 'Epic thirty', status: {name: 'In dev'}, issuetype: {name: 'Epic'}, labels: [], updated: '2026-11-01T10:00:00.000+0000', created: '2026-10-01T10:00:00.000+0000', description: adf('Tracked in Azure DevOps Epic 35 and Feature 13')}},
+    {key: 'KAN-31', fields: {summary: 'Other', status: {name: 'In dev'}, issuetype: {name: 'Epic'}, labels: [], updated: '2026-11-01T10:00:00.000+0000', created: '2026-10-01T10:00:00.000+0000', description: adf('See Azure DevOps Epic 36')}}];
+  const ado = [{id: 35, rev: 1, fields: {'System.WorkItemType': 'Epic', 'System.Title': 'Epic thirty', 'System.State': 'Active', 'System.Tags': 'jira-KAN-30', 'System.ChangedDate': '2026-11-01T10:00:00Z', 'System.CreatedDate': '2026-10-01T10:00:00Z'}},
+    {id: 36, rev: 1, fields: {'System.WorkItemType': 'Epic', 'System.Title': 'Untagged', 'System.State': 'Active', 'System.Tags': '', 'System.ChangedDate': '2026-11-01T10:00:00Z', 'System.CreatedDate': '2026-10-01T10:00:00Z'}}];
+  const w = world({jira, ado}); const e = env({FLAGS: liveFlags()});
+  const r = await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  assert.equal(e.SYNC.m.get('ado:35').meta.k, 'KAN-30');
+  assert.ok(!e.SYNC.m.has('ado:36'), 'text mention alone never pairs');
+  assert.ok(r.unpaired.jira.some(x => x.startsWith('KAN-31'))); assert.ok(r.unpaired.ado.includes(36));
+});
+
+await t('qa: paired ADO Bug that loses customer-visible stops syncing to Jira', async () => {
+  const jb = {key: 'KAN-9', type: 'bug', title: 'Crash', status: 'In dev', parent: null, labels: ['ado-109'], ado: 109, updated: '2026-11-08T10:00:00.000+0000', desc: ''};
+  const ab = {id: 109, rev: 3, type: 'bug', title: 'Crash', titlePrefix: 'KAN-9', tags: ['jira-KAN-9'], kan: 'KAN-9', state: 'Active', human: false, internal: false, customer: false, parent: null, parentIndex: -1, changed: '2026-11-08T10:00:00Z', desc: ''};
+  const rec = {...synced(jb, ab), jiraUpdated: null};
+  const d = decide(rec, jb, {...ab, state: 'Closed', rev: 4, title: 'Secret internal detail'}, CTX);
+  assert.ok(!d.ops || !d.ops.some(o => o.sys === 'jira'), 'no Jira write for an untagged bug');
+});
+
 console.log(`\n${n} sync tests passed`);
