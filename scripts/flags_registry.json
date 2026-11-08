@@ -9,5 +9,7 @@
   "house_scrape":  {"default": true,  "fail": "open",   "kind": "job"},
   "senate_scrape": {"default": true,  "fail": "open",   "kind": "job"},
   "fmp_fill":      {"default": true,  "fail": "open",   "kind": "job"},
-  "recon_v2":      {"default": false, "fail": "open",   "kind": "job"}
+  "recon_v2":      {"default": false, "fail": "open",   "kind": "job"},
+  "sync":          {"default": true,  "fail": "closed", "kind": "job"},
+  "sync_dryrun":   {"default": true,  "fail": "closed", "kind": "job"}
 }

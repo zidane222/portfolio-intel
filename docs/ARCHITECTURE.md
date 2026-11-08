@@ -33,6 +33,8 @@ Feature flags: pi-flags Worker (workers.dev URL behind Cloudflare Access, the on
   → Workers KV FLAGS (flags:v1, audit:*) → read by the gateway (10 s isolate cache), pi-newsdesk cron;
   public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor. Audit also to Supabase
   flag_audit (SUPABASE_FLAGS_KEY), archived to BigQuery by history_load.py
+Work tracking sync: pi-sync Worker (Cron Trigger every 5 min, no URL, no bindings to other pi-*)
+  ↔ Jira Cloud KAN and Azure DevOps portfolio-intel; state in Workers KV SYNC; reads FLAGS
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
   "no stored reads" and "paused", no Groq, no storage)
 
@@ -129,6 +131,28 @@ RLS on, no policies, grants revoked from anon and authenticated, insert only thr
 `flag_audit_add`, 450 MB guard), archived to BigQuery `flag_audit` (MERGE on id, 3-day window, 9 GB
 guard), Supabase rows over 1 year purged after a good merge.
 
+pi-sync (cron `*/5 * * * *`, plan `docs/plans/pi-sync.md`, runbook `docs/runbooks/sync.md`) has no
+routes: every fetch answers 404, it has no gateway binding and no service bindings, and it calls only
+Jira Cloud (nadia-b.atlassian.net, project KAN) and Azure DevOps (portfolio-intel-279/portfolio-intel).
+It holds JIRA_EMAIL, JIRA_API_TOKEN and ADO_PAT (Secrets Store) and the SYNC KV namespace; it reads FLAGS.
+
+| Contract | Shape |
+|---|---|
+| KV `pair:KAN-<n>` | `{jira, ado, type: epic|story|bug, jiraUpdated, adoRev, adoChanged, hash: {j: {title, desc, status, parent}, a: {...}}, at}`. Hashes are FNV-1a of each side's last synced value, so KV holds no titles or descriptions |
+| KV `ado:<id>` | value and metadata `{k: "KAN-<n>"}` (reverse index, loaded with one list call) |
+| KV `cursor:jira`, `cursor:ado`, `meta:first_live` | ISO time. `meta:first_live` is set on the first tick with dry run off; only items created after it are ever created on the other side (no backfill) |
+| KV `pending:jira:<key>`, `pending:ado:<id>` | ISO, TTL 1 h, written before a create (create guard) |
+| KV `run:last` | `{at, dryrun, scanned, planned, written, skipped, waiting, errors: [{pair, code}], notices: [{pair, codes}], unpaired: {jira: [keys], ado: [ids], jira_n, ado_n}, calls, truncated}`. No field values |
+| Log line `sync plan` | `{pair, dir: j2a|a2j|both|create_j|create_a, fields: [title|desc|status|parent|link], reason}` |
+
+Rules: ADO tag `jira-KAN-<n>` is the pair key, Jira label `ado-<id>` its mirror. Statuses: backlog = New,
+In dev and verify = Active, Human auth = Active plus tag `human-auth`, Done = Closed; Jira transitions use
+the fixed ids 11, 21, 31, 41 (Done), 51 (Human auth). Epics never close by sync. ADO items tagged
+`internal` never sync. ADO owns customer-visible Bugs: an ADO Bug tagged `customer-visible` creates the
+Jira Bug, an ADO close closes it, a Jira close only adds a comment on the ADO bug. Last updated wins,
+ties go to Jira. Flags `sync` (off: exit) and `sync_dryrun` (default on: plan and log only). Flags KV or
+SYNC KV unreadable: no writes. At most 15 pairs and 45 subrequests per tick.
+
 Render fallback: `POST /api/newsdesk/reads` returns empty reads and `POST /api/newsdesk/read` returns
 503 "News reads are paused." with the same origin, size and ticker checks, no Groq call, nothing
 stored, tickers not logged.
@@ -153,6 +177,8 @@ Documented exceptions:
 - pi-flags is reachable on its own workers.dev URL, not only through the gateway binding. It is the
   owner admin page and is gated by Cloudflare Access plus the JWT check in `lib/access.js`; the
   gateway answers 404 for `/admin/*` and never forwards to it.
+- pi-sync is cron only with no gateway binding (it serves no app route). Its tests live in
+  `worker/test/sync.mjs` (run by `security.yml` and `deploy-worker.yml`), not `worker/test/test.mjs`.
 - Flag tests live in `worker/test/flags.mjs` (run by `security.yml`), not `worker/test/test.mjs`. qa owns tests.
 
 | Flag | Default | Fail mode | Where |
@@ -166,6 +192,8 @@ Documented exceptions:
 | market | on | open | `/api/prices`, `/api/history`, `/api/sectors`, `/api/dividends` |
 | house_scrape, senate_scrape, fmp_fill | on | open | fetch_trades steps (`scripts/flags.py`) |
 | recon_v2 | off | open | fetch_trades house check (v2 not built; the current check runs) |
+| sync | on | closed | pi-sync cron: off means the tick exits |
+| sync_dryrun | on | closed | pi-sync cron: on means plan and log only, no writes to Jira, ADO or pair records. Owner turns it off on the flags page after reviewing `run:last` |
 
 Reading: 30 s isolate cache, then KV (KV itself propagates in about 60 s). KV unreadable or invalid:
 the last known value in the isolate, else off for closed flags and the default for the rest. No
@@ -176,7 +204,7 @@ binding: defaults. Health, `/api/flags` and the monitors are never flaggable.
 | Class | Examples | Where it lives | Protection |
 |---|---|---|---|
 | Confidential (user) | Holdings, cash, snapshots, Plaid link | Device vault; Supabase `synced_data` as ciphertext only | AES-GCM, key from passcode (PBKDF2 210k) or passkey PRF; RLS. A holdings summary may be sent with a question as request context (as with /api/ai). Used in memory only, never stored or logged. Chat keeps only the user's questions in sessionStorage |
-| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers; pi-flags has its own separate Supabase key (SUPABASE_FLAGS_KEY) |
+| Credentials | API keys, service role key, Groq key | Cloudflare Secrets Store, GitHub secrets | Never in code or logs; WIF for GCP. The Supabase service key is bound only to pi-newsdesk among Workers; pi-flags has its own separate Supabase key (SUPABASE_FLAGS_KEY). JIRA_EMAIL, JIRA_API_TOKEN (dedicated KAN-only Jira user) and ADO_PAT (Work Items read and write only) are bound only to pi-sync |
 | Owner (admin) | Owner email in flag audit records, admin allowlist | KV audit keys, Supabase flag_audit, BigQuery flag_audit, GitHub secret FLAGS_ADMIN_EMAIL | Not public: GET /api/flags returns booleans only; audit read only behind Access |
 | Account | Email, passkey public keys, hash of the passcode login secret | Supabase Auth | Supabase managed. The login secret is PBKDF2 (600k, salt from the email, separate purpose) of the passcode, so it can't recover the passcode or the data key |
 | Public | Congressional trades, prices, news, SEC Form D and Form C filings, news reads (model text over public headlines) | JSON files, Supabase history and `news_verdicts`, KV, BigQuery | Integrity only. Reads carry no user identifier |

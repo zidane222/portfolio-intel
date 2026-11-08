@@ -30,7 +30,7 @@ await t('registry matches scripts/flags_registry.json', async () => {
   const py = JSON.parse(readFileSync(new URL('../../scripts/flags_registry.json', import.meta.url), 'utf8'));
   const js = Object.fromEntries(Object.entries(F.REGISTRY).map(([k, r]) => [k, {default: r.default, fail: r.fail, kind: r.kind}]));
   assert.deepEqual(py, js);
-  assert.deepEqual(F.NAMES, ['maintenance', 'broker', 'sync_writes', 'ai', 'news', 'disclosures', 'market', 'house_scrape', 'senate_scrape', 'fmp_fill', 'recon_v2']);
+  assert.deepEqual(F.NAMES, ['maintenance', 'broker', 'sync_writes', 'ai', 'news', 'disclosures', 'market', 'house_scrape', 'senate_scrape', 'fmp_fill', 'recon_v2', 'sync', 'sync_dryrun']);
 });
 
 await t('no binding: defaults, routes work', async () => {

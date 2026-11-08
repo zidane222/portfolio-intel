@@ -21,6 +21,8 @@ can take up to about 2.5 minutes.
 | senate_scrape | on | default | Both daily Senate steps in fetch_trades |
 | fmp_fill | on | default | FMP paper filing fill step in fetch_trades |
 | recon_v2 | off | default | Reserved for the next reconciliation check. That check is not built yet, so today the current house check runs either way |
+| sync | on | last known, else off | The Jira and ADO sync (pi-sync). Off means each 5 minute tick exits without reading or writing |
+| sync_dryrun | on | last known, else off (the sync flag then stops the tick) | Writes by pi-sync. On means it only plans and logs. Turn it off to let the sync write |
 
 Rates, private markets and insights have no flag of their own; only maintenance turns them off.
 
