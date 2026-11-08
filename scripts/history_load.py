@@ -4,6 +4,8 @@
   BigQuery  - full archive, never pruned. Writes stop at 9 GB.
   News verdicts (pi-newsdesk, supabase/news.sql) - last 3 days copied from Supabase to BigQuery
             news_verdicts (MERGE on id); then Supabase rows over 2 years are purged.
+  Flag audit (pi-flags, supabase/flags.sql) - last 3 days copied to BigQuery flag_audit (MERGE on id);
+            then Supabase rows over 1 year are purged.
 
 Either store is skipped if its settings are missing, so this is safe to run anywhere.
 
@@ -342,6 +344,63 @@ def to_bigquery_news(*_):
            f'Supabase purged {(purged or {}).get("verdicts", 0)} verdicts over 2 years')
 
 
+# ── Flag audit (Supabase -> BigQuery archive) ───────────
+# Same pattern as news_verdicts. Rows hold the owner's email and a reason; never printed.
+FLAG_DAYS = 3
+FLAG_SCHEMA = [('id', 'STRING', 'REQUIRED'), ('at', 'TIMESTAMP', 'REQUIRED'), ('flag', 'STRING', 'REQUIRED'),
+               ('is_on', 'BOOL', 'REQUIRED'), ('actor', 'STRING', 'NULLABLE'), ('reason', 'STRING', 'NULLABLE'), ('v', 'INT64', 'NULLABLE')]
+
+
+def flag_rows(sb, since):
+    cols = ','.join(c for c, _, _ in FLAG_SCHEMA)
+    out, step = [], 1000
+    while True:
+        r = requests.get(f'{sb.url}/rest/v1/flag_audit?select={cols}&at=gte.{since}&order=id&limit={step}&offset={len(out)}',
+                         headers=sb.h, timeout=60)
+        if r.status_code >= 300:
+            raise RuntimeError(f'flag_audit read failed: {r.status_code}')  # no body
+        page = r.json()
+        out.extend(page)
+        if len(page) < step:
+            return out
+
+
+def to_bigquery_flags(*_):
+    url, key = os.environ.get('SUPABASE_URL', '').strip(), os.environ.get('SUPABASE_SERVICE_KEY', '').strip()
+    if not url or not key:
+        warn('Flag audit archive: Supabase not configured, skipped')
+        return
+    client, ds_id = bq_dataset()
+    if not client:
+        warn('Flag audit archive: BigQuery not configured, skipped (Supabase rows are not purged)')
+        return
+    sb = Supabase(url, key)
+    since = (datetime.date.today() - datetime.timedelta(days=FLAG_DAYS)).isoformat()
+    try:
+        rows = flag_rows(sb, since)
+    except RuntimeError as e:
+        if ' 404' in str(e):  # supabase/flags.sql not run yet
+            warn('Flag audit archive: table flag_audit not found (run supabase/flags.sql), skipped')
+            return
+        raise
+    rows = list({r['id']: r for r in rows}.values())
+    table = bq_ensure(client, ds_id, 'flag_audit', FLAG_SCHEMA, 'at')
+    used = client.get_table(table.reference).num_bytes or 0
+    if used >= BIGQUERY_LIMIT:
+        warn(f'Flag audit archive: BigQuery table at {used / 1e9:.2f} GB (limit 9 GB). Writes skipped.')
+        return
+    bq_merge(client, ds_id, 'flag_audit', rows, FLAG_SCHEMA, ['id'])
+    stored = bq_count(client, ds_id, 'flag_audit')
+    if rows and not stored:
+        raise RuntimeError('BigQuery flag_audit table is empty after the merge')
+    r = requests.post(f'{sb.url}/rest/v1/rpc/flag_audit_purge', headers=sb.h, json={}, timeout=60)
+    purged = r.json() if r.status_code < 300 else None
+    if purged is None:
+        warn(f'Flag audit: Supabase purge failed: {r.status_code}')
+    notice(f'Flag audit archive: {len(rows)} rows since {since} merged; stored now {stored} rows; '
+           f'Supabase purged {(purged or {}).get("audit", 0)} rows over 1 year')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--trades', nargs='+', required=True)
@@ -354,7 +413,7 @@ def main():
     prices = [] if a.prices == 'none' else load_prices(tickers, {'recent': '1mo', '5y': '5y', 'max': 'max'}[a.prices])
     notice(f'History: {len(trades)} trades, {len(tickers)} tickers, {len(prices)} daily prices')
     ok = True
-    for name, fn in (('Supabase', to_supabase), ('BigQuery', to_bigquery), ('News verdicts', to_bigquery_news)):
+    for name, fn in (('Supabase', to_supabase), ('BigQuery', to_bigquery), ('News verdicts', to_bigquery_news), ('Flag audit', to_bigquery_flags)):
         try:
             fn(trades, prices)
         except Exception as e:

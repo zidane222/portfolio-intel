@@ -19,5 +19,8 @@ services = [
 ALLOWED_ORIGINS = "https://zidane222.github.io,https://portfolio-intel-279.pages.dev,http://localhost:8765"
 
 
+# FLAGS (Workers KV, read only by code): added at deploy from repository variable CF_KV_FLAGS.
+# Without it every flag reads its default (docs/runbooks/feature-flags.md).
+
 [observability]
 enabled = true

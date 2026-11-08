@@ -4,6 +4,7 @@
 #   [[secrets_store_secrets]] GROQ_API_KEY, SUPABASE_SERVICE_KEY  (Cloudflare Secrets Store)
 #   SUPABASE_URL                                                   (from the GitHub secret SP)
 #   [[kv_namespaces]] id                                           (from repository variable CF_KV_NEWSREADS)
+#   [[kv_namespaces]] FLAGS id (read only, the news flag)          (from repository variable CF_KV_FLAGS)
 name = "pi-newsdesk"
 main = "../src/services/newsdesk.js"
 compatibility_date = "2026-09-01"

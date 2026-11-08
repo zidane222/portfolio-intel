@@ -34,8 +34,18 @@ BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
 DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
 CF_SCRIPTS = ["pi-market", "pi-news", "pi-rates", "pi-ai", "pi-broker", "pi-disclosures",
-              "pi-private", "pi-newsdesk", "portfolio-intel-api"]
+              "pi-private", "pi-newsdesk", "pi-flags", "portfolio-intel-api"]
 LABEL = "soc-monitor"
+FLAGS_URL = "https://portfolio-intel-api.viphashkahn.workers.dev/api/flags"
+FLAG_OFF_WARN_HOURS = 24
+
+
+def _flag_defaults():
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "flags_registry.json"), encoding="utf-8") as fh:
+            return {k: v["default"] for k, v in json.load(fh).items()}
+    except (OSError, ValueError, KeyError):
+        return {}
 
 
 class SourceError(Exception):
@@ -157,8 +167,49 @@ def evaluate(d, now):
         elif j == "missing" and now.hour >= hour:
             add(WARN, f"data job has no run today: {name}")
 
+    # 5. Feature flags (read only; this monitor never changes a flag)
+    fl = d.get("flags")
+    if fl is not None:
+        if fl.get("unreachable"):
+            add(WARN, "feature flags: GET /api/flags unreachable")
+        else:
+            defaults = _flag_defaults()
+            try:
+                upd = dt.datetime.fromisoformat(str(fl.get("updated")).replace("Z", "+00:00"))
+            except ValueError:
+                upd = None
+            for name, on in sorted((fl.get("flags") or {}).items()):
+                if name in defaults and on != defaults[name] and upd and now - upd >= dt.timedelta(hours=FLAG_OFF_WARN_HOURS):
+                    state = "on" if on else "off"
+                    add(WARN, f"feature flag {name} has been {state} (not its default) for over {FLAG_OFF_WARN_HOURS} h")
+
     sev = max((s for s, _ in f), key=lambda s: RANK[s], default=OK)
     return sev, f
+
+
+def suggest_flips(d, findings):
+    """Suggested flag flips tied to findings. Text only; the owner decides. Pure."""
+    out = []
+    flags = ((d.get("flags") or {}).get("flags")) or {}
+
+    def say(name, why):
+        if flags.get(name, True) and all(name not in x for x in out):
+            out.append(f"consider turning off {name}: {why}")
+    for _, text in findings:
+        if text.startswith("news budget") or text.startswith("pi-newsdesk cron"):
+            say("news", text)
+        elif text.startswith("pi-ai:") or text.startswith("pi-rates:"):
+            say("ai", text)
+        elif text.startswith("pi-broker:"):
+            say("broker", text)
+        elif text.startswith("pi-market:"):
+            say("market", text)
+        elif text.startswith("pi-disclosures:"):
+            say("disclosures", text)
+        elif text.startswith("portfolio-intel-api:") and not flags.get("maintenance"):
+            if not any("maintenance" in x for x in out):
+                out.append(f"consider turning on maintenance: {text}")
+    return out
 
 
 def peer_status(runs, now, hours=26):
@@ -185,6 +236,13 @@ def render(d, sev, findings, now):
     L = [f"# SOC monitor {now:%Y-%m-%d} {sev}", "", f"Window: last 24 h to {now:%Y-%m-%d %H:%M} UTC. Baseline: previous 7 days.", ""]
     L.append("## Findings")
     L += [f"- {s}: {scrub(t, 300)}" for s, t in sorted(findings, key=lambda x: -RANK[x[0]])] or ["- None"]
+    tips = suggest_flips(d, findings)
+    if tips:
+        L += ["", "## Suggested flag flips (owner decides, pi-flags admin page)", ""] + [f"- {scrub(t, 300)}" for t in tips]
+    fl = d.get("flags")
+    if fl is not None and not fl.get("unreachable"):
+        off = [n for n, v in sorted((fl.get("flags") or {}).items()) if v is False]
+        L += ["", f"Feature flags: version {fl.get('v', 0)}, off: {', '.join(off) or 'none'}."]
     L += ["", "## Cloudflare (24h)", "", "| Script | Requests | Baseline/day | 4xx | 5xx | 403 | 429 | Exceptions |", "|---|---|---|---|---|---|---|---|"]
     for n, s in sorted((cf.get("scripts") or {}).items()):
         L.append(f"| {n} | {s.get('requests', 0)} | {s.get('baseline_daily', 0):.0f} | {s.get('s4xx', 0)} | {s.get('s5xx', 0)} | {s.get('s403', 0)} | {s.get('s429', 0)} | {s.get('exceptions', 0)} |")
@@ -472,6 +530,18 @@ def collect_senate(now, path="trades.json"):
     return {"count": count, "stale": bool(d.get("senate_stale")), "age_days": age, "house_check": d.get("fmp_house_check") or {}}
 
 
+def collect_flags(url=None):
+    """{'v', 'updated', 'flags'} from the public endpoint, or {'unreachable': True}. Read only."""
+    try:
+        r = _req().get(url or os.environ.get("FLAGS_URL") or FLAGS_URL, timeout=10, headers={"User-Agent": "portfolio-intel-soc"})
+        d = r.json() if r.status_code == 200 else None
+        if isinstance(d, dict) and isinstance(d.get("flags"), dict):
+            return {"v": d.get("v", 0), "updated": d.get("updated"), "flags": {k: v for k, v in d["flags"].items() if isinstance(v, bool)}}
+    except Exception:
+        pass
+    return {"unreachable": True}
+
+
 def main(argv):
     if len(argv) >= 3 and argv[1] == "--fixtures":
         with open(argv[2], encoding="utf-8") as fh:
@@ -496,6 +566,7 @@ def main(argv):
     gtoken, repo = env.get("GITHUB_TOKEN", ""), env.get("GITHUB_REPOSITORY", "")
     data["github"] = collect_github(gtoken, repo, now) if gtoken and repo else {}
     data["senate"] = collect_senate(now)
+    data["flags"] = collect_flags()
     if problems:
         for p in problems:
             print(f"::error::SOC monitor cannot reach a source: {p}")

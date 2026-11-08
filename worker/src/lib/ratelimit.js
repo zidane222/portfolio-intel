@@ -3,6 +3,7 @@
 const LIMITS = {
   ai: [[8, 60], [60, 3600], [200, 86400]],
   api: [[120, 60]],
+  flags: [[30, 60]], // GET /api/flags
   ask: [[6, 60], [40, 3600], [150, 86400]], // POST /api/ask, checked in the gateway before the supervisor
   private: [[30, 60]], // pi-private
   insights: [[30, 60]], // pi-insights

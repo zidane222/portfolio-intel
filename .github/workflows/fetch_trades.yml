@@ -39,13 +39,21 @@ jobs:
           # Keep yesterday's data so new filings can be detected for alerts
           cp trades.json /tmp/old_trades.json 2>/dev/null || echo '{"trades":[]}' > /tmp/old_trades.json
 
+      - name: Read feature flags
+        id: flags
+        run: |
+          # GET /api/flags on the gateway (scripts/flags.py). Unreachable: registry defaults plus a warning.
+          python3 scripts/flags.py --github-output house_scrape senate_scrape fmp_fill recon_v2
+
       - name: Parser unit tests (offline)
-        run: python3 -m unittest scripts/test_house_ptr.py scripts/test_senate_fmp.py scripts/test_smart_money.py
+        run: python3 -m unittest scripts/test_house_ptr.py scripts/test_senate_fmp.py scripts/test_smart_money.py scripts/test_flags.py
 
       - name: Scrape House PTR filings
+        if: steps.flags.outputs.house_scrape == 'true'
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 
       - name: Senate trades (official Senate site, tried first)
+        if: steps.flags.outputs.senate_scrape == 'true'
         continue-on-error: true
         run: |
           # The official site has blocked automated requests since 2026-10-23. We try once a day with a normal
@@ -57,6 +65,7 @@ jobs:
           fi
 
       - name: Senate trades (FMP, merged with the official site)
+        if: steps.flags.outputs.senate_scrape == 'true'
         continue-on-error: true
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -98,6 +107,7 @@ jobs:
           PYEOF
 
       - name: House trades from scanned paper filings (FMP)
+        if: steps.flags.outputs.fmp_fill == 'true'
         continue-on-error: true
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -111,7 +121,11 @@ jobs:
         continue-on-error: true
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          RECON_V2: ${{ steps.flags.outputs.recon_v2 }}
         run: |
+          # recon_v2 is reserved for the next reconciliation check, which is not built yet.
+          # Off (the default) or on, the current check runs; on only adds this notice.
+          if [ "$RECON_V2" = true ]; then echo "::notice::recon_v2 is on but reconciliation v2 is not built yet; running the current house check"; fi
           python3 scripts/senate_fmp.py --house-check trades.json > house_check.json
           python3 - <<'PYEOF'
           import json

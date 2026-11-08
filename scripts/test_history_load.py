@@ -139,6 +139,36 @@ class AdjClose(unittest.TestCase):
         self.assertEqual(seen[1], set(h.BENCHMARKS))
 
 
+
+class FlagAudit(unittest.TestCase):
+    ENV = {'SUPABASE_URL': 'https://x.supabase.co', 'SUPABASE_SERVICE_KEY': 'k'}
+
+    def run_flags(self, get_resp, post_resp=None):
+        bq = FakeBQ()
+        posts = []
+        with mock.patch.dict(os.environ, self.ENV), \
+                mock.patch.object(h, 'bq_dataset', return_value=(bq, 'p.ds')), \
+                mock.patch.object(h, 'bq_ensure', side_effect=lambda c, d, n, s, f: fake_table(n)), \
+                mock.patch.object(h.requests, 'get', return_value=get_resp), \
+                mock.patch.object(h.requests, 'post', side_effect=lambda u, **k: posts.append(u) or (post_resp or FakeResp({'audit': 0}))):
+            h.to_bigquery_flags()
+        return bq, posts
+
+    def test_merge_on_id_then_purge(self):
+        row = {'id': 'a', 'at': '2026-11-07T00:00:00Z', 'flag': 'ai', 'is_on': False, 'actor': 'o', 'reason': 'abc', 'v': 1}
+        bq, posts = self.run_flags(FakeResp([row, dict(row)]))
+        self.assertEqual(bq.loads[0][0], 'p.ds._stage_flag_audit')
+        self.assertEqual(len(bq.loads[0][1]), 1)  # deduped by id
+        self.assertTrue(any('MERGE `p.ds.flag_audit`' in q and 'T.id = S.id' in q for q in bq.queries))
+        self.assertTrue(posts and posts[0].endswith('/rpc/flag_audit_purge'))
+
+    def test_missing_table_skips_without_purge(self):
+        r = FakeResp([])
+        r.status_code = 404
+        bq, posts = self.run_flags(r)
+        self.assertEqual(bq.loads, [])
+        self.assertEqual(posts, [])
+
 if __name__ == '__main__':
     unittest.main()
 

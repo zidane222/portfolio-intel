@@ -15,6 +15,7 @@
 <title>Portfolio Intel</title>
 <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js" integrity="sha384-OK7vELvjHdhUFi31JYioPIcRHTROLdcDa6ZsNWgvgLaKj+9JqhU0Ad8g4wz3CXjA" crossorigin="anonymous"></script>
 <style>
+.flag-notice{position:relative;margin:0;padding:calc(10px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left));background:#3b2f0b;color:#ffe7a3;font-size:14px;line-height:1.4;text-align:center}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
   --navy-0:#071228;--navy-1:#0B1D42;
@@ -563,6 +564,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 </style>
 </head>
 <body>
+<div id="flag-notice" class="flag-notice" role="status" aria-live="polite" hidden></div>
 
 <nav class="top" aria-label="Main">
   <div class="wrap">
@@ -1048,7 +1050,7 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 
 <script src="js/01-config.js?v=10"></script>
 <script src="js/02-state.js?v=11"></script>
-<script src="js/03-helpers.js?v=10"></script>
+<script src="js/03-helpers.js?v=11"></script>
 <script src="js/04-prices.js?v=10"></script>
 <script src="js/05-hero.js?v=10"></script>
 <script src="js/06-chart.js?v=10"></script>
@@ -1076,11 +1078,11 @@ footer{padding:0 0 calc(110px + env(safe-area-inset-bottom));text-align:center;f
 <script src="js/27-risk.js?v=10"></script>
 <script src="js/28-review.js?v=10"></script>
 <script src="js/29-leaderboard.js?v=10"></script>
-<script src="js/29a-account.js?v=14"></script>
+<script src="js/29a-account.js?v=16"></script>
 <script src="js/29c-passkey.js?v=11"></script>
 <script src="js/29d-private.js?v=2"></script>
 <script src="js/29e-insights.js?v=1"></script>
 <script src="js/29b-pages.js?v=13"></script>
-<script src="js/30-init.js?v=13"></script>
+<script src="js/30-init.js?v=15"></script>
 </body>
 </html>

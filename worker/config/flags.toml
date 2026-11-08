@@ -1,0 +1,24 @@
+# pi-flags: owner admin for feature flags, the only writer of the FLAGS KV key. Has a workers.dev URL
+# so Cloudflare Access can sit in front of it; without Access settings every route answers 403.
+# Setup: docs/runbooks/feature-flags.md. The deploy workflow adds at deploy time (never committed):
+#   [[kv_namespaces]] FLAGS id        (repository variable CF_KV_FLAGS)
+#   ACCESS_TEAM_DOMAIN, ACCESS_AUD    (repository variables CF_ACCESS_TEAM, CF_ACCESS_AUD)
+#   ADMIN_EMAIL                       (repository secret FLAGS_ADMIN_EMAIL)
+#   SUPABASE_URL                      (GitHub secret SP)
+#   [[secrets_store_secrets]] SUPABASE_FLAGS_KEY (only when the Secrets Store has it)
+name = "pi-flags"
+main = "../src/services/flags.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+SERVICE = "flags"
+# Placeholders fail the checks in lib/access.js, so the Worker stays closed until the deploy fills them.
+ACCESS_TEAM_DOMAIN = "__ACCESS_TEAM__"
+ACCESS_AUD = "__ACCESS_AUD__"
+ADMIN_EMAIL = "__ADMIN_EMAIL__"
+SUPABASE_URL = "__SUPABASE_URL__"
+
+[observability]
+enabled = true

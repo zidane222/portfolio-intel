@@ -126,6 +126,31 @@ class Scrub(unittest.TestCase):
             self.assertNotIn(bad, r)
 
 
+
+class Flags(unittest.TestCase):
+    def test_unreachable_warns(self):
+        sev, f = variant(lambda d: d.__setitem__("flags", {"unreachable": True}))
+        self.assertEqual(sev, m.WARN)
+        self.assertTrue(any("unreachable" in t for _, t in f))
+
+    def test_off_over_24h_warns_default_off_ok(self):
+        old = "2026-10-28T00:00:00Z"
+        sev, f = variant(lambda d: d.__setitem__("flags", {"v": 3, "updated": old, "flags": {"broker": False, "recon_v2": False, "maintenance": False}}))
+        self.assertEqual([t for _, t in f], ["feature flag broker has been off (not its default) for over 24 h"])
+        sev, f = variant(lambda d: d.__setitem__("flags", {"v": 3, "updated": "2026-10-30T10:00:00Z", "flags": {"broker": False}}))
+        self.assertEqual(sev, m.OK)
+
+    def test_suggested_flip(self):
+        d = copy.deepcopy(GOOD)
+        d["supabase"]["budget"]["calls"] = 85
+        d["flags"] = {"v": 1, "updated": None, "flags": {"news": True}}
+        sev, f = m.evaluate(d, NOW)
+        tips = m.suggest_flips(d, f)
+        self.assertTrue(tips and tips[0].startswith("consider turning off news"))
+        self.assertIn("Suggested flag flips", m.render(d, sev, f, NOW))
+        d["flags"]["flags"]["news"] = False
+        self.assertEqual(m.suggest_flips(d, f), [])
+
 if __name__ == "__main__":
     unittest.main()
 

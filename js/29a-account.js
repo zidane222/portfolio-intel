@@ -87,9 +87,15 @@ function syncPayloadPlain() {
   const data = {}; VAULT_KEYS.forEach(k => { data[k] = vget(k); });
   return JSON.stringify({v: 1, data, watch: watchlist});
 }
+// sync_writes flag (30-init.js loadFlags): when off, uploads pause. The data stays encrypted in the
+// device vault and the upload is retried when the flag is back on. Nothing is ever sent in plain text.
+let syncHeld = false;
 async function syncPush() {
   const c = lockConf();
   if (!sbOn() || !sbSession() || !VAULT.key || !c || !c.encSalt || !c.sync) return;
+  if (typeof flagsReady !== 'undefined') { try { await flagsReady; } catch (e) {} }
+  if (typeof flagOn === 'function' && !flagOn('sync_writes')) { syncHeld = true; syncUI('Sync uploads are paused. Your changes are saved on this device and will upload later.'); return; }
+  syncHeld = false;
   if (syncBusy) { syncSoon(); return; }
   syncBusy = true;
   try {
@@ -246,7 +252,8 @@ function wireAccount() {
       $('lock-set').textContent = 'Change passcode';
       await syncPush();
       await pwLink(a);
-      syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
+      if (!syncHeld) syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
+      else syncUI('Sync uploads are paused. Your changes are saved on this device and will upload later.');
     } catch (err) { syncUI('Couldn\'t set up: ' + err.message); }
   };
   $('sync-now').onclick = syncPush;

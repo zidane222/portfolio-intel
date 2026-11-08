@@ -37,6 +37,8 @@ async function device(label) {
     const req = route.request(), u = new URL(req.url()), body = req.postData() || '';
     if (u.origin !== SB) {
       if (/\.js(\?|$)/.test(u.href)) return route.fulfill({status: 200, contentType: 'application/javascript', body: ''});
+      // Feature flags: all on (sync_writes is fail closed, so an empty answer would hold uploads).
+      if (u.pathname === '/api/flags') return json(route, 200, {v: 1, updated: null, flags: {maintenance: false, broker: true, sync_writes: true, ai: true, news: true, disclosures: true, market: true}});
       return json(route, 200, {});
     }
     if (req.method() === 'OPTIONS') return route.fulfill({status: 200, headers: {'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*'}});

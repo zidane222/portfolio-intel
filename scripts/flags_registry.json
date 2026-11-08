@@ -1,0 +1,13 @@
+{
+  "maintenance":   {"default": false, "fail": "last",   "kind": "route"},
+  "broker":        {"default": true,  "fail": "closed", "kind": "route"},
+  "sync_writes":   {"default": true,  "fail": "closed", "kind": "client"},
+  "ai":            {"default": true,  "fail": "open",   "kind": "route"},
+  "news":          {"default": true,  "fail": "open",   "kind": "route"},
+  "disclosures":   {"default": true,  "fail": "open",   "kind": "route"},
+  "market":        {"default": true,  "fail": "open",   "kind": "route"},
+  "house_scrape":  {"default": true,  "fail": "open",   "kind": "job"},
+  "senate_scrape": {"default": true,  "fail": "open",   "kind": "job"},
+  "fmp_fill":      {"default": true,  "fail": "open",   "kind": "job"},
+  "recon_v2":      {"default": false, "fail": "open",   "kind": "job"}
+}

@@ -25,16 +25,17 @@ async function fetchJSON(url, opts) {
   try {
     const {timeout, ...rest} = opts || {};
     const r = await fetch(url, {...rest, signal: ctl.signal});
-    if (!r.ok) { let msg = 'HTTP ' + r.status; try { const j = await r.json(); if (j.error) msg = j.error; } catch (e) {} const err = new Error(msg); err.status = r.status; throw err; }
+    if (!r.ok) { let msg = 'HTTP ' + r.status, off = null; try { const j = await r.json(); if (j.error) msg = j.error; if (j.disabled === true) off = String(j.flag || ''); } catch (e) {} const err = new Error(msg); err.status = r.status; if (off !== null) { err.disabled = true; err.flag = off; } throw err; }
     return await r.json();
   }
   finally { clearTimeout(t); }
 }
-// Calls the Worker; on a network error or server error (not a 4xx answer) tries the backup once
+// Calls the Worker; on a network error or server error (not a 4xx answer) tries the backup once.
+// A feature turned off by a flag (503 with disabled: true) is not an outage, so it never falls back.
 async function getJSON(url, opts) {
   try { return await fetchJSON(url, opts); }
   catch (e) {
-    if (!url.startsWith(BACKEND_URL) || (e.status && e.status < 500)) throw e;
+    if (!url.startsWith(BACKEND_URL) || (e.status && e.status < 500) || e.disabled) throw e;
     return fetchJSON(FALLBACK_URL + url.slice(BACKEND_URL.length), opts);
   }
 }
