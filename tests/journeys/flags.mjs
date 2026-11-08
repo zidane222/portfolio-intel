@@ -38,7 +38,7 @@ async function open(flags, extra = {}) {
   page.on('pageerror', e => st.errors.push('pageerror: ' + e.message));
   await page.route(u => !u.href.startsWith(BASE), async route => {
     const u = route.request().url();
-    if (u.startsWith(RENDER)) { st.renderHits.push(u); return route.fulfill({status: 200, contentType: 'application/json', body: '{"from":"render"}'}); }
+    if (new URL(u).origin === new URL(RENDER).origin) { st.renderHits.push(u); return route.fulfill({status: 200, contentType: 'application/json', body: '{"from":"render"}'}); }
     if (u === API + '/api/flags') return route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({v: 1, updated: null, flags: st.flags})});
     if (extra[u.replace(API, '')]) { const [s, b] = extra[u.replace(API, '')]; return route.fulfill({status: s, contentType: 'application/json', body: b}); }
     if (u.startsWith(SB + '/rest/v1/synced_data')) {

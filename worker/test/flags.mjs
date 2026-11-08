@@ -166,7 +166,7 @@ await t('pi-flags: page has strict CSP and no inline script', async () => {
   const csp = r.headers.get('Content-Security-Policy');
   assert.ok(csp.includes("script-src 'self'") && csp.includes("default-src 'none'") && csp.includes("frame-ancestors 'none'"));
   const html = await r.text();
-  assert.ok(!/<script>/.test(html) && !/innerHTML/.test(html) && !/https?:\/\//.test(html));
+  assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(html) && !/innerHTML/.test(html) && !/https?:\/\//.test(html));
   const js = await (await fcall('/admin/app.js', fenv())).text();
   assert.ok(!js.includes('innerHTML'));
 });
