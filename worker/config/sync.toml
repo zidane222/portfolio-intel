@@ -1,0 +1,26 @@
+# pi-sync: Jira KAN and Azure DevOps portfolio-intel two-way sync. Plan: docs/plans/pi-sync.md
+# Cron only. No public URL, no gateway binding, no service bindings; fetch answers 404.
+# The deploy workflow adds at deploy time (never committed):
+#   [[secrets_store_secrets]] JIRA_EMAIL, JIRA_API_TOKEN, ADO_PAT  (Cloudflare Secrets Store)
+#   [[kv_namespaces]] SYNC id                                       (repository variable CF_KV_SYNC)
+#   [[kv_namespaces]] FLAGS id (read only: sync, sync_dryrun)       (repository variable CF_KV_FLAGS)
+# Runbook: docs/runbooks/sync.md
+name = "pi-sync"
+main = "../src/services/sync.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+SERVICE = "sync"
+JIRA_BASE = "https://nadia-b.atlassian.net"
+JIRA_PROJECT = "KAN"
+ADO_ORG_URL = "https://dev.azure.com/portfolio-intel-279"
+ADO_PROJECT = "portfolio-intel"
+SYNC_MAX_PAIRS = "15"
+
+[observability]
+enabled = true

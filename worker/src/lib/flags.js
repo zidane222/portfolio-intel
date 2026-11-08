@@ -27,6 +27,8 @@ export const REGISTRY = {
   senate_scrape: {default: true,  fail: 'open',   kind: 'job', label: 'Daily Senate fetch'},
   fmp_fill:      {default: true,  fail: 'open',   kind: 'job', label: 'FMP paper filing fill'},
   recon_v2:      {default: false, fail: 'open',   kind: 'job', label: 'Reconciliation v2 (off runs the current check)'},
+  sync:          {default: true,  fail: 'closed', kind: 'job', label: 'Jira and ADO sync'},
+  sync_dryrun:   {default: true,  fail: 'closed', kind: 'job', label: 'Sync dry run: log only, no writes'},
 };
 export const NAMES = Object.keys(REGISTRY);
 

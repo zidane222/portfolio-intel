@@ -1,0 +1,7 @@
+[
+  {"key": "KAN-1", "fields": {"summary": "Sync epic", "status": {"name": "In dev"}, "issuetype": {"name": "Epic"}, "labels": ["ado-100"], "updated": "2026-11-01T10:00:00.000+0000", "created": "2026-10-01T10:00:00.000+0000",
+    "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Epic body"}]}]}}},
+  {"key": "KAN-2", "fields": {"summary": "Map statuses", "status": {"name": "Backlog"}, "issuetype": {"name": "Story"}, "parent": {"key": "KAN-1"}, "labels": [], "updated": "2026-11-01T10:00:00.000+0000", "created": "2026-10-02T10:00:00.000+0000",
+    "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Engineering detail: AB#101"}]}]}}},
+  {"key": "KAN-3", "fields": {"summary": "Old story without a pair", "status": {"name": "backlog"}, "issuetype": {"name": "Story"}, "labels": [], "updated": "2026-11-01T10:00:00.000+0000", "created": "2026-10-03T10:00:00.000+0000", "description": null}}
+]

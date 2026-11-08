@@ -1,6 +1,6 @@
 // Reads secrets whether they are plain Worker secrets (strings) or linked from the
 // Cloudflare Secrets Store (objects with an async get()). Returns a copy of env with strings.
-const NAMES = ['GROQ_API_KEY', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_TOKEN_KEY', 'PLAID_REDIRECT_URI', 'SUPABASE_SERVICE_KEY', 'SUPABASE_FLAGS_KEY'];
+const NAMES = ['GROQ_API_KEY', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_TOKEN_KEY', 'PLAID_REDIRECT_URI', 'SUPABASE_SERVICE_KEY', 'SUPABASE_FLAGS_KEY', 'JIRA_EMAIL', 'JIRA_API_TOKEN', 'ADO_PAT'];
 
 export async function resolveSecrets(env) {
   const out = {...env};

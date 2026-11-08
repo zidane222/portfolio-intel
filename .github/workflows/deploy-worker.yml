@@ -27,6 +27,7 @@ jobs:
           TOKEN=$(python3 -c "from cryptography.fernet import Fernet; import base64,hashlib; k=base64.urlsafe_b64encode(hashlib.sha256(b'testsecret:portfolio-intel-token').digest()); print(Fernet(k).encrypt(b'access-sandbox-123').decode())")
           node test/test.mjs "$TOKEN"
           node test/flags.mjs
+          node test/sync.mjs
       - name: Deploy services, then the gateway
         run: |
           set -o pipefail
@@ -102,6 +103,31 @@ jobs:
             echo "::warning::Skipping pi-flags: repository variable CF_KV_FLAGS is not set. Every flag reads its default."
           fi
 
+          # pi-sync (docs/runbooks/sync.md): needs the SYNC KV namespace and JIRA_EMAIL, JIRA_API_TOKEN,
+          # ADO_PAT in the Secrets Store. Until then it is skipped with a warning. It has no gateway binding.
+          SYNC_KV="$(printf '%s' "$CF_KV_SYNC_RAW" | tr -d '[:space:]')"
+          sync_skip=""
+          if ! printf '%s' "$SYNC_KV" | grep -qE '^[0-9a-f]{32}$'; then
+            sync_skip="repository variable CF_KV_SYNC is missing or is not a 32-character hex KV namespace id"
+          else
+            if [ -z "${names+x}" ] || [ -z "$names" ]; then
+              names="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/secrets_store/stores/$STORE_ID/secrets?per_page=100" \
+                | jq -r '.result[]?.name' 2>/dev/null)" || names=""
+            fi
+            for n in JIRA_EMAIL JIRA_API_TOKEN ADO_PAT; do
+              printf '%s\n' "$names" | grep -qx "$n" || { sync_skip="Secrets Store has no $n (or the deploy token cannot list the store)"; break; }
+            done
+          fi
+          if [ -n "$sync_skip" ]; then
+            echo "::warning::Skipping pi-sync: $sync_skip. See docs/runbooks/sync.md."
+          else
+            link config/sync.toml JIRA_EMAIL JIRA_API_TOKEN ADO_PAT
+            printf '\n[[kv_namespaces]]\nbinding = "SYNC"\nid = "%s"\n' "$SYNC_KV" >> config/sync.toml
+            if printf '%s' "$FLAGS_KV" | grep -qE '^[0-9a-f]{32}$'; then kv_flags config/sync.toml; fi
+            SERVICES="$SERVICES sync"
+          fi
+
           deploy() {
             npx wrangler deploy "$@" 2>&1 | tee deploy.log || {
               grep -iE "error|✘|permission|code:" deploy.log | sed 's/\x1b\[[0-9;]*m//g' | head -6 | sed "s/^/::error::[$*] /"
@@ -121,6 +147,7 @@ jobs:
           CF_KV_NEWSREADS_RAW: ${{ vars.CF_KV_NEWSREADS || 'addea482de704c589301b70f09787a68' }}  # KV id is not secret; a repo variable overrides it
           SB_URL_RAW: ${{ secrets.SP }}
           CF_KV_FLAGS_RAW: ${{ vars.CF_KV_FLAGS }}
+          CF_KV_SYNC_RAW: ${{ vars.CF_KV_SYNC }}
           ACCESS_TEAM_RAW: ${{ vars.CF_ACCESS_TEAM }}
           ACCESS_AUD_RAW: ${{ vars.CF_ACCESS_AUD }}
           FLAGS_ADMIN_RAW: ${{ secrets.FLAGS_ADMIN_EMAIL }}

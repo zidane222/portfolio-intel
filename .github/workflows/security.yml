@@ -78,6 +78,7 @@ jobs:
           node test/rates.mjs
           node test/groq-fast.mjs
           node test/flags.mjs
+          node test/sync.mjs
 
   zap:
     name: Live site scan (OWASP ZAP baseline)
