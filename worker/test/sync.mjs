@@ -194,7 +194,7 @@ await t('Epic is never closed by sync, either way', async () => {
 
 await t('customer bug: ADO close closes Jira; Jira close only comments', async () => {
   const jb = {key: 'KAN-9', type: 'bug', title: 'Crash', status: 'In dev', parent: null, labels: ['ado-109'], ado: 109, updated: '2026-11-08T10:00:00.000+0000', desc: ''};
-  const ab = {id: 109, rev: 3, type: 'bug', title: 'Crash', titlePrefix: 'KAN-9', tags: ['customer-visible', 'jira-KAN-9'], kan: 'KAN-9', state: 'Active', human: false, internal: false, parent: null, parentIndex: -1, changed: '2026-11-08T10:00:00Z', desc: ''};
+  const ab = {id: 109, rev: 3, type: 'bug', title: 'Crash', titlePrefix: 'KAN-9', tags: ['customer-visible', 'jira-KAN-9'], kan: 'KAN-9', state: 'Active', human: false, internal: false, customer: true, parent: null, parentIndex: -1, changed: '2026-11-08T10:00:00Z', desc: ''};
   const rec = {...synced(jb, ab), jiraUpdated: null};
   const d1 = decide(rec, jb, {...ab, state: 'Closed', rev: 4}, CTX);
   assert.deepEqual(d1.ops.find(o => o.op === 'transition'), {sys: 'jira', op: 'transition', key: 'KAN-9', status: 'Done', id: '41'});
@@ -461,6 +461,74 @@ await t('qa: paired ADO Bug that loses customer-visible stops syncing to Jira', 
   const rec = {...synced(jb, ab), jiraUpdated: null};
   const d = decide(rec, jb, {...ab, state: 'Closed', rev: 4, title: 'Secret internal detail'}, CTX);
   assert.ok(!d.ops || !d.ops.some(o => o.sys === 'jira'), 'no Jira write for an untagged bug');
+});
+
+// ---------- appsec fixes (M1, M2, L3, L4, L5)
+const epicJ = (key, labels) => ({key, fields: {summary: 'E ' + key, status: {name: 'In dev'}, issuetype: {name: 'Epic'}, labels, updated: '2026-11-01T10:00:00.000+0000', created: '2026-10-01T10:00:00.000+0000'}});
+const epicA = (id, tags, type = 'Epic') => ({id, rev: 1, fields: {'System.WorkItemType': type, 'System.Title': 'E ' + id, 'System.State': 'Active', 'System.Tags': tags, 'System.ChangedDate': '2026-11-01T10:00:00Z', 'System.CreatedDate': '2026-10-01T10:00:00Z'}});
+
+await t('M1: label-only pair is confirmed by writing the ADO tag', async () => {
+  const w = world({jira: [epicJ('KAN-40', ['ado-700'])], ado: [epicA(700, '')]}); const e = env({FLAGS: liveFlags()});
+  const r = await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  assert.deepEqual(r.errors, []);
+  assert.ok(M.parseTags(w.A.get(700).fields['System.Tags']).includes('jira-KAN-40'));
+  assert.equal(e.SYNC.m.get('ado:700').meta.k, 'KAN-40');
+});
+
+await t('M1: spoofed label pointing at a Task, an internal item or an item tagged for another key: conflict, no write', async () => {
+  const jira = [epicJ('KAN-41', ['ado-701']), epicJ('KAN-42', ['ado-702']), epicJ('KAN-43', ['ado-703']), epicJ('KAN-44', [])];
+  const ado = [epicA(701, '', 'Task'), epicA(702, 'internal'), epicA(703, 'jira-KAN-44')];
+  const w = world({jira, ado}); const e = env({FLAGS: liveFlags()});
+  const r = await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  const codes = Object.fromEntries(r.errors.map(x => [x.pair, x.code]));
+  assert.equal(codes['KAN-41'], 'label_untrusted'); assert.equal(codes['KAN-42'], 'label_untrusted'); assert.equal(codes['KAN-43'], 'label_conflict');
+  assert.equal(w.writes.filter(x => x.sys === 'ado' && /\/(701|702)\?/.test(x.p)).length, 0, 'no ADO write for a spoofed label');
+  assert.ok(!JSON.stringify(w.writes).includes('jira-KAN-43'));
+  assert.ok(!M.parseTags(w.A.get(703).fields['System.Tags']).includes('jira-KAN-43'));
+  assert.ok(!w.writes.some(x => x.sys === 'jira' && /KAN-4[123]/.test(x.p)));
+  assert.ok(!e.SYNC.m.has('ado:701') && !e.SYNC.m.has('ado:702') && e.SYNC.m.get('ado:703').meta.k === 'KAN-44');
+});
+
+await t('M1: two Jira issues with the same ado-<id> label: both reported, nothing written, nothing created', async () => {
+  const w = world({jira: [epicJ('KAN-45', ['ado-704']), epicJ('KAN-46', ['ado-704'])], ado: [epicA(704, '')]});
+  const e = env({FLAGS: liveFlags(), SYNC: kv({'meta:first_live': '2026-01-01T00:00:00Z'})});
+  const r = await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  assert.deepEqual(r.errors.map(x => x.code).sort(), ['label_duplicate', 'label_duplicate']);
+  assert.equal(w.writes.length, 0);
+});
+
+await t('M2: a fresh pending marker skips the create until next tick, then one copy', async () => {
+  const w = world(); const e = env({FLAGS: liveFlags()});
+  await tick(e, {fetch: w.fetch, now: NOW, log: quiet().log});
+  w.J.set('KAN-47', {key: 'KAN-47', fields: {summary: 'Racing story', status: {name: 'backlog'}, issuetype: {name: 'Story'}, labels: [], updated: '2026-11-08T12:01:00.000+0000', created: '2026-11-08T12:01:00.000+0000', description: null}});
+  await e.SYNC.put('pending:jira:KAN-47', new Date(NOW + 240000).toISOString());
+  flagsReset(); const r = await tick(e, {fetch: w.fetch, now: NOW + 300000, log: quiet().log});
+  assert.equal(r.waiting, 1);
+  assert.equal(w.writes.filter(x => /workitems\/\$/.test(x.p)).length, 0);
+  flagsReset(); await tick(e, {fetch: w.fetch, now: NOW + 600000, log: quiet().log});
+  assert.equal([...w.A.values()].filter(i => M.parseTags(i.fields['System.Tags']).includes('jira-KAN-47')).length, 1);
+});
+
+await t('L3: byKeys never builds an empty key list', async () => {
+  const {makeJira} = await import('../src/modules/sync/jira.js');
+  const w = world();
+  const c = makeJira({base: VARS.JIRA_BASE, email: SECRETS.JIRA_EMAIL, token: SECRETS.JIRA_API_TOKEN, fetch: w.fetch});
+  assert.deepEqual(await c.byKeys(['bad', 'KAN-1) OR (1=1']), []);
+  assert.equal(w.calls.length, 0);
+});
+
+await t('L4: ADO descriptions are capped at 64 KB before conversion', async () => {
+  const {MAX_DESC} = await import('../src/modules/sync/md.js');
+  assert.equal(MAX_DESC, 65536);
+  assert.ok(htmlToMd('<p>' + 'a'.repeat(200000) + '</p>').length <= MAX_DESC);
+});
+
+await t('L5: meta:first_live write failure is reported and nothing is written', async () => {
+  const w = world(); const store = kv(); const put = store.put.bind(store);
+  store.put = async (k, v, o) => { if (k === 'meta:first_live') throw new Error('down'); return put(k, v, o); };
+  const r = await tick(env({FLAGS: liveFlags(), SYNC: store}), {fetch: w.fetch, now: NOW, log: quiet().log});
+  assert.ok(r.errors.some(x => x.pair === 'meta' && x.code === 'kv_write'));
+  assert.equal(w.calls.length, 0);
 });
 
 console.log(`\n${n} sync tests passed`);

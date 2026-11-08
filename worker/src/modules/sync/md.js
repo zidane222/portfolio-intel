@@ -100,8 +100,10 @@ const ENT = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'"
 const decode = s => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, e => ENT[e]);
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+export const MAX_DESC = 64 * 1024;
+
 export function htmlToMd(html) {
-  let s = String(html || '').split(MARKER).join('');
+  let s = String(html || '').slice(0, MAX_DESC).split(MARKER).join('');
   const codes = [];
   s = s.replace(/<pre[^>]*>(?:\s*<code[^>]*>)?([\s\S]*?)(?:<\/code>\s*)?<\/pre>/gi, (_, c) => { codes.push(decode(c.replace(/<[^>]+>/g, ''))); return '\n\n\u0000' + (codes.length - 1) + '\u0000\n\n'; });
   s = s.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, t) => '\n\n' + '#'.repeat(+n) + ' ' + t + '\n\n');

@@ -50,7 +50,7 @@ export function makeJira({base, email, token, project = 'KAN', fetch: f, count})
     search,
     changedSince: minutes => search(`project = ${project} AND issuetype in (Epic, Story, Bug) AND updated >= -${Math.max(1, Math.ceil(minutes))}m ORDER BY updated ASC`),
     all: () => search(`project = ${project} AND issuetype in (Epic, Story, Bug) ORDER BY created ASC`, {maxPages: 5}),
-    byKeys: keys => keys.length ? search(`project = ${project} AND key in (${keys.filter(k => /^KAN-\d+$/.test(k)).join(',')})`) : [],
+    byKeys: keys => { const ok = keys.filter(k => /^KAN-\d+$/.test(k)); return ok.length ? search(`project = ${project} AND key in (${ok.join(',')})`) : []; },
     byLabel: label => /^ado-\d+$/.test(label) ? search(`project = ${project} AND labels = "${label}"`, {maxPages: 1}) : [],
     create: fields => call('POST', '/rest/api/3/issue', {fields: {project: {key: project}, ...fields}}),
     edit: (key, fields, update) => call('PUT', '/rest/api/3/issue/' + encodeURIComponent(key), {...(fields ? {fields} : {}), ...(update ? {update} : {})}),

@@ -45,7 +45,10 @@ export async function tick(env, {fetch: f = globalThis.fetch, now = Date.now(), 
     index = await loadIndex(kv);
   } catch (e) { log('sync tick', JSON.stringify({at, skipped: 'kv_unreadable'})); return {skipped: 'kv_unreadable'}; }
 
-  if (!dryrun && !firstLive) { firstLive = at; await kv.put('meta:first_live', at); }
+  if (!dryrun && !firstLive) {
+    try { await kv.put('meta:first_live', at); firstLive = at; }
+    catch (e) { sum.errors.push({pair: 'meta', code: 'kv_write'}); return finish(); }
+  }
 
   // Scan. Dry run reads everything so the unpaired report is complete; live reads changes since the cursor.
   let js, as;
@@ -59,21 +62,38 @@ export async function tick(env, {fetch: f = globalThis.fetch, now = Date.now(), 
   const A = new Map(as.filter(a => a.type).map(a => [a.id, a]));
   sum.scanned = J.size + A.size;
 
-  // Pair key per side: ADO tag first (source of truth), then the KV index, then the Jira label.
-  const keyForAdo = a => a.kan || index.byAdo.get(a.id) || [...J.values()].find(j => j.ado === a.id)?.key || null;
-  const adoForKey = j => { for (const a of A.values()) if (a.kan === j.key) return a.id; return index.byKan.get(j.key) || j.ado || null; };
-
+  // Trusted pair keys: the ADO tag jira-KAN-<n> (source of truth) and the KV index this Worker wrote.
   const pairs = new Map(); // key -> ado id
-  for (const a of A.values()) { const k = keyForAdo(a); if (k) pairs.set(k, a.id); }
-  for (const j of J.values()) { const id = adoForKey(j); if (id && !pairs.has(j.key)) pairs.set(j.key, id); }
+  for (const a of A.values()) { const k = a.kan || index.byAdo.get(a.id); if (k) pairs.set(k, a.id); }
+  for (const j of J.values()) { const id = index.byKan.get(j.key); if (id && !pairs.has(j.key)) pairs.set(j.key, id); }
+  // A Jira label ado-<id> alone is only a claim (anyone who can edit the issue can set it). It is
+  // checked below once the ADO item is loaded; until then it never pairs and never creates.
+  const claims = new Map(); // ado id -> [keys]
+  for (const j of J.values()) if (j.ado && !pairs.has(j.key)) claims.set(j.ado, [...(claims.get(j.ado) || []), j.key]);
+  const blockedJ = new Set(), blockedA = new Set();
 
-  // Fetch the other side of changed pairs (live mode).
+  // Fetch the other side of changed pairs (live mode) and of label claims.
   try {
-    const needJ = [...pairs.keys()].filter(k => !J.has(k)), needA = [...pairs.values()].filter(id => !A.has(id));
+    const needJ = [...pairs.keys()].filter(k => !J.has(k));
+    const needA = [...new Set([...pairs.values(), ...claims.keys()])].filter(id => !A.has(id));
     const [moreJ, moreA] = await Promise.all([jira.byKeys(needJ.slice(0, 50)), ado.byIds(needA.slice(0, 200))]);
     for (const j of moreJ) if (M.jiraEligible(j)) J.set(j.key, j);
     for (const a of moreA) if (a.type) A.set(a.id, a);
   } catch (e) { sum.errors.push({pair: 'counterpart', code: code(e)}); return finish(); }
+
+  // Label-only pairing (appsec M1): trusted only when exactly one Jira issue claims the ADO id, the ADO
+  // item exists, is eligible, carries no other jira-KAN tag and no other key holds it. decide() then
+  // confirms the pair by writing the ADO tag. Anything else is a conflict: reported, nothing written.
+  const held = new Set(pairs.values());
+  for (const [id, keys] of claims) {
+    const a = A.get(id);
+    let why = null;
+    if (keys.length > 1) why = 'label_duplicate';
+    else if (!a || !M.adoEligible(a)) why = 'label_untrusted';
+    else if ((a.kan && a.kan !== keys[0]) || held.has(id)) why = 'label_conflict';
+    if (why) { for (const k of keys) { blockedJ.add(k); sum.errors.push({pair: k, code: why}); } blockedA.add(id); continue; }
+    pairs.set(keys[0], id); held.add(id);
+  }
 
   const ctx = {
     adoForKan: k => pairs.get(k) || index.byKan.get(k) || null,
@@ -92,12 +112,12 @@ export async function tick(env, {fetch: f = globalThis.fetch, now = Date.now(), 
     plans.push({kind: 'pair', d: decide(rec, j, a, ctx), j, a, key});
   }
   for (const j of J.values()) {
-    if (pairs.has(j.key) || j.type === 'bug') continue;
+    if (pairs.has(j.key) || blockedJ.has(j.key) || j.type === 'bug') continue;
     if (!M.jiraMayCreateAdo(j) || !eligibleForCreate(j.created, firstLive)) { unpaired('jira', j.hint ? j.key + '~ado:' + j.hint : j.key); continue; }
     plans.push({kind: 'create', d: planCreateAdo(j, ctx), src: j});
   }
   for (const a of A.values()) {
-    if (pairedA.has(a.id) || !M.adoEligible(a)) continue;
+    if (pairedA.has(a.id) || blockedA.has(a.id) || !M.adoEligible(a)) continue;
     if (!eligibleForCreate(a.created, firstLive)) { unpaired('ado', a.id); continue; }
     plans.push({kind: 'create', d: planCreateJira(a, ctx), src: a});
   }
@@ -125,7 +145,7 @@ export async function tick(env, {fetch: f = globalThis.fetch, now = Date.now(), 
       else await runCreate(p, d, {jira, ado, kv, at});
       if (p.kind === 'pair') { await kv.put('pair:' + d.rec.jira, JSON.stringify({...d.rec, adoRev: d.adoRevAfter || d.rec.adoRev, jiraUpdated: d.ops.some(o => o.sys === 'jira') ? null : d.rec.jiraUpdated})); await putIndex(kv, d.rec.ado, d.rec.jira); }
       sum.written++;
-    } catch (e) { sum.errors.push({pair: d.action.pair, code: code(e)}); }
+    } catch (e) { if (code(e) === 'create_pending') sum.waiting++; else sum.errors.push({pair: d.action.pair, code: code(e)}); }
   }
 
   if (!dryrun && !truncated && !sum.errors.some(e => e.pair === 'scan' || e.pair === 'counterpart')) {
@@ -170,8 +190,14 @@ async function runOps(ops, {jira, ado}) {
 }
 
 // Create guard (D9): pending marker, then search the target for the link key, create only if absent.
+// A marker written less than PENDING_MS ago means another tick may be creating it now: skip until
+// next tick (appsec M2). An older marker (a tick that died) falls through to the target search.
+export const PENDING_MS = 4 * 60 * 1000;
 async function runCreate(p, d, {jira, ado, kv, at}) {
   const c = d.create;
+  const mk = c.sys === 'ado' ? 'pending:jira:' + c.source : 'pending:ado:' + c.source;
+  const prev = await kv.get(mk);
+  if (prev && Date.parse(at) - Date.parse(prev) < PENDING_MS) throw new Error('create_pending');
   if (c.sys === 'ado') {
     const key = c.source;
     await kv.put('pending:jira:' + key, at, {expirationTtl: 3600});

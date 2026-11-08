@@ -29,6 +29,7 @@ function tagsWith(tags, add = [], remove = []) {
 export function decide(rec, j, a, ctx) {
   const key = j.key, type = j.type;
   if (a.internal) return {skip: 'internal', pair: key};
+  if (a.type === 'bug' && !a.customer) return {skip: 'not_customer_visible', pair: key};
   if (!j.type || j.type !== a.type) return {error: 'type_mismatch', pair: key};
   if (!j.status) return {error: 'unknown_status', pair: key};
   if (!['New', 'Active', 'Closed'].includes(a.state)) return {error: 'unknown_status', pair: key};
