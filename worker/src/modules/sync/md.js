@@ -101,11 +101,12 @@ const decode = s => s.replace(/&(amp|lt|gt|quot|#39|nbsp);/g, e => ENT[e]);
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export const MAX_DESC = 64 * 1024;
+const stripTags = t => { let p; do { p = t; t = t.replace(/<[^>]*>/g, ''); } while (t !== p); return t.replace(/[<>]/g, ''); };
 
 export function htmlToMd(html) {
   let s = String(html || '').slice(0, MAX_DESC).split(MARKER).join('');
   const codes = [];
-  s = s.replace(/<pre[^>]*>(?:\s*<code[^>]*>)?([\s\S]*?)(?:<\/code>\s*)?<\/pre>/gi, (_, c) => { codes.push(decode(c.replace(/<[^>]+>/g, ''))); return '\n\n\u0000' + (codes.length - 1) + '\u0000\n\n'; });
+  s = s.replace(/<pre[^>]*>(?:\s*<code[^>]*>)?([\s\S]*?)(?:<\/code>\s*)?<\/pre>/gi, (_, c) => { codes.push(decode(stripTags(c))); return '\n\n\u0000' + (codes.length - 1) + '\u0000\n\n'; });
   s = s.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, t) => '\n\n' + '#'.repeat(+n) + ' ' + t + '\n\n');
   s = s.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, b) => { let k = 0; return '\n\n' + b.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (__, t) => (++k) + '. ' + t + '\n') + '\n'; });
   s = s.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, b) => '\n\n' + b.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (__, t) => '- ' + t + '\n') + '\n');
@@ -114,7 +115,7 @@ export function htmlToMd(html) {
   s = s.replace(/<a [^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_, u, t) => safeUrl(decode(u)) ? '[' + t + '](' + decode(u) + ')' : t);
   s = s.replace(/<br\s*\/?>/gi, '\n');
   s = s.replace(/<\/(p|div)>/gi, '\n\n');
-  s = s.replace(/<[^>]+>/g, '');
+  s = stripTags(s);
   s = decode(s).replace(/\u0000(\d+)\u0000/g, (_, i) => '```\n' + codes[+i] + '\n```');
   return normMd(s.split('\n').map(l => l.replace(/^\s+(?=\S)/, '')).join('\n'));
 }
