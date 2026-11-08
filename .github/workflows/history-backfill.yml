@@ -42,7 +42,7 @@ jobs:
         year: ${{ fromJson(needs.plan.outputs.years) }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install --quiet requests beautifulsoup4 lxml pdfplumber
@@ -58,7 +58,7 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install --quiet requests beautifulsoup4
@@ -78,7 +78,7 @@ jobs:
       HAS_GCP: 'true'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: actions/download-artifact@v8
