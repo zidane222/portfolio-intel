@@ -18,7 +18,7 @@ export function normJira(i) {
 }
 
 export function makeJira({base, email, token, project = 'KAN', fetch: f, count}) {
-  if (!/^https:\/\/[a-z0-9-]+\.atlassian\.net$/.test(String(base || ''))) throw new Error('jira_base_invalid');
+  if (String(base || '') !== 'https://nadia-b.atlassian.net') throw new Error('jira_base_invalid');
   if (!email || !token) throw new Error('jira_secret_missing');
   if (!/^[A-Z][A-Z0-9]+$/.test(project)) throw new Error('jira_project_invalid');
   const auth = 'Basic ' + btoa(email + ':' + token);

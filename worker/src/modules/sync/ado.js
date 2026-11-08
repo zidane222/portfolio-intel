@@ -24,7 +24,7 @@ export function normAdo(w) {
 }
 
 export function makeAdo({org, project, pat, fetch: f, count}) {
-  if (!/^https:\/\/dev\.azure\.com\/[A-Za-z0-9-]+$/.test(String(org || ''))) throw new Error('ado_org_invalid');
+  if (String(org || '') !== 'https://dev.azure.com/portfolio-intel-279') throw new Error('ado_org_invalid');
   if (!/^[A-Za-z0-9 ._-]+$/.test(String(project || ''))) throw new Error('ado_project_invalid');
   if (!pat) throw new Error('ado_secret_missing');
   const base = org + '/' + encodeURIComponent(project);
