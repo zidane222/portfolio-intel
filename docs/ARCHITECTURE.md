@@ -30,7 +30,8 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
         ▲
         │ fallback on network or 5xx errors
 Feature flags (live since 2026-11-10): pi-flags Worker (workers.dev URL behind Cloudflare Access,
-  GitHub login, owner email only; the only code that writes flags)
+  login method GitHub (owner reports GitHub only since 2026-11-10; sign-in after the switch not yet captured, see EVIDENCE.md),
+  owner email only; the only code that writes flags)
   → Workers KV FLAGS (namespace pi-flags: flags:v1, audit:r:*), bound to the gateway, pi-flags,
   pi-newsdesk and pi-sync → read by the gateway (10 s isolate cache), pi-newsdesk (cron and on demand)
   and the pi-sync cron; public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor.
@@ -120,8 +121,8 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 pi-flags admin routes (own workers.dev URL, every route 403 unless a valid Cloudflare Access JWT
 is present: RS256 signature against the team JWKS, `aud` = `ACCESS_AUD`, `iss` = team domain, `exp`,
 email from the token equal to the one `ADMIN_EMAIL`; any missing setting is 403). Live since
-2026-11-10: one Access application covers the whole pi-flags host, login method GitHub only (the
-default "accept all identity providers", which includes the one-time PIN by email, is turned off),
+2026-11-10: one Access application covers the whole pi-flags host, login method GitHub (owner reports GitHub only since 2026-11-10; sign-in after the switch not yet captured, see EVIDENCE.md;
+a new application accepts every identity provider by default, including the one-time PIN by email),
 policy Allow for the owner email only, Zero Trust Free plan (no cost):
 
 | Route | Contract |
@@ -208,11 +209,12 @@ Documented exceptions:
 | house_scrape, senate_scrape, fmp_fill | on | open | fetch_trades steps (`scripts/flags.py`) |
 | recon_v2 | off | open | fetch_trades house check (v2 not built; the current check runs) |
 | sync | on | closed | pi-sync cron: off means the tick exits |
-| sync_dryrun | on | closed | pi-sync cron: on means plan and log only, no writes to Jira, ADO or pair records. Owner turns it off on the flags page after reviewing `run:last` |
+| sync_dryrun | on | closed | pi-sync cron: on means plan and log only, no writes to Jira, ADO or pair records. Flags unreadable: the tick exits before this flag is looked at, so pi-sync writes nothing (it never falls to off). Owner turns it off on the flags page after reviewing `run:last` |
 
 Reading: 10 s isolate cache (`CACHE_MS` in `lib/flags.js`), then KV (KV itself propagates in about 60 s). KV unreadable or invalid:
 the last known value in the isolate, else off for closed flags and the default for the rest. No
-binding: defaults. Health, `/api/flags` and the monitors are never flaggable.
+binding: defaults. pi-sync is stricter: when the read state is an error its tick exits at once
+(`services/sync.js`, `skipped: flags_unreadable`) without using a last known value, so it writes nothing. Health, `/api/flags` and the monitors are never flaggable.
 
 ## Data classification
 

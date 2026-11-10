@@ -21,8 +21,8 @@ can take up to about 2.5 minutes.
 | senate_scrape | on | default | Both daily Senate steps in fetch_trades |
 | fmp_fill | on | default | FMP paper filing fill step in fetch_trades |
 | recon_v2 | off | default | Reserved for the next reconciliation check. That check is not built yet, so today the current house check runs either way |
-| sync | on | last known, else off | The Jira and ADO sync (pi-sync). Off means each 5 minute tick exits without reading or writing |
-| sync_dryrun | on | last known, else off (the sync flag then stops the tick) | Writes by pi-sync. On means it only plans and logs. Turn it off to let the sync write |
+| sync | on | pi-sync writes nothing on that tick | The Jira and ADO sync (pi-sync). Off means each 5 minute tick exits without reading or writing |
+| sync_dryrun | on | pi-sync writes nothing on that tick (it never falls to off) | Writes by pi-sync. On means it only plans and logs. Turn it off to let the sync write |
 
 Rates, private markets and insights have no flag of their own; only maintenance turns them off.
 
@@ -35,7 +35,8 @@ If the FLAGS KV namespace is not set up at all, every flag reads its default and
 ## One time setup
 
 Status: done. Setup was completed on 2026-11-10 and the flags are live. The admin page sits behind
-Cloudflare Access with GitHub as the only login method and your email as the only one allowed.
+Cloudflare Access, with your email as the only one allowed. Login method: GitHub (you reported
+GitHub only since 2026-11-10; a sign-in after the switch is not yet captured, see EVIDENCE.md).
 The page fails closed: if any Access setting is missing (team domain, AUD tag or admin email), it
 answers 403 for everyone, by design.
 
@@ -81,6 +82,8 @@ Keep the steps below for a rebuild. Follow them in this order. The order matters
 7. **Create the Access application.** Zero Trust > Access > Applications > Add an application >
    Self-hosted:
    - Domain: the pi-flags workers.dev host. Path: leave empty (covers the whole Worker).
+     Exact host only, never a wildcard such as `*.<subdomain>.workers.dev`, which would put the gateway
+     behind Access.
    - Session duration: 1 hour.
    - Login methods: GitHub only. Turn on instant auth if offered.
    - Policy: Allow, Include, Emails, your email only. No other rules.
@@ -100,7 +103,7 @@ Keep the steps below for a rebuild. Follow them in this order. The order matters
     warning from step 6 should be gone.
 11. **Test the login.** Open `https://pi-flags.<subdomain>.workers.dev/admin` in a private window. You
     should see the GitHub login only (no email PIN option), then the flags page. Another GitHub
-    account must get "Not allowed".
+    account must be refused by Cloudflare Access.
 12. **Run the go-live test** (next section).
 
 ## Go-live test
