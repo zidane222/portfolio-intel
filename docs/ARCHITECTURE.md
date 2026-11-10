@@ -29,10 +29,14 @@ Gateway Worker (portfolio-intel-api)     Supabase (auth: email code, passkeys, p
                                                                   Supabase news tables ┘ (RLS, definer functions)
         ▲
         │ fallback on network or 5xx errors
-Feature flags: pi-flags Worker (workers.dev URL behind Cloudflare Access, the only KV writer)
-  → Workers KV FLAGS (flags:v1, audit:*) → read by the gateway (10 s isolate cache), pi-newsdesk cron;
-  public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor. Audit also to Supabase
-  flag_audit (SUPABASE_FLAGS_KEY), archived to BigQuery by history_load.py
+Feature flags (live since 2026-11-10): pi-flags Worker (workers.dev URL behind Cloudflare Access,
+  login method GitHub (owner reports GitHub only since 2026-11-10; sign-in after the switch not yet captured, see EVIDENCE.md),
+  owner email only; the only code that writes flags)
+  → Workers KV FLAGS (namespace pi-flags: flags:v1, audit:r:*), bound to the gateway, pi-flags,
+  pi-newsdesk and pi-sync → read by the gateway (10 s isolate cache), pi-newsdesk (cron and on demand)
+  and the pi-sync cron; public GET /api/flags → app, Render fallback, GitHub jobs, SOC monitor.
+  Audit order on a flip: KV audit record first (no record, no flip), then flags:v1, then a Supabase
+  flag_audit row (SUPABASE_FLAGS_KEY, best effort), archived to BigQuery by history_load.py
 Work tracking sync: pi-sync Worker (Cron Trigger every 5 min, no URL, no bindings to other pi-*)
   ↔ Jira Cloud KAN and Azure DevOps portfolio-intel; state in Workers KV SYNC; reads FLAGS
 Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; news routes answer
@@ -116,17 +120,20 @@ pi-private reads only `PRIVATE_DATA_URL` (the `private_markets.json` file on Pag
 
 pi-flags admin routes (own workers.dev URL, every route 403 unless a valid Cloudflare Access JWT
 is present: RS256 signature against the team JWKS, `aud` = `ACCESS_AUD`, `iss` = team domain, `exp`,
-email from the token equal to the one `ADMIN_EMAIL`; any missing setting is 403):
+email from the token equal to the one `ADMIN_EMAIL`; any missing setting is 403). Live since
+2026-11-10: one Access application covers the whole pi-flags host, login method GitHub (owner reports GitHub only since 2026-11-10; sign-in after the switch not yet captured, see EVIDENCE.md;
+a new application accepts every identity provider by default, including the one-time PIN by email),
+policy Allow for the owner email only, Zero Trust Free plan (no cost):
 
 | Route | Contract |
 |---|---|
 | `GET /admin` (+ `/admin/app.js`, `/admin/app.css`) | Mobile page, CSP `default-src 'none'; script-src 'self'`, text set with textContent only |
 | `GET /admin/flags` | `{v, updated, flags: {name: {on, default, fail, kind, label, by, at, reason}}}` |
-| `POST /admin/flags` | `{name, on, reason (3 to 200 chars), v}` with header `X-PI-Flags: 1` and `Origin` equal to the Worker origin (else 403). 2 KB cap. 409 `{error, v}` when `v` is stale. Writes the KV audit record first (503 and no flag change if that fails), then `flags:v1` with `v + 1`, then the Supabase row (best effort). The version check is a read then a write, not atomic; fine with one admin |
+| `POST /admin/flags` | `{name, on, reason (3 to 200 chars), v}` with header `X-PI-Flags: 1` and `Origin` equal to the Worker origin (else 403). 2 KB cap. 409 `{error, v}` when `v` is stale. Writes the KV audit record first (503 and no flag change if that fails), then `flags:v1` with `v + 1`, then the Supabase row (best effort: skipped without a log line when `SUPABASE_FLAGS_KEY` is not bound, logged and ignored when the insert fails; the flip still answers 200). If the `flags:v1` write fails after the KV audit record, the answer is 500, the flag is unchanged and the KV audit holds a record for a `v` that never landed. The version check is a read then a write, not atomic; fine with one admin |
 | `GET /admin/audit?since=ISO` | `{audit: [record...]}`, newest first, at most 20, from one KV list page |
 
 Audit record: `{id (uuid), at (ISO), name, on, by (actor email from the JWT), reason, v}`. KV key
-`audit:r:{13-digit 9999999999999 minus epoch ms}:{12 hex}` with no TTL (value and metadata), so key order is newest first. Supabase `flag_audit` keeps the full history. Supabase `flag_audit` (`supabase/flags.sql`:
+`audit:r:{13-digit 9999999999999 minus epoch ms}:{12 hex}` with no TTL (value and metadata), so key order is newest first. The KV record is the one a flip depends on; `/admin/audit` lists only the newest 20. Supabase `flag_audit` is the queryable history, written after the flip and best effort, so it can miss a row that KV has. Supabase `flag_audit` (`supabase/flags.sql`, applied 2026-11-10:
 RLS on, no policies, grants revoked from anon and authenticated, insert only through SECURITY DEFINER
 `flag_audit_add`, 450 MB guard), archived to BigQuery `flag_audit` (MERGE on id, 3-day window, 9 GB
 guard), Supabase rows over 1 year purged after a good merge.
@@ -165,8 +172,17 @@ gateway returns 404 for them; only the supervisor reaches them over `AI_SVC` wit
 One registry: `worker/src/lib/flags.js` (`REGISTRY`), copied in `scripts/flags_registry.json`;
 `worker/test/flags.mjs` and `scripts/test_flags.py` fail if they differ. KV namespace `pi-flags`,
 binding `FLAGS`, key `flags:v1` = `{v, updated, flags: {name: {on, by, at, reason}}}`. The deploy
-workflow adds the binding from repository variable `CF_KV_FLAGS`; without it pi-flags is skipped and
-every flag reads its default. Owner setup: `docs/runbooks/feature-flags.md`.
+workflow (`deploy-worker.yml`) adds the binding from repository variable `CF_KV_FLAGS` to four
+Workers: the gateway, pi-flags, pi-newsdesk (when it is deployed) and pi-sync (when it is deployed).
+Only pi-flags writes; the other three bindings are writable too (KV has no read only mode) and read
+by convention. Without the variable pi-flags is skipped and every flag reads its default. Owner
+setup: `docs/runbooks/feature-flags.md`.
+
+Live state (2026-11-10, PR #144, no code change at go-live): namespace bound, pi-flags deployed
+behind Access, `supabase/flags.sql` applied, `SUPABASE_FLAGS_KEY` in the Secrets Store and linked.
+Go-live test: `recon_v2` flipped on then off, two `flag_audit` rows (v 1 and v 2), `/api/flags`
+returned the KV value. `/api/flags` answers `v: 0` and `updated: null` until the first flip, so
+`v` of 1 or more shows values come from KV.
 
 Propagation: pi-flags writes KV; other Cloudflare locations can serve the old value for up to about
 60 s (KV's documented eventual consistency). Add the gateway isolate cache (10 s) and the
@@ -193,11 +209,12 @@ Documented exceptions:
 | house_scrape, senate_scrape, fmp_fill | on | open | fetch_trades steps (`scripts/flags.py`) |
 | recon_v2 | off | open | fetch_trades house check (v2 not built; the current check runs) |
 | sync | on | closed | pi-sync cron: off means the tick exits |
-| sync_dryrun | on | closed | pi-sync cron: on means plan and log only, no writes to Jira, ADO or pair records. Owner turns it off on the flags page after reviewing `run:last` |
+| sync_dryrun | on | closed | pi-sync cron: on means plan and log only, no writes to Jira, ADO or pair records. Flags unreadable: the tick exits before this flag is looked at, so pi-sync writes nothing (it never falls to off). Owner turns it off on the flags page after reviewing `run:last` |
 
-Reading: 30 s isolate cache, then KV (KV itself propagates in about 60 s). KV unreadable or invalid:
+Reading: 10 s isolate cache (`CACHE_MS` in `lib/flags.js`), then KV (KV itself propagates in about 60 s). KV unreadable or invalid:
 the last known value in the isolate, else off for closed flags and the default for the rest. No
-binding: defaults. Health, `/api/flags` and the monitors are never flaggable.
+binding: defaults. pi-sync is stricter: when the read state is an error its tick exits at once
+(`services/sync.js`, `skipped: flags_unreadable`) without using a last known value, so it writes nothing. Health, `/api/flags` and the monitors are never flaggable.
 
 ## Data classification
 
