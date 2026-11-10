@@ -41,7 +41,7 @@ The page fails closed: if any Access setting is missing (team domain, AUD tag or
 answers 403 for everyone, by design.
 
 Keep the steps below for a rebuild. Follow them in this order. The order matters because the AUD tag
-(step 8) only exists after the Worker has been deployed once (step 6).
+(step 9) only exists after the Worker has been deployed once (step 6).
 
 1. **Create the KV namespace.** Cloudflare dashboard > Storage and databases > Workers KV > Create
    namespace, name it `pi-flags`. Copy its id (32 characters).
