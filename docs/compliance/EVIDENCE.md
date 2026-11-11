@@ -44,3 +44,78 @@ One row per change or review. This is what a SOC 2 Type II auditor samples.
 | 2026-11-08 | pi-sync build (Jira KAN and ADO two-way sync), branch feat/pi-sync: Worker, mapping, clients, flags sync and sync_dryrun (dry run on), deploy step with skip rule, owner decisions 1 to 5 recorded (C-45 added, C-11 updated) | Change | sync.mjs 23 tests; test.mjs 214 ok; flags.mjs 36; disclosures 5, rates 3, groq-fast 3; test_flags.py 9 | n/a | microservices (appsec and architect review pending) | branch feat/pi-sync, AB#230 |
 | 2026-11-08 | pi-sync review fixes: appsec base URL pinning (205785d), qa tests (196d410), then untagged paired Bug skipped, label-only pairing checked and confirmed by tag (M1), fresh pending marker skips create (M2), L3 to L5; C-45 updated | Change | sync.mjs 39; test.mjs 214 ok; flags.mjs 36; disclosures 5, rates 3, groq-fast 3; test_flags.py 9 | n/a | appsec, qa | branch feat/pi-sync, AB#230 |
 | 2026-11-10 | Kill switches go-live (KAN-79, AB#231), times UTC. No code change (code from PR #144). Owner created KV namespace pi-flags and set repository variables CF_KV_FLAGS, CF_ACCESS_TEAM, CF_ACCESS_AUD and secret FLAGS_ADMIN_EMAIL (values not readable from the session, inferred from the deploy result). pi-flags Worker first created 04:01:57Z; the deploy re-run (commit 9ef24f8, finished about 05:00Z) printed "Deployed pi-flags (behind Cloudflare Access)" with no missing-key and no missing-Access warning (the notice is printed on every deploy and the Access warning only fires on an empty AUD or admin email; the proof of valid Access settings is the two accepted flips). supabase/flags.sql applied to the live project about 04:39Z by the assistant with the owner's approval. Owner created a separate Supabase secret key named pi-flags, stored in the Cloudflare Secrets Store as SUPABASE_FLAGS_KEY (owner statement, supported by the audit rows being written). Cloudflare Zero Trust team hk7 (free plan), Access application on the pi-flags workers.dev host, policy allows the owner's email only. Login at go-live was a one-time PIN to email; the owner then added GitHub as identity provider (Cloudflare's provider test returned the owner's identity) and reports switching the application to GitHub only about 07:00Z. All flags are back at defaults. C-44 corrected to match the code and kept Partial; C-05 and CF-01 wording updated | Access | Live SQL check: public.flag_audit exists, RLS on, 0 policies, anon and authenticated have no select on the table and no execute on flag_audit_add or flag_audit_purge, service_role has insert and execute. Flip 1: recon_v2 ON at 05:02:59.105Z, reason "KAN-79 go-live test", flag_audit row b3bd1458-1729-439f-9314-00f4456cb275 (is_on true, v 1); gateway /api/flags then returned v 1, updated 2026-11-10T05:02:59.105Z, recon_v2 true, all other flags at default (read pasted about 05:05Z, so seen within about 2 minutes). Flip 2: recon_v2 OFF at 05:08:16.842Z, reason "KAN-79 go-live test, restore default", flag_audit row 07d92acd-e861-4d7d-8b13-95982547c20b (is_on false, v 2). Unauthenticated: a private window opening /admin about 05:09Z was redirected to the Cloudflare Access login for pi-flags (team hk7), the flags page was not served. NOT verified: a second GitHub account getting "Not allowed"; /api/flags showing v 2 after flip 2 (only the Supabase row shows v 2); the KV "Last 20 changes" list (no screenshot, the KV record is inferred from the code path, which writes it before the flag changes); propagation timed against the 90 second target; a GitHub-only sign-in after the provider switch (owner report, no captured result); the BigQuery archive of flag_audit (runs with the next daily fetch_trades job) | n/a | compliance, owner | https://github.com/zidane222/portfolio-intel/actions/runs/42519107277 ; code: https://github.com/zidane222/portfolio-intel/pull/144 |
+| 2026-11-11 | Live verification, roadmap 24, KAN-113, at main f3a052e. Partial: GitHub settings and the Supabase advisor were read; the gateway, pi-flags and Render requests and the owner checks are not run yet. Results per check in the section "Live verification 2026-11-11 (KAN-113)" below. C-44 stays Partial. No code change | Review | n/a | n/a | qa, compliance | KAN-113 |
+
+## Live verification 2026-11-11 (KAN-113)
+
+Times are UTC. Result is one of PASS, FAIL, NOT RUN (with the reason) or OWNER (waiting on the owner). One request per check, nothing was changed, no flag was flipped. Checks done earlier the same day (07:26Z, through the browser on the owner's computer) are listed first for completeness.
+
+Why some checks are NOT RUN: the review session runs in a cloud workspace whose network policy refuses workers.dev and onrender.com (the proxy answered 403 to the connection at 07:30:05Z and 07:30:42Z, so no request reached either service), and the owner's computer was offline, so its browser could not be used. Some GitHub API paths are also closed to the session token. These checks need one run from the owner's newer computer.
+
+### Already recorded (07:26Z)
+
+| Check | Result | Detail | Belongs to |
+|---|---|---|---|
+| App page headers, portfolio-intel-279.pages.dev | PASS with notes | HSTS, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy, COOP present. Header CSP is only frame-ancestors 'none', the full CSP is a meta tag. Access-Control-Allow-Origin: * on static files (Pages default) | Roadmap 16 |
+| Gateway GET /health | FAIL | Public, lists 9 internal service names | Roadmap 18 |
+| Gateway GET /api/plaid/status | FAIL | Public, returns the client id length, its first 4 characters and the secret length | Roadmap 18 |
+| Gateway GET /api/flags | PASS | v 2, updated 2026-11-10T05:08:16Z, all flags at defaults, sync_dryrun on. Closes the "unconfirmed v 2" note from 2026-11-10 | Roadmap 14 |
+
+### 1. Gateway and private services
+
+| Check | Result | Detail |
+|---|---|---|
+| POST /api/ask with no Origin, expect 403 | NOT RUN | workers.dev refused by the session network policy |
+| POST /api/ai with Origin https://evil.example, expect 403 | NOT RUN | same |
+| GET pi-ai.viphashkahn.workers.dev/health, expect no answer from the Worker | NOT RUN | same |
+| GET pi-newsdesk.viphashkahn.workers.dev/health, expect no answer from the Worker | NOT RUN | same |
+
+### 2. pi-flags /admin with no session
+
+| Check | Result | Detail |
+|---|---|---|
+| Only the Cloudflare Access sign-in is served, GitHub is the only method | NOT RUN | workers.dev refused by the session network policy. Last evidence is the 2026-11-10 05:09Z private window redirect, taken before the switch to GitHub only |
+
+### 3. Render fallback
+
+| Check | Result | Detail |
+|---|---|---|
+| GET /health body | NOT RUN | onrender.com refused by the session network policy |
+| GET /api/plaid/status body | NOT RUN | same |
+| GET /api/flags with X-Forwarded-For: 1.2.3.4, then read the Render request log (KAN-107) | NOT RUN | same. KAN-107 is neither confirmed live nor closed. The code still keys the limit on the first X-Forwarded-For value (backend/main.py client_ip, read at f3a052e) |
+
+### 4. GitHub settings (gh api, 07:30:55Z to 07:31:30Z)
+
+| Check | Result | Detail | Belongs to |
+|---|---|---|---|
+| Branch protection on main | FAIL | GET branches/main/protection: 404 "Branch not protected". branches/main: protected false. One ruleset, "Restrict deletions", enforcement disabled. No CODEOWNERS file | C-05 follow-up, roadmap 23 (bot commits to main must move first) |
+| Secret scanning | FAIL | security_and_analysis.secret_scanning: disabled. gitleaks still runs in security.yml | Roadmap 7 |
+| Push protection | FAIL | secret_scanning_push_protection: disabled | Roadmap 7 |
+| Open code scanning alert count | NOT RUN | GET code-scanning/alerts: 403 "Resource not accessible by integration" (session token has no security events scope). Known: default setup is not-configured, CodeQL runs from security.yml. Owner to read the count on the Security tab | Roadmap 7 |
+| Dependabot | FAIL | Dependabot alerts disabled for the repository, dependabot_security_updates disabled. pip-audit in security.yml is the only dependency check | Roadmap 7, with roadmap 19 |
+| Private vulnerability reporting | FAIL (low) | enabled false | Roadmap 23 |
+| Pages status | FAIL | Repository is public, has_pages true, last github-pages deployment 2026-11-10T18:46:11Z at f3a052e, so the github.io copy is still served. GET pages (HTTPS setting, source) is closed to the session | Roadmap 7, KAN-110 |
+| Who can dispatch workflows | NOT RUN | The collaborators and Actions permissions paths are closed to the session. Known: personal repository (anyone with write access can dispatch), all 12 workflows have workflow_dispatch, none uses pull_request_target. Owner to confirm that Settings, Collaborators lists the owner only | KAN-109, roadmap 19 |
+
+### 5. Owner checks
+
+| Check | Result | Detail | Belongs to |
+|---|---|---|---|
+| GitHub sign-in to /admin after the switch to GitHub only | OWNER | not yet captured | C-44 |
+| Second GitHub account refused by Access | OWNER | not yet captured | C-44 |
+| 2FA on the GitHub account and the Cloudflare account | OWNER | not yet captured | C-15, C-44 |
+| Screenshot of "Last 20 changes" | OWNER | not yet captured | C-44 |
+| Timed flip of recon_v2 against the 90 second target | OWNER | not yet captured | C-44 |
+| Supabase sign-ups open or closed | OWNER | not readable from SQL or the advisor | Roadmap 20 |
+| Supabase leaked password protection | FAIL | Security advisor read 07:31:35Z: "Leaked Password Protection Disabled" (WARN). Owner toggle | Roadmap 3a |
+| Supabase email code expiry | OWNER | The advisor raised no long OTP expiry warning, which points to one hour or less. Exact value to be read in the dashboard | Roadmap 20 |
+| MFA on the owner's Supabase account | OWNER | not yet captured | C-15 |
+
+Same advisor read, already tracked: rls_auto_enable() executable by anon and authenticated, ping() executable by anon (roadmap 3a); 4 tables with RLS on and no policies (flag_audit, news_budget, news_jobs, news_verdicts), which is the intended deny-all.
+
+### Outcome
+
+- C-44 stays Partial. None of its 5 owner checks is captured yet, and the first BigQuery flag_audit archive is still unconfirmed.
+- C-05 follow-up (branch protection) is confirmed open. C-15 stays Partial.
+- KAN-107 is still open, not verified live.
+- Failed checks: /health and /api/plaid/status public (roadmap 18); no branch protection (C-05, roadmap 23); secret scanning, push protection and Dependabot off (roadmap 7); Pages still live (roadmap 7, KAN-110); private vulnerability reporting off (roadmap 23); leaked password protection off (roadmap 3a).
