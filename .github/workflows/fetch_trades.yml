@@ -14,14 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HAS_GCP: 'true'
-    timeout-minutes: 45
+    timeout-minutes: 40
     steps:
       - name: Checkout repo
+        timeout-minutes: 3
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Keep Supabase awake (free projects pause after a week idle)
+        timeout-minutes: 2
         continue-on-error: true
         env:
           SB_URL: ${{ secrets.SP || secrets.SUPABASE_URL }}
@@ -33,6 +35,7 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}')
           echo "::notice::Supabase keep-awake ping: HTTP $code"
       - name: Install dependencies
+        timeout-minutes: 10
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr poppler-utils
           pip install requests beautifulsoup4 lxml pdfplumber pyyaml
@@ -40,19 +43,23 @@ jobs:
           cp trades.json /tmp/old_trades.json 2>/dev/null || echo '{"trades":[]}' > /tmp/old_trades.json
 
       - name: Read feature flags
+        timeout-minutes: 2
         id: flags
         run: |
           # GET /api/flags on the gateway (scripts/flags.py). Unreachable: registry defaults plus a warning.
           python3 scripts/flags.py --github-output house_scrape senate_scrape fmp_fill recon_v2
 
       - name: Parser unit tests (offline)
+        timeout-minutes: 5
         run: python3 -m unittest scripts/test_house_ptr.py scripts/test_senate_fmp.py scripts/test_smart_money.py scripts/test_flags.py
 
       - name: Scrape House PTR filings
+        timeout-minutes: 15
         if: steps.flags.outputs.house_scrape == 'true'
         run: python3 scripts/house_ptr.py --year "$(date +%Y)" --out trades.json
 
       - name: Senate trades (official Senate site, tried first)
+        timeout-minutes: 16
         if: steps.flags.outputs.senate_scrape == 'true'
         continue-on-error: true
         run: |
@@ -65,6 +72,7 @@ jobs:
           fi
 
       - name: Senate trades (FMP, merged with the official site)
+        timeout-minutes: 5
         if: steps.flags.outputs.senate_scrape == 'true'
         continue-on-error: true
         env:
@@ -107,6 +115,7 @@ jobs:
           PYEOF
 
       - name: House trades from scanned paper filings (FMP)
+        timeout-minutes: 5
         if: steps.flags.outputs.fmp_fill == 'true'
         continue-on-error: true
         env:
@@ -118,6 +127,7 @@ jobs:
           python3 scripts/senate_fmp.py --house-paper-fill trades.json --saved house_paper_last.json
 
       - name: FMP accuracy cross-check against the official House scrape
+        timeout-minutes: 5
         continue-on-error: true
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -134,100 +144,8 @@ jobs:
           json.dump(d, open('trades.json', 'w'))
           PYEOF
 
-      - name: Google Cloud sign-in (for the BigQuery archive)
-        if: env.HAS_GCP == 'true'
-        continue-on-error: true
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
-          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
-
-      - name: Save to history (Supabase 5 years, BigQuery archive)
-        continue-on-error: true
-        env:
-          SUPABASE_URL: ${{ secrets.SP }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
-          BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
-        run: |
-          pip install --quiet google-cloud-bigquery
-          python3 scripts/history_load.py --trades trades.json --prices recent
-
-      - name: Fetch Trump OGE filings list
-        continue-on-error: true
-        run: |
-          python3 << 'PYEOF'
-          # Trump files with the Office of Government Ethics. His reports are scanned PDFs,
-          # so we list the filings (date, type, link, pages) rather than parse the trades.
-          import requests, json, re, io, datetime, html
-          import pdfplumber
-          API = 'https://extapps2.oge.gov/201/Presiden.nsf/API.xsp/v3/rest'
-          H = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36', 'Accept': 'application/json'}
-
-          def page(start, length, search=''):
-              params = {'draw': 1, 'start': start, 'length': length, 'search[value]': search}
-              r = requests.get(API, params=params, headers=H, timeout=60)
-              r.raise_for_status()
-              return r.json()
-
-          def is_trump(row):
-              return re.search(r'trump,\s*donald', row.get('name', ''), re.I)
-
-          rows = []
-          try:
-              d = page(0, 500, 'Trump')
-              rows = [x for x in d.get('data', []) if is_trump(x)]
-          except Exception as e:
-              print('Search request failed:', e)
-          if not rows:
-              # Server-side search not supported: walk every page and filter locally
-              start, total = 0, None
-              while total is None or start < total:
-                  d = page(start, 100)
-                  data = d.get('data', [])
-                  total = d.get('recordsTotal', 0) if total is None else total
-                  if not data:
-                      break
-                  rows += [x for x in data if is_trump(x)]
-                  start += len(data)
-                  if start > 20000:
-                      break
-          print(f'Trump rows: {len(rows)}')
-
-          filings = []
-          for x in rows:
-              raw = x.get('type', '')
-              link = re.search(r"href=['\"]([^'\"]+\.pdf[^'\"]*)['\"]", raw, re.I) or re.search(r"href=['\"]([^'\"]+\$FILE[^'\"]*)['\"]", raw, re.I)
-              url = html.unescape(link.group(1)) if link else ''
-              if url.startswith('/'):
-                  url = 'https://extapps2.oge.gov' + url
-              label = re.sub(r'<[^>]+>', '', raw).replace('()', '').strip()
-              filings.append({
-                  'date': (x.get('docDate') or '')[:10],
-                  'type': label,
-                  'url': url.replace(' ', '%20'),
-                  'amended': bool(x.get('amended')),
-                  'title': x.get('title', ''),
-                  'pages': None,
-              })
-          filings.sort(key=lambda f: f['date'], reverse=True)
-          # Page counts for the newest reports
-          for f in filings[:15]:
-              if not f['url']:
-                  continue
-              try:
-                  r = requests.get(f['url'], headers=H, timeout=60)
-                  if r.ok and r.content[:4] == b'%PDF':
-                      with pdfplumber.open(io.BytesIO(r.content)) as pdf:
-                          f['pages'] = len(pdf.pages)
-              except Exception as e:
-                  print('Page count failed', f['url'], e)
-          out = {'updated': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'filings': filings[:40]}
-          json.dump(out, open('trump_filings.json', 'w'), indent=1)
-          for f in filings[:8]:
-              print(f['date'], f['type'], f['pages'], f['url'][-60:])
-          PYEOF
-
       - name: Add sectors and committee overlaps
+        timeout-minutes: 8
         continue-on-error: true
         run: |
           python3 << 'PYEOF'
@@ -332,15 +250,8 @@ jobs:
           print(f'Committee overlaps flagged: {matched}')
           PYEOF
 
-      - name: Famous investors and insider buys (SEC)
-        continue-on-error: true
-        run: python3 scripts/smart_money.py
-
-      - name: Treasury yields
-        continue-on-error: true
-        run: python3 scripts/yields.py
-
       - name: Send alerts for new filings
+        timeout-minutes: 3
         continue-on-error: true
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || vars.NTFY_TOPIC }}
@@ -398,11 +309,13 @@ jobs:
           PYEOF
 
       - name: Commit trades.json
+        timeout-minutes: 5
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          # Only the key feature's files. Smart money, yields and OGE files are committed by smart_money.yml
           git add trades.json
-          git add house_paper_last.json trump_filings.json sectors.json smart_money.json insiders.json yields.json senate_last.json data_cache 2>/dev/null || true
+          git add house_paper_last.json senate_last.json sectors.json 2>/dev/null || true
           git diff --staged --quiet || git commit -m "Auto-update trades $(date -u '+%Y-%m-%d')"
           # main can move while the scrape runs (merged PRs, other auto-updates); rebase and retry
           for i in 1 2 3; do
@@ -410,3 +323,24 @@ jobs:
             echo "::warning::Push attempt $i failed, retrying"; sleep $((i * 10))
           done
           echo "::error::Could not push trades.json after 3 attempts"; exit 1
+
+      - name: Google Cloud sign-in (for the BigQuery archive)
+        timeout-minutes: 3
+        if: env.HAS_GCP == 'true'
+        continue-on-error: true
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/836427336290/locations/global/workloadIdentityPools/github/providers/repo
+          service_account: portfolio-intel-bq@portfolio-intel-512216.iam.gserviceaccount.com
+
+      - name: Save to history (Supabase 5 years, BigQuery archive)
+        timeout-minutes: 10
+        # After the commit, so a slow or failing archive can never block saving trades.json
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SP }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
+          BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
+        run: |
+          pip install --quiet google-cloud-bigquery
+          python3 scripts/history_load.py --trades trades.json --prices recent

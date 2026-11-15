@@ -1,6 +1,6 @@
 """Offline tests for the Form 4 insider parser in scripts/smart_money.py.
 Run: python3 -m unittest scripts/test_smart_money.py"""
-import os, sys, unittest
+import datetime, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import smart_money as sm  # noqa: E402
 
@@ -62,6 +62,59 @@ class Form4(unittest.TestCase):
         self.assertFalse(sm.implausible(5000, 5.0))
         self.assertFalse(sm.implausible(50000, 50.0))  # a real $2.5M buy that equals shares/1000 is kept
         self.assertTrue(sm.implausible(float('nan'), 5)); self.assertTrue(sm.implausible(5, float('inf'))); self.assertTrue(sm.implausible('x', 5))
+
+
+class InsiderBudget(unittest.TestCase):
+    """insiders() stops at its time budget, keeps the partial "seen" list and counts what is waiting."""
+
+    def setUp(self):
+        import tempfile
+        self.cwd = os.getcwd()
+        self.tmp = tempfile.mkdtemp()
+        os.chdir(self.tmp)
+        self.fetched = []
+        self.t = [0.0]
+
+        class Resp:
+            def __init__(self, text):
+                self.text = text
+
+        def fake_get(url, **kw):
+            if 'daily-index' in url:
+                # Only the newest day has an index; 10 Form 4 filings on it
+                if url.endswith((datetime.date.today() - datetime.timedelta(days=1)).strftime('form.%Y%m%d.idx')):
+                    return Resp('\n'.join(f'4          Co {i}   123   2026-11-14   edgar/data/1/f{i}.txt' for i in range(10)))
+                raise RuntimeError('no index')
+            self.fetched.append(url)
+            self.t[0] += 60  # each filing "takes" one minute of the fake clock
+            return Resp(form4([('2026-11-13', 'P', 10000, 5)]))
+
+        self.orig = sm.sec_get
+        sm.sec_get = fake_get
+
+    def tearDown(self):
+        sm.sec_get = self.orig
+        os.chdir(self.cwd)
+
+    def test_stops_at_budget_and_returns_partial_seen(self):
+        out = sm.insiders(budget_s=3 * 60, clock=lambda: self.t[0])
+        self.assertEqual(len(self.fetched), 3)
+        self.assertEqual((out['read'], out['waiting']), (3, 7))
+        self.assertEqual(sorted(out['seen']), [f'edgar/data/1/f{i}.txt' for i in range(3)])
+        self.assertEqual(len(out['buys']), 1)  # same owner, date and value: deduplicated
+
+    def test_next_run_resumes_from_saved_seen(self):
+        import json
+        first = sm.insiders(budget_s=3 * 60, clock=lambda: self.t[0])
+        with open('insiders.json', 'w') as f:
+            json.dump(first, f)
+        self.fetched.clear()
+        second = sm.insiders(budget_s=60 * 60, clock=lambda: self.t[0])
+        self.assertEqual(len(self.fetched), 7)
+        self.assertEqual((second['read'], second['waiting']), (7, 0))
+
+    def test_budget_default_reads_env(self):
+        self.assertEqual(sm.INSIDER_BUDGET_MIN, float(os.environ.get('SMART_MONEY_INSIDER_BUDGET_MIN') or 8))
 
 
 if __name__ == '__main__':

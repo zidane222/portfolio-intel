@@ -417,6 +417,8 @@ class ReconciliationNeverStopsRun(unittest.TestCase):
              patch("meta_supervisor.check_reconciliation", side_effect=AttributeError("x")), \
              patch("meta_supervisor.check_ask_health", return_value=[]), \
              patch("meta_supervisor.check_peer", return_value=[]), \
+             patch("meta_supervisor.check_data_workflows", return_value=[]), \
+             patch("meta_supervisor.check_insider_backlog", return_value=[]), \
              patch("meta_supervisor.sync_issue") as sync, \
              patch.dict(os.environ, {"GITHUB_TOKEN": "t", "GITHUB_REPOSITORY": "o/r"}, clear=True), \
              patch("sys.stdout", new=__import__("io").StringIO()):
@@ -499,6 +501,42 @@ class PeerHeartbeat(unittest.TestCase):
         with patch("meta_supervisor._gh", return_value=resp([], 403)):
             self.assertEqual(m.check_peer("t", "o/r", NOW)[0][0], m.WARN)
         self.assertEqual(m.check_peer("", "", NOW)[0][0], m.WARN)
+
+
+class DataWorkflows(unittest.TestCase):
+    """KAN-116: Fetch Congress Trades and Smart money and yields each get their own status."""
+    run_ = PeerHeartbeat.run_
+
+    def test_each_workflow_has_its_own_status(self):
+        runs = {"fetch_trades.yml": [self.run_(3)], "smart_money.yml": [self.run_(1, "failure")]}
+        def fake(token, method, path, **kw):
+            wf = path.split("/workflows/")[1].split("/")[0]
+            return MagicMock(status_code=200, json=lambda: {"workflow_runs": runs[wf]})
+        with patch("meta_supervisor._gh", side_effect=fake):
+            f = m.check_data_workflows("t", "o/r", NOW)
+        self.assertEqual(f, [(m.OK, "Fetch Congress Trades ran in the last 26 h"),
+                             (m.ALERT, "Smart money and yields failed on its last run in the last 26 h")])
+
+    def test_unreadable_and_missing(self):
+        with patch("meta_supervisor._gh", return_value=MagicMock(status_code=403, json=lambda: {})):
+            self.assertEqual([s for s, _ in m.check_data_workflows("t", "o/r", NOW)], [m.WARN, m.WARN])
+        with patch("meta_supervisor._gh", return_value=MagicMock(status_code=200, json=lambda: {"workflow_runs": []})):
+            self.assertEqual([s for s, _ in m.check_data_workflows("t", "o/r", NOW)], [m.ALERT, m.ALERT])
+        self.assertEqual(m.check_data_workflows("", "", NOW)[0][0], m.WARN)
+
+    def test_insider_backlog(self):
+        import tempfile
+        def run(d):
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+                json.dump(d, tf)
+            try:
+                return m.check_insider_backlog(tf.name)[0]
+            finally:
+                os.unlink(tf.name)
+        self.assertEqual(run({"read": 900, "waiting": 300}), (m.OK, "insider buys: 900 Form 4 filings read last run, 300 still waiting"))
+        self.assertEqual(run({"read": 900, "waiting": 5000})[0], m.WARN)
+        self.assertEqual(run({"buys": []})[0], m.OK)
+        self.assertEqual(m.check_insider_backlog("/nonexistent.json")[0][0], m.WARN)
 
 
 class OverallSeverity(unittest.TestCase):
