@@ -54,7 +54,10 @@ GitHub Actions
     data_cache/ (cusip_map.json, 13f/) with the same retry loop. The Form 4 loop has a time budget
     (SMART_MONEY_INSIDER_BUDGET_MIN, default 8): when it runs out the run saves "seen" and records
     `read` and `waiting` in insiders.json, so a backlog clears over several runs. insiders.json is written
-    before the 13F fetch. SEC rate stays under 10 requests a second. Split out of fetch_trades in KAN-116
+    before the 13F fetch. A filing whose fetch or parse fails is not marked seen: it goes into insiders.json
+    `failed` with a try count, is retried after new filings on later runs, and is given up (marked seen,
+    logged) after 3 tries (KAN-117). `retrying` and `gave_up` counts sit next to `read` and `waiting`;
+    `/api/insiders` still returns only buys and updated. SEC rate stays under 10 requests a second. Split out of fetch_trades in KAN-116
     after three runs (2026-11-13 to 11-15) were cancelled at 45 minutes in the SEC step.
   deploy-worker (push): services (including private) then gateway, Secrets Store bindings
   insights (weekly Sun 07:30 UTC + manual; push on scripts/analytics/** is a dry run): BigQuery via WIF,
@@ -88,7 +91,7 @@ Meta supervisor (meta-supervisor.yml, 14:10 UTC daily + manual): scripts/meta_su
   WARN for an intent with 3+ cases and 2/3 falling back; top rule IDs listed. F heartbeat: the SOC monitor
   ran in the last 26 h (ALERT if not); the SOC monitor checks the meta supervisor the same way.
   G data workflows: fetch_trades.yml and smart_money.yml each get their own line (ALERT if the last run in
-  26 h failed or there was none). Insider backlog: insiders.json `waiting` reported, WARN at 2000 or more.
+  26 h failed or there was none). Insider backlog: insiders.json `waiting`, `retrying` and `gave_up` reported, WARN at 2000 or more waiting.
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
 
 Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before

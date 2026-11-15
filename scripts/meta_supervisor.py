@@ -457,7 +457,10 @@ def check_insider_backlog(path="insiders.json"):
     if not isinstance(waiting, int):
         return [(OK, "insider buys: no backlog count yet (written from the first smart money run after KAN-116)")]
     sev = WARN if waiting >= INSIDER_WAITING_WARN else OK
-    return [(sev, f"insider buys: {d.get('read', '?')} Form 4 filings read last run, {waiting} still waiting")]
+    text = f"insider buys: {d.get('read', '?')} Form 4 filings read last run, {waiting} still waiting"
+    if isinstance(d.get("retrying"), int):  # KAN-117: failed filings retried, given up after 3 tries
+        text += f", {d['retrying']} retrying, {d.get('gave_up', 0)} given up"
+    return [(sev, text)]
 
 
 # ---------------------------------------------------------------- report

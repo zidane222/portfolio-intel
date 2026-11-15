@@ -90,6 +90,7 @@ class InsiderBudget(unittest.TestCase):
             return Resp(form4([('2026-11-13', 'P', 10000, 5)]))
 
         self.orig = sm.sec_get
+        self.orig_fake = fake_get
         sm.sec_get = fake_get
 
     def tearDown(self):
@@ -112,6 +113,54 @@ class InsiderBudget(unittest.TestCase):
         second = sm.insiders(budget_s=60 * 60, clock=lambda: self.t[0])
         self.assertEqual(len(self.fetched), 7)
         self.assertEqual((second['read'], second['waiting']), (7, 0))
+
+    def _save(self, out):
+        import json
+        with open('insiders.json', 'w') as f:
+            json.dump(out, f)
+
+    def _failing(self, bad):
+        """Make the given filing numbers fail with an HTTP-style error."""
+        good = sm.sec_get
+        def get(url, **kw):
+            if any(url.endswith(f'/f{i}.txt') for i in bad):
+                self.fetched.append(url)
+                raise RuntimeError('503 Server Error')
+            return good(url, **kw)
+        sm.sec_get = get
+
+    def test_failed_filing_is_not_seen_and_is_retried_next_run(self):
+        self._failing({2})
+        out = sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+        self.assertNotIn('edgar/data/1/f2.txt', out['seen'])
+        self.assertEqual(out['failed']['edgar/data/1/f2.txt']['tries'], 1)
+        self.assertEqual((out['read'], out['waiting'], out['retrying'], out['gave_up']), (10, 0, 1, 0))
+        self._save(out)
+        sm.sec_get = self.orig_fake
+        self.fetched.clear()
+        second = sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+        self.assertEqual(self.fetched, ['https://www.sec.gov/Archives/edgar/data/1/f2.txt'])
+        self.assertIn('edgar/data/1/f2.txt', second['seen'])
+        self.assertEqual((second['retrying'], second['gave_up']), (0, 0))
+
+    def test_given_up_after_max_tries(self):
+        self._failing({4})
+        for n in range(1, sm.INSIDER_MAX_TRIES + 1):
+            out = sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+            self._save(out)
+        self.assertIn('edgar/data/1/f4.txt', out['seen'])
+        self.assertNotIn('edgar/data/1/f4.txt', out['failed'])
+        self.assertEqual((out['retrying'], out['gave_up']), (0, 1))
+        self.fetched.clear()
+        self.assertEqual(sm.insiders(budget_s=3600, clock=lambda: self.t[0])['read'], 0)
+        self.assertEqual(self.fetched, [])
+
+    def test_retries_go_after_new_filings(self):
+        self._save({'buys': [], 'seen': {}, 'failed': {'edgar/data/1/old.txt': {
+            'day': (datetime.date.today() - datetime.timedelta(days=2)).isoformat(), 'tries': 1}}})
+        sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+        self.assertEqual(self.fetched[-1], 'https://www.sec.gov/Archives/edgar/data/1/old.txt')
+        self.assertEqual(len(self.fetched), 11)
 
     def test_budget_default_reads_env(self):
         self.assertEqual(sm.INSIDER_BUDGET_MIN, float(os.environ.get('SMART_MONEY_INSIDER_BUDGET_MIN') or 8))
