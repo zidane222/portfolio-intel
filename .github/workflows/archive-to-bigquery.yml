@@ -23,11 +23,18 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Check run id
+        env:
+          RUN_ID: ${{ github.event.inputs.run_id }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]{1,20}$ ]] || { echo "::error::run_id must be digits only"; exit 1; }
       - uses: actions/download-artifact@v8
+        env:
+          RUN_ID: ${{ github.event.inputs.run_id }}
         with:
           pattern: trades-*
           merge-multiple: true
-          run-id: ${{ github.event.inputs.run_id }}
+          run-id: ${{ env.RUN_ID }}
           github-token: ${{ github.token }}
       - uses: google-github-actions/auth@v3
         with:

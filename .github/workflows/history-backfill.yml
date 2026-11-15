@@ -29,7 +29,12 @@ jobs:
       years: ${{ steps.y.outputs.years }}
     steps:
       - id: y
-        run: echo "years=$(echo '${{ github.event.inputs.years }}' | tr -s ' ' '\n' | grep -E '^20[0-9]{2}$' | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+        env:
+          YEARS: ${{ github.event.inputs.years }}
+        run: |
+          re='^ *20[0-9]{2}( +20[0-9]{2})* *$'
+          [[ "$YEARS" =~ $re ]] || { echo "::error::years must be space separated 4 digit years starting with 20"; exit 1; }
+          echo "years=$(echo "$YEARS" | tr -s ' ' '\n' | grep -E '^20[0-9]{2}$' | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
 
   scrape:
     needs: plan
@@ -62,7 +67,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install --quiet requests beautifulsoup4
-      - run: python3 scripts/senate_ptr.py --since "$(echo '${{ github.event.inputs.years }}' | tr -s ' ' '\n' | grep -E '^20[0-9]{2}$' | sort | head -1)-01-01" --out trades_senate.json
+      - env:
+          YEARS: ${{ github.event.inputs.years }}
+        run: |
+          re='^ *20[0-9]{2}( +20[0-9]{2})* *$'
+          [[ "$YEARS" =~ $re ]] || { echo "::error::years must be space separated 4 digit years starting with 20"; exit 1; }
+          python3 scripts/senate_ptr.py --since "$(echo "$YEARS" | tr -s ' ' '\n' | grep -E '^20[0-9]{2}$' | sort | head -1)-01-01" --out trades_senate.json
       - uses: actions/upload-artifact@v4
         with:
           name: trades-senate
@@ -96,7 +106,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SP }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SR }}
           BQ_PROJECT: ${{ secrets.BQP || 'portfolio-intel-512216' }}
+          PRICES: ${{ github.event.inputs.prices || '5y' }}
+          REPLACE_SENATE: ${{ github.event.inputs.replace_senate }}
         run: |
+          [[ "$PRICES" =~ ^(5y|max)$ ]] || { echo "::error::prices must be 5y or max"; exit 1; }
+          args=()
+          if [ "$REPLACE_SENATE" = "true" ]; then args+=(--replace-chamber senate); fi
           pip install --quiet requests google-cloud-bigquery
           ls trades_*.json
-          python3 scripts/history_load.py --trades trades_*.json --prices ${{ github.event.inputs.prices || '5y' }} ${{ github.event.inputs.replace_senate == 'true' && '--replace-chamber senate' || '' }}
+          python3 scripts/history_load.py --trades trades_*.json --prices "$PRICES" "${args[@]}"
