@@ -90,12 +90,36 @@ function syncPayloadPlain() {
 // sync_writes flag (30-init.js loadFlags): when off, uploads pause. The data stays encrypted in the
 // device vault and the upload is retried when the flag is back on. Nothing is ever sent in plain text.
 let syncHeld = false;
+// KAN-120: the account this device last synced with is kept in the lock settings (syncFor). If the
+// signed-in account is a different one with no synced data (a mistyped email, or a sign-up link
+// opened while sync was on), nothing uploads until the user picks "Use this account" or signs out.
+let syncNewOk = false;
+function syncSetFor(email) {
+  const c = lockConf(); if (!c || !email || c.syncFor === email) return;
+  localStorage.setItem(LOCK_KEY, JSON.stringify({...c, syncFor: email}));
+}
+function syncOtherAccount() {
+  const s = sbSession(), c = lockConf();
+  return !!(s && s.email && c && c.sync && c.syncFor !== s.email && remoteChecked && !remoteCache && !syncNewOk);
+}
 async function syncPush() {
   const c = lockConf();
   if (!sbOn() || !sbSession() || !VAULT.key || !c || !c.encSalt || !c.sync) return;
   if (typeof flagsReady !== 'undefined') { try { await flagsReady; } catch (e) {} }
   if (typeof flagOn === 'function' && !flagOn('sync_writes')) { syncHeld = true; syncUI('Sync uploads are paused. Your changes are saved on this device and will upload later.'); return; }
   syncHeld = false;
+  // A session from an email link has no email yet; the account check below needs it
+  if (!sbSession().email) {
+    try { const u = await sbFetch('/auth/v1/user'); sbSave({...sbSession(), email: u && u.email}); }
+    catch (e) { return syncUI('Couldn\'t reach sync: ' + e.message); }
+    if (!sbSession().email) return syncUI();
+  }
+  if (c.syncFor !== sbSession().email && !syncNewOk) {
+    if (!remoteChecked) { try { await syncPull(); } catch (e) { return syncUI('Couldn\'t reach sync: ' + e.message); } }
+    if (syncOtherAccount()) return syncUI();
+  }
+  // Synced data under another passcode is waiting to be unlocked: never overwrite it from here
+  if (remoteChecked && remoteCache && remoteCache.enc_salt !== c.encSalt) return syncUI();
   if (syncBusy) { syncSoon(); return; }
   syncBusy = true;
   try {
@@ -103,6 +127,7 @@ async function syncPush() {
     await sbFetch('/rest/v1/synced_data?on_conflict=user_id', {method: 'POST', headers: {Prefer: 'resolution=merge-duplicates,return=minimal'},
       body: JSON.stringify({enc_salt: c.encSalt, payload: await vaultEncrypt(syncPayloadPlain()), updated_at: at})});
     try { localStorage.setItem(SB_SYNCED, at); } catch (e) {}
+    syncSetFor(sbSession().email);
     syncUI();
   } catch (e) { syncUI('Sync failed: ' + e.message); }
   finally { syncBusy = false; }
@@ -122,6 +147,7 @@ async function syncApply(remote, key) {
   for (const k of VAULT_KEYS) { const v = o.data && o.data[k]; v == null ? (delete VAULT.cache[k], localStorage.removeItem(k)) : vset(k, v); }
   if (Array.isArray(o.watch)) { watchlist = o.watch; saveWatch(); }
   try { localStorage.setItem(SB_SYNCED, remote.updated_at); } catch (e) {}
+  const s = sbSession(); if (s && s.email) syncSetFor(s.email);
 }
 
 // On start: bring this device up to date, or upload if it is newer
@@ -132,6 +158,9 @@ async function syncOnStart() {
   const c = lockConf(), local = (() => { try { return localStorage.getItem(SB_SYNCED); } catch (e) { return null; } })();
   if (!remote) return syncUI();
   if (VAULT.key && c && c.encSalt === remote.enc_salt) {
+    // Same key as the synced copy, so this is the account this device syncs with (fills in syncFor
+    // on devices set up before KAN-120)
+    syncSetFor(sbSession().email);
     if (!local || remote.updated_at > local) {
       try { await syncApply(remote, VAULT.key); location.reload(); } catch (e) { syncUI('Couldn\'t read synced data.'); }
     } else syncUI();
@@ -146,16 +175,22 @@ function syncUI(msg) {
   card.hidden = !sbOn();
   if (!sbOn()) return;
   const s = sbSession(), c = lockConf();
-  const show = id => ['sync-out', 'sync-code', 'sync-pw', 'sync-create', 'sync-pass', 'sync-in'].forEach(x => $(x).hidden = x !== id);
+  const show = id => ['sync-out', 'sync-code', 'sync-pw', 'sync-create', 'sync-pass', 'sync-in', 'sync-other'].forEach(x => $(x).hidden = x !== id);
   $('sync-setpass').hidden = true;
   let text;
   if (!s && pwMode) { show('sync-pw'); text = 'Sign in with your email and passcode. Your passcode stays on this device. It also unlocks your synced data here.'; }
-  else if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser.`; }
+  else if (!s && pendingEmail) { show('sync-code'); text = `We emailed ${pendingEmail}. Enter the 6-digit code from the email here, or open the link in this same browser. If the email asks you to confirm your address and has no code, ${pendingEmail} has no sync account yet. Check it is the email you used before, then tap Back.`; }
+  else if (syncOtherAccount()) {
+    show('sync-other');
+    text = c.syncFor
+      ? `You're signed in as ${s.email}, which has no synced portfolio yet. This device last synced with ${c.syncFor}. To keep using that account, tap Sign out and sign in with it. To sync this device to ${s.email} instead, tap Use this account.`
+      : `You're signed in as ${s.email}, which has no synced portfolio yet, but sync was already on here. If you used a different email before, tap Sign out and sign in with it. To sync this device to ${s.email}, tap Use this account.`;
+  }
   else if (!s) { show('sync-out'); text = 'Already use Portfolio Intel on another device? Sign in with the same email and you\'ll unlock your data with your existing passcode. No need to set a new one. Your data is encrypted with your passcode before it leaves the device.'; }
   else if (!remoteChecked) { show(null); text = 'Checking for your synced data…'; }
   else if (remoteCache && !(VAULT.key && c && c.encSalt === remoteCache.enc_salt)) { show('sync-pass'); $('sync-pass-btn').textContent = 'Unlock synced data'; text = 'Your synced data is here. Enter the passcode you use on your other device to load it here.'; }
   else if (!c || !c.encSalt) { show('sync-create'); text = 'You\'re signed in. Last step: create a passcode. It encrypts your portfolio on this device before it syncs, so only you can read it.'; }
-  else if (!c || !c.sync) { show('sync-pass'); $('sync-setpass').hidden = false; $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in. Enter your passcode to turn on sync. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. No passcode yet? Tap Set passcode.`; }
+  else if (!c || !c.sync) { show('sync-pass'); $('sync-setpass').hidden = false; $('sync-pass-btn').textContent = 'Turn on sync'; text = `Signed in${s.email ? ' as ' + s.email : ''}. Enter your passcode to turn on sync for this account. Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. No passcode yet? Tap Set passcode.`; }
   else {
     show('sync-in');
     const at = (() => { try { return localStorage.getItem(SB_SYNCED); } catch (e) { return null; } })();
@@ -185,7 +220,8 @@ async function syncWithPasscode(pass) {
   if (!c || !c.encSalt) return syncUI(`Set a passcode first (at least ${SYNC_MIN_PASS} characters). Tap Set passcode.`);
   if (!c.hash || await hashPass(pass, unb64(c.salt), c.iter) !== c.hash) return syncUI('Wrong passcode.');
   if (pass.length < SYNC_MIN_PASS) return syncUI(`Sync needs a passcode of at least ${SYNC_MIN_PASS} characters. Tap Set passcode to change it, then try again.`);
-  localStorage.setItem(LOCK_KEY, JSON.stringify({...c, sync: true}));
+  localStorage.setItem(LOCK_KEY, JSON.stringify({...c, sync: true, ...(sbSession() && sbSession().email ? {syncFor: sbSession().email} : {})}));
+  syncNewOk = true; // the user chose to turn on sync for the account shown as signed in
   await syncPush();
   if (!pwLinked()) await pwLink(pass);
 }
@@ -246,10 +282,12 @@ function wireAccount() {
     if (!$('sync-new-ack').checked) return syncUI('Tick the box to confirm you understand the passcode can\'t be reset.');
     try {
       const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 210000, encSalt = await vaultSeal(a);
-      localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter), encSalt, sync: true}));
+      const em = sbSession() && sbSession().email;
+      localStorage.setItem(LOCK_KEY, JSON.stringify({salt: b64(salt), iter, hash: await hashPass(a, salt, iter), encSalt, sync: true, ...(em ? {syncFor: em} : {})}));
       sessionStorage.setItem('pi.unlocked', String(Date.now()));
       $('sync-new-1').value = $('sync-new-2').value = ''; $('sync-new-meter').textContent = '';
       $('lock-set').textContent = 'Change passcode';
+      syncNewOk = true; // set-up for the signed-in account was chosen on purpose
       await syncPush();
       await pwLink(a);
       if (!syncHeld) syncUI('All set. Sync is on and your data is encrypted.' + (typeof pkOn === 'function' && pkOn() ? ' Tap Add a passkey to use Face ID or Touch ID next time.' : ''));
@@ -257,10 +295,12 @@ function wireAccount() {
     } catch (err) { syncUI('Couldn\'t set up: ' + err.message); }
   };
   $('sync-now').onclick = syncPush;
+  $('sync-other-use').onclick = () => { syncNewOk = true; syncPush(); };
+  $('sync-other-out').onclick = () => $('sync-signout').click();
   $('sync-setpass').onclick = () => $('lock-set').click();
   $('sync-signout').onclick = async () => {
     try { await sbFetch('/auth/v1/logout', {method: 'POST'}); } catch (e) {}
-    sbSave(null); remoteCache = null; remoteChecked = false;
+    sbSave(null); remoteCache = null; remoteChecked = false; syncNewOk = false;
     try { localStorage.removeItem(PW_LINKED); } catch (e) {}
     const c = lockConf(); if (c && c.sync) { delete c.sync; localStorage.setItem(LOCK_KEY, JSON.stringify(c)); }
     syncUI('Signed out. Your data stays on this device.');
