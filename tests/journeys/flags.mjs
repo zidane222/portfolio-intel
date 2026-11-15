@@ -88,8 +88,9 @@ async function open(flags, extra = {}) {
 {
   const {ctx, page, st} = await open({...ALL_ON, sync_writes: false});
   const setup = await page.evaluate(async secret => {
-    localStorage.setItem('pi.sb.session', JSON.stringify({access_token: 't', refresh_token: 'r', expires_at: Math.floor(Date.now() / 1000) + 3600}));
-    localStorage.setItem(LOCK_KEY, JSON.stringify({...(lockConf() || {}), encSalt: 'c2FsdA==', sync: true}));
+    // A device whose sync is on for this account (KAN-120 records the account as syncFor at turn-on)
+    localStorage.setItem('pi.sb.session', JSON.stringify({access_token: 't', refresh_token: 'r', email: 'tester@example.com', expires_at: Math.floor(Date.now() / 1000) + 3600}));
+    localStorage.setItem(LOCK_KEY, JSON.stringify({...(lockConf() || {}), encSalt: 'c2FsdA==', sync: true, syncFor: 'tester@example.com'}));
     VAULT.key = await crypto.subtle.generateKey({name: 'AES-GCM', length: 256}, true, ['encrypt', 'decrypt']);
     watchlist = [secret];
     await syncPush();
