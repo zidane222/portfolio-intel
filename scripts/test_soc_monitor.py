@@ -17,6 +17,7 @@ GOOD = {
     "supabase": {"jobs": {"ok": 30}, "verdicts_today": 30,
                  "budget": {"calls": 10, "tokens": 1000, "calls_cap": 90, "tokens_cap": 180000}},
     "github": {"failed_runs": [], "data_jobs": {"Fetch Congress Trades": "success",
+                                                 "Smart money and yields": "success",
                                                  "Private markets (SEC Form D and Form C)": "success"}},
 }
 
@@ -60,6 +61,14 @@ class Rules(unittest.TestCase):
         d["github"]["data_jobs"]["Private markets (SEC Form D and Form C)"] = "missing"
         self.assertEqual(m.evaluate(d, NOW)[0], m.WARN)
         self.assertEqual(m.evaluate(d, NOW.replace(hour=10))[0], m.OK)
+
+    def test_trades_and_smart_money_judged_separately(self):
+        # KAN-116: each workflow has its own status; one failing does not hide or excuse the other
+        v = variant(lambda d: d["github"]["data_jobs"].update({"Smart money and yields": "failure"}))
+        self.assertEqual(v[0], m.ALERT)
+        self.assertTrue(any("Smart money and yields" in t for _, t in v[1]))
+        self.assertFalse(any("Fetch Congress Trades" in t for _, t in v[1]))
+        self.assertEqual(variant(lambda d: d["github"]["data_jobs"].update({"Smart money and yields": "running"}))[0], m.OK)
 
     def test_unreadable_data_jobs_skip(self):
         self.assertEqual(variant(lambda d: d["github"].update(data_jobs={}))[0], m.OK)

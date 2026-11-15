@@ -31,7 +31,7 @@ SPIKE_429_MIN = 10
 WARN_403_MIN = 50
 SENATE_MAX_AGE_DAYS = 3
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
-DATA_JOBS = {"Fetch Congress Trades": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
+DATA_JOBS = {"Fetch Congress Trades": 13, "Smart money and yields": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
 CF_SCRIPTS = ["pi-market", "pi-news", "pi-rates", "pi-ai", "pi-broker", "pi-disclosures",
               "pi-private", "pi-newsdesk", "pi-flags", "portfolio-intel-api"]
