@@ -535,6 +535,8 @@ class DataWorkflows(unittest.TestCase):
                 os.unlink(tf.name)
         self.assertEqual(run({"read": 900, "waiting": 300}), (m.OK, "insider buys: 900 Form 4 filings read last run, 300 still waiting"))
         self.assertEqual(run({"read": 900, "waiting": 5000})[0], m.WARN)
+        self.assertEqual(run({"read": 900, "waiting": 0, "retrying": 4, "gave_up": 1})[1],
+                         "insider buys: 900 Form 4 filings read last run, 0 still waiting, 4 retrying, 1 given up")
         self.assertEqual(run({"buys": []})[0], m.OK)
         self.assertEqual(m.check_insider_backlog("/nonexistent.json")[0][0], m.WARN)
 
