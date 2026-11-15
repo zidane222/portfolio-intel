@@ -162,8 +162,49 @@ class InsiderBudget(unittest.TestCase):
         self.assertEqual(self.fetched[-1], 'https://www.sec.gov/Archives/edgar/data/1/old.txt')
         self.assertEqual(len(self.fetched), 11)
 
+    def test_oldest_waiting_is_recorded(self):
+        out = sm.insiders(budget_s=3 * 60, clock=lambda: self.t[0])
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        self.assertEqual(out['oldest_waiting'], yesterday)
+        self._save(out)
+        done = sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+        self.assertIsNone(done['oldest_waiting'])
+
+    def test_lookback_reads_seven_days_of_indexes(self):
+        asked = []
+        inner = sm.sec_get
+        def get(url, **kw):
+            if 'daily-index' in url:
+                asked.append(url)
+            return inner(url, **kw)
+        sm.sec_get = get
+        sm.insiders(budget_s=3600, clock=lambda: self.t[0])
+        self.assertEqual(len(asked), sm.INSIDER_LOOKBACK_DAYS)
+        self.assertEqual(sm.INSIDER_LOOKBACK_DAYS, int(os.environ.get('SMART_MONEY_LOOKBACK_DAYS') or 7))
+
     def test_budget_default_reads_env(self):
         self.assertEqual(sm.INSIDER_BUDGET_MIN, float(os.environ.get('SMART_MONEY_INSIDER_BUDGET_MIN') or 8))
+
+
+class DailyDue(unittest.TestCase):
+    """The 13F, yields and OGE parts run once a day; the 3-hourly runs skip them when fresh."""
+
+    def _file(self, d):
+        import json, tempfile
+        tf = tempfile.NamedTemporaryFile('w', suffix='.json', delete=False)
+        json.dump(d, tf); tf.close()
+        self.addCleanup(os.unlink, tf.name)
+        return tf.name
+
+    def test_due_when_old_missing_or_unreadable(self):
+        now = datetime.datetime(2026, 11, 16, 12, tzinfo=datetime.timezone.utc)
+        fresh = self._file({'updated': '2026-11-16T08:00:00+00:00'})
+        stale = self._file({'updated': '2026-11-15T15:00:00+00:00'})
+        self.assertFalse(sm.daily_due(fresh, now))
+        self.assertTrue(sm.daily_due(stale, now))
+        self.assertTrue(sm.daily_due('/nonexistent.json', now))
+        self.assertTrue(sm.daily_due(self._file({'updated': 'not a date'}), now))
+        self.assertFalse(sm.daily_due(self._file({'updated': '2026-11-16T08:00:00'}), now))  # no zone means UTC
 
 
 if __name__ == '__main__':

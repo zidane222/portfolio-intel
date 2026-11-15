@@ -538,6 +538,24 @@ class DataWorkflows(unittest.TestCase):
         self.assertEqual(run({"read": 900, "waiting": 0, "retrying": 4, "gave_up": 1})[1],
                          "insider buys: 900 Form 4 filings read last run, 0 still waiting, 4 retrying, 1 given up")
         self.assertEqual(run({"buys": []})[0], m.OK)
+
+    def test_insider_backlog_age(self):
+        # KAN-118: judged by the age of the oldest unread filing (NOW is the shared test clock)
+        import tempfile
+        def run(oldest, waiting=100):
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+                json.dump({"read": 900, "waiting": waiting, "oldest_waiting": oldest}, tf)
+            try:
+                return m.check_insider_backlog(tf.name, NOW)[0]
+            finally:
+                os.unlink(tf.name)
+        day = lambda n: (NOW.date() - dt.timedelta(days=n)).isoformat()
+        self.assertEqual(run(day(1))[0], m.OK)
+        self.assertEqual(run(day(2))[0], m.WARN)
+        self.assertIn(f"oldest unread from {day(2)} (2 days old)", run(day(2))[1])
+        self.assertEqual(run(day(3))[0], m.ALERT)
+        self.assertEqual(run(None, 0)[0], m.OK)
+        self.assertEqual(run("bad date")[0], m.OK)
         self.assertEqual(m.check_insider_backlog("/nonexistent.json")[0][0], m.WARN)
 
 

@@ -62,6 +62,27 @@ class Rules(unittest.TestCase):
         self.assertEqual(m.evaluate(d, NOW)[0], m.WARN)
         self.assertEqual(m.evaluate(d, NOW.replace(hour=10))[0], m.OK)
 
+    def test_insider_backlog_age(self):
+        # KAN-118: WARN when the oldest unread Form 4 is over 1 day old, ALERT at 3 days
+        at = lambda days: variant(lambda d: d.update(insiders={"waiting": 500, "oldest_age_days": days}))
+        self.assertEqual(at(1)[0], m.OK)
+        self.assertEqual(at(2)[0], m.WARN)
+        self.assertIn("2 days old (500 waiting)", at(2)[1][0][1])
+        self.assertEqual(at(3)[0], m.ALERT)
+        self.assertEqual(variant(lambda d: d.update(insiders={"waiting": 0, "oldest_age_days": None}))[0], m.OK)
+        self.assertEqual(variant(lambda d: d.update(insiders={}))[0], m.OK)
+
+    def test_collect_insiders(self):
+        import json, tempfile, datetime as _dt
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+            json.dump({"waiting": 12, "oldest_waiting": "2026-11-13"}, tf)
+        try:
+            got = m.collect_insiders(_dt.datetime(2026, 11, 16, 14, tzinfo=_dt.timezone.utc), tf.name)
+        finally:
+            os.unlink(tf.name)
+        self.assertEqual(got, {"waiting": 12, "oldest_age_days": 3})
+        self.assertEqual(m.collect_insiders(NOW, "/nonexistent.json"), {})
+
     def test_trades_and_smart_money_judged_separately(self):
         # KAN-116: each workflow has its own status; one failing does not hide or excuse the other
         v = variant(lambda d: d["github"]["data_jobs"].update({"Smart money and yields": "failure"}))
