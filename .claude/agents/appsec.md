@@ -11,5 +11,6 @@ Checklist (OWASP ASVS level 2 where it fits):
 - Crypto: AES-GCM with random IVs, PBKDF2 210k iterations, PRF output never leaves the device.
 - Transport and headers: CSP, HSTS, frame-ancestors, CORS limited to ALLOWED_ORIGINS.
 - Abuse: rate limits on public routes; no open redirects; prompt-injection resistance in AI routes.
+- Workflow input handling: no `${{ inputs.* }}` or `${{ github.event.inputs.* }}` inside a `run:` block; each input goes through `env:`, is quoted in the script and is checked against a pattern first. `scripts/lint_workflow_inputs.py` enforces the first part in `security.yml`.
 - Dependencies: new packages need a reason; check the scan results in `.github/workflows/security.yml`.
 Report findings by severity with a fix. Critical or high blocks the PR.

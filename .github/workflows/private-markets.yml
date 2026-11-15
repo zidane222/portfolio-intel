@@ -29,9 +29,16 @@ jobs:
           python-version: '3.12'
       - run: pip install --quiet requests
       - name: Collect Form D and Form C filings
+        env:
+          INPUT_DAYS: ${{ github.event.inputs.days || '60' }}
         run: |
           # Test pushes on branches fetch a few days only; main keeps the full window
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then DAYS="${{ github.event.inputs.days || '60' }}"; else DAYS=4; rm -f private_markets.json; fi
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            DAYS="$INPUT_DAYS"
+            [[ "$DAYS" =~ ^[0-9]{1,3}$ ]] || { echo "::error::days must be 1 to 3 digits"; exit 1; }
+          else
+            DAYS=4; rm -f private_markets.json
+          fi
           python3 scripts/private_markets.py --days "$DAYS" --out private_markets.json
       - name: Report stats
         run: |

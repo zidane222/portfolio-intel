@@ -24,6 +24,18 @@ jobs:
           curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
           ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
+  workflow-inputs:
+    name: Workflow input handling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -q pyyaml
+      - name: No inputs expression in run blocks
+        run: python3 scripts/lint_workflow_inputs.py
+
   dependencies:
     name: Dependency audit
     runs-on: ubuntu-latest
