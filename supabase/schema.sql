@@ -23,6 +23,11 @@ create policy "own row: delete" on public.synced_data for delete to authenticate
 -- Only signed-in users may use the table; anonymous visitors get nothing.
 revoke all on public.synced_data from anon;
 grant select, insert, update, delete on public.synced_data to authenticated;
+-- No table rights beyond those four (supabase/grants.sql, roadmap 3a). Also stop new tables in public
+-- from getting TRUNCATE, TRIGGER or REFERENCES for the app roles by default.
+revoke truncate, trigger, references on public.synced_data from anon, authenticated;
+alter default privileges for role postgres in schema public
+  revoke truncate, trigger, references on tables from anon, authenticated;
 
 -- Keep payloads a sane size (about 2 MB).
 alter table public.synced_data drop constraint if exists payload_size;
