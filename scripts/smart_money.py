@@ -35,6 +35,10 @@ QUARTERS = 5        # filings kept per investor
 INSIDER_DAYS = 90   # rolling window for insider buys
 INSIDER_MIN = 25000 # ignore tiny purchases
 INSIDER_MAX = 1e9   # no single open-market insider purchase comes near this: larger is a filing or parse error
+# Time budget for the Form 4 loop. When it runs out, the run keeps what it has and saves "seen",
+# so a backlog clears over a few runs instead of one run using up the job limit.
+INSIDER_BUDGET_MIN = float(os.environ.get('SMART_MONEY_INSIDER_BUDGET_MIN') or 8)
+INSIDER_MAX_TRIES = 3  # a Form 4 that fails this many runs in a row is given up and logged
 
 
 def implausible(sh, px):
@@ -209,11 +213,19 @@ def parse_form4(txt, filed):
     }
 
 
-def insiders():
+def insiders(budget_s=None, clock=time.monotonic):
+    """Insider buys from the last 4 daily indexes. Stops once budget_s seconds have passed
+    (default INSIDER_BUDGET_MIN minutes), keeps what it has and reports how many filings still wait."""
+    budget_s = INSIDER_BUDGET_MIN * 60 if budget_s is None else budget_s
+    start = clock()
     store = load('insiders.json', {'buys': [], 'seen': {}})
     seen = store.get('seen') if isinstance(store.get('seen'), dict) else {}  # index path -> day checked
+    # Filings whose fetch or parse failed: path -> {'day', 'tries'}. Retried after new filings,
+    # given up (marked seen) after INSIDER_MAX_TRIES so one bad filing cannot eat every budget.
+    failed = store.get('failed') if isinstance(store.get('failed'), dict) else {}
     buys = store.get('buys', [])
     today = datetime.date.today()
+    queue = []
     for back in range(1, 5):
         day = today - datetime.timedelta(days=back)
         q = (day.month - 1) // 3 + 1
@@ -222,16 +234,39 @@ def insiders():
         except Exception:
             continue  # weekends and holidays have no index
         paths = [l.split()[-1] for l in idx.splitlines() if l.startswith('4 ')]
-        new = [p for p in paths if p not in seen]
+        new = [p for p in dict.fromkeys(paths) if p not in seen and p not in failed]
         print(f'{day}: {len(paths)} Form 4 filings, {len(new)} new')
-        for p in new:
-            try:
-                b = parse_form4(sec_get('https://www.sec.gov/Archives/' + p).text, day.isoformat())
-                if b and re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,6}', b['ticker'] or '') and b['ticker'] not in ('NA', 'N.A.', 'NONE'):
-                    buys.append(b)
-            except Exception as e:
-                print('form4 error', p, e)
-            seen[p] = day.isoformat()
+        queue += [(p, day) for p in new]
+    # Retries go last, oldest first, so new filings always get the budget first
+    retries = sorted(((p, f) for p, f in failed.items() if p not in seen), key=lambda x: x[1].get('day', ''))
+    queue += [(p, datetime.date.fromisoformat(f.get('day') or today.isoformat())) for p, f in retries]
+    done = gave_up = errors = 0
+    for p, day in queue:
+        if clock() - start >= budget_s:
+            break
+        done += 1
+        try:
+            b = parse_form4(sec_get('https://www.sec.gov/Archives/' + p).text, day.isoformat())
+        except Exception as e:
+            errors += 1
+            tries = int((failed.get(p) or {}).get('tries', 0)) + 1
+            if tries >= INSIDER_MAX_TRIES:
+                print(f'form4 error {p}: {type(e).__name__}, try {tries}, giving up')
+                failed.pop(p, None)
+                seen[p] = day.isoformat()
+                gave_up += 1
+            else:
+                print(f'form4 error {p}: {type(e).__name__}, try {tries}, will retry next run')
+                failed[p] = {'day': day.isoformat(), 'tries': tries}
+            continue
+        if b and re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,6}', b['ticker'] or '') and b['ticker'] not in ('NA', 'N.A.', 'NONE'):
+            buys.append(b)
+        failed.pop(p, None)
+        seen[p] = day.isoformat()
+    waiting = len(queue) - done
+    print(f'Form 4 filings read this run: {done} ({errors} failed). Still waiting: {waiting}. '
+          f'Retrying next run: {len(failed)}. Given up this run: {gave_up}'
+          + (f' (time budget of {budget_s / 60:.1f} minutes reached)' if waiting else ''))
     cutoff = (today - datetime.timedelta(days=INSIDER_DAYS)).isoformat()
     uniq = {}
     for b in buys:
@@ -240,16 +275,20 @@ def insiders():
     buys = sorted(uniq.values(), key=lambda b: (b['filed'], b['value']), reverse=True)
     # Remember only the last week of checked filings so the file stays small
     week = (today - datetime.timedelta(days=8)).isoformat()
-    return {'buys': buys, 'seen': {k: v for k, v in seen.items() if v >= week}}
+    return {'buys': buys, 'seen': {k: v for k, v in seen.items() if v >= week},
+            'failed': {k: v for k, v in failed.items() if (v.get('day') or '') >= week},
+            'read': done, 'waiting': waiting, 'retrying': len(failed), 'gave_up': gave_up}
 
 
 if __name__ == '__main__':
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    inv = investors()
-    if inv:
-        with open('smart_money.json', 'w') as f:
-            json.dump({'updated': now, 'investors': inv}, f)
+    # Insiders first and saved at once: the time budget bounds it, and its "seen" list is what lets
+    # the next run resume, so a slow 13F fetch after it can never lose it.
     ins = insiders()
     with open('insiders.json', 'w') as f:
         json.dump({'updated': now, **ins}, f)
     print(f'Insider buys kept: {len(ins["buys"])}')
+    inv = investors()
+    if inv:
+        with open('smart_money.json', 'w') as f:
+            json.dump({'updated': now, 'investors': inv}, f)

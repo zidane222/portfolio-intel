@@ -418,13 +418,58 @@ def check_peer(token, repo, now):
     return [(sev, text)]
 
 
+# ---------------------------------------------------------------- G: data workflows (KAN-116)
+DATA_WORKFLOWS = {"fetch_trades.yml": "Fetch Congress Trades", "smart_money.yml": "Smart money and yields"}
+INSIDER_WAITING_WARN = 2000   # Form 4 filings still waiting after a run; a backlog this big is not clearing
+
+
+def check_data_workflows(token, repo, now):
+    """Each data workflow gets its own status line: one failing never hides the other."""
+    if not token or not repo:
+        return [(WARN, "data workflows: GITHUB_TOKEN or GITHUB_REPOSITORY not set")]
+    out = []
+    for wf, name in DATA_WORKFLOWS.items():
+        try:
+            r = _gh(token, "GET", f"/repos/{repo}/actions/workflows/{wf}/runs?per_page=10")
+            runs = r.json().get("workflow_runs") if r.status_code == 200 else None
+        except Exception as exc:
+            out.append((WARN, f"{name}: runs not readable ({type(exc).__name__})"))
+            continue
+        if runs is None:
+            out.append((WARN, f"{name}: runs not readable (HTTP {r.status_code})"))
+            continue
+        st = peer_status(runs, now)
+        sev = {"success": OK, "running": OK, "failure": ALERT, "missing": ALERT}[st]
+        text = {"success": "ran in the last 26 h", "running": "is running now",
+                "failure": "failed on its last run in the last 26 h", "missing": "has not run in the last 26 h"}[st]
+        out.append((sev, f"{name} {text}"))
+    return out
+
+
+def check_insider_backlog(path="insiders.json"):
+    """smart_money.py records how many Form 4 filings its time budget left waiting."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (FileNotFoundError, ValueError):
+        return [(WARN, "insider buys: insiders.json missing or not valid JSON")]
+    waiting = d.get("waiting")
+    if not isinstance(waiting, int):
+        return [(OK, "insider buys: no backlog count yet (written from the first smart money run after KAN-116)")]
+    sev = WARN if waiting >= INSIDER_WAITING_WARN else OK
+    text = f"insider buys: {d.get('read', '?')} Form 4 filings read last run, {waiting} still waiting"
+    if isinstance(d.get("retrying"), int):  # KAN-117: failed filings retried, given up after 3 tries
+        text += f", {d['retrying']} retrying, {d.get('gave_up', 0)} given up"
+    return [(sev, text)]
+
+
 # ---------------------------------------------------------------- report
 def render(now, findings, overall):
     yesterday = (now - dt.timedelta(days=1)).strftime("%Y-%m-%d")
     lines = [
         f"# Meta supervisor: {now:%Y-%m-%d} {overall}",
         "",
-        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation, Ask health, SOC monitor heartbeat.",
+        f"Run: {now:%Y-%m-%d %H:%M} UTC. Checks: validator canary, news judge ({yesterday}), insights files, source reconciliation, Ask health, SOC monitor heartbeat, data workflows (trades, smart money), insider backlog.",
         "",
         "## Findings",
     ]
@@ -512,7 +557,9 @@ def main():
     # E: Ask pipeline health, F: SOC monitor heartbeat. Neither may stop the run.
     clean = lambda v: re.sub(r"\s+", "", v or "")
     for name, fn in (("Ask health", lambda: check_ask_health(clean(os.environ.get("cfk") or os.environ.get("cf")), clean(os.environ.get("cfkd")), now)),
-                     ("SOC monitor heartbeat", lambda: check_peer(github_token, github_repo, now))):
+                     ("SOC monitor heartbeat", lambda: check_peer(github_token, github_repo, now)),
+                     ("Data workflows", lambda: check_data_workflows(github_token, github_repo, now)),
+                     ("Insider backlog", check_insider_backlog)):
         try:
             all_findings.extend(fn())
         except Exception as exc:

@@ -43,7 +43,22 @@ Render Flask backend (backend/main.py), kept on as fallback (has no /api/ask; ne
   "no stored reads" and "paused", no Groq, no storage)
 
 GitHub Actions
-  fetch_trades (daily 06:00 UTC): House + Senate PTRs, prices, Supabase + BigQuery
+  fetch_trades ("Fetch Congress Trades", daily 06:00 UTC, job limit 40 min): the key feature only. House
+    scrape, Senate (official site, then FMP), FMP paper fill, House check, sectors and committee overlaps,
+    alerts, then commits trades.json, house_paper_last.json, senate_last.json and sectors.json. Save to
+    history (Supabase, BigQuery) runs after the commit, so it cannot block the save. Every step has its
+    own timeout-minutes. Pushes rebase and retry 3 times.
+  smart_money ("Smart money and yields", daily 08:00 UTC + manual, job limit 20 min, contents: write only,
+    no id-token): scripts/smart_money.py (13F holdings, Form 4 insider buys), scripts/yields.py and the
+    Trump OGE filings list. Commits smart_money.json, insiders.json, yields.json, trump_filings.json and
+    data_cache/ (cusip_map.json, 13f/) with the same retry loop. The Form 4 loop has a time budget
+    (SMART_MONEY_INSIDER_BUDGET_MIN, default 8): when it runs out the run saves "seen" and records
+    `read` and `waiting` in insiders.json, so a backlog clears over several runs. insiders.json is written
+    before the 13F fetch. A filing whose fetch or parse fails is not marked seen: it goes into insiders.json
+    `failed` with a try count, is retried after new filings on later runs, and is given up (marked seen,
+    logged) after 3 tries (KAN-117). `retrying` and `gave_up` counts sit next to `read` and `waiting`;
+    `/api/insiders` still returns only buys and updated. SEC rate stays under 10 requests a second. Split out of fetch_trades in KAN-116
+    after three runs (2026-11-13 to 11-15) were cancelled at 45 minutes in the SEC step.
   deploy-worker (push): services (including private) then gateway, Secrets Store bindings
   insights (weekly Sun 07:30 UTC + manual; push on scripts/analytics/** is a dry run): BigQuery via WIF,
     two jobs. `insights` (contents: read, id-token: write): offline tests, auth, scripts/analytics/run.py,
@@ -58,7 +73,8 @@ SOC monitor (soc-monitor.yml, 13:15 UTC daily + manual): scripts/soc_monitor.py,
   Reads Cloudflare Workers telemetry (cfk/cfkd, all pi-* and portfolio-intel-api), Supabase news_jobs,
   news_verdicts and news_budget (SP/SR, read-only), GitHub runs and alert counts (GITHUB_TOKEN).
   Severity OK/WARN/ALERT in code; WARN or ALERT opens or updates one issue labeled soc-monitor, OK closes it.
-  ALERT: cron failure streak >= 5, > 20 5xx, 0 verdicts after 06:00 UTC, failed fetch_trades or private-markets run.
+  ALERT: cron failure streak >= 5, > 20 5xx, 0 verdicts after 06:00 UTC, failed fetch_trades, smart_money or private-markets run
+  (each data job has its own status line).
   WARN: budget >= 80%, request/exception/429 spikes (> 3x 7-day baseline), job errors, failed workflows, open alerts.
   Exit 1 only if Cloudflare or Supabase is unreachable. Output carries no secrets, IPs, emails, tickers or bodies.
 Meta supervisor (meta-supervisor.yml, 14:10 UTC daily + manual): scripts/meta_supervisor.py, stdlib + requests, no AI.
@@ -74,6 +90,8 @@ Meta supervisor (meta-supervisor.yml, 14:10 UTC daily + manual): scripts/meta_su
   the SOC monitor's helpers): WARN at 25% of answers falling back to sources only, ALERT at 50% (5+ cases),
   WARN for an intent with 3+ cases and 2/3 falling back; top rule IDs listed. F heartbeat: the SOC monitor
   ran in the last 26 h (ALERT if not); the SOC monitor checks the meta supervisor the same way.
+  G data workflows: fetch_trades.yml and smart_money.yml each get their own line (ALERT if the last run in
+  26 h failed or there was none). Insider backlog: insiders.json `waiting`, `retrying` and `gave_up` reported, WARN at 2000 or more waiting.
 BigQuery (portfolio-intel-512216): full archive, signed in via Workload Identity Federation
 
 Cloudflare Cron Trigger (pi-newsdesk, "*/3 4,5 * * *", 04:00 to 05:57 UTC every 3 minutes, before
