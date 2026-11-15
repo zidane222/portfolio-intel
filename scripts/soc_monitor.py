@@ -30,6 +30,8 @@ ERROR_SPIKE_MIN = 10
 SPIKE_429_MIN = 10
 WARN_403_MIN = 50
 SENATE_MAX_AGE_DAYS = 3
+INSIDER_BACKLOG_WARN_DAYS = 1    # oldest unread Form 4 more than this many days old: WARN
+INSIDER_BACKLOG_ALERT_DAYS = 3   # at this age: ALERT (the SEC index window is 7 days)
 BATCH_END_HOUR_UTC = 6     # verdicts expected once this hour has passed
 DATA_JOBS = {"Fetch Congress Trades": 13, "Smart money and yields": 13, "Private markets (SEC Form D and Form C)": 13}  # name: UTC hour by which a run is expected (GitHub starts scheduled runs late, often near 12:00)
 CF_BASE = "https://api.cloudflare.com/client/v4/accounts/{a}/workers/observability/telemetry/query"
@@ -97,6 +99,13 @@ def evaluate(d, now):
         elif sen.get("stale") or (sen.get("age_days") is not None and sen["age_days"] > SENATE_MAX_AGE_DAYS):
             add(ALERT, f"Senate trades are stale: last good data is {sen.get('age_days')} days old (scrape failing)")
         # Official vs FMP reconciliation is judged by the meta supervisor (check D), not here
+
+    # Insider buys backlog (KAN-118): judged by the age of the oldest Form 4 filing still unread
+    ins = d.get("insiders") or {}
+    age = ins.get("oldest_age_days")
+    if isinstance(age, int) and age > INSIDER_BACKLOG_WARN_DAYS:
+        sev = ALERT if age >= INSIDER_BACKLOG_ALERT_DAYS else WARN
+        add(sev, f"insider buys behind: oldest unread Form 4 filing is {age} days old ({ins.get('waiting', '?')} waiting)")
 
     cf = d.get("cloudflare") or {}
     sb = d.get("supabase") or {}
@@ -530,6 +539,23 @@ def collect_senate(now, path="trades.json"):
     return {"count": count, "stale": bool(d.get("senate_stale")), "age_days": age, "house_check": d.get("fmp_house_check") or {}}
 
 
+def collect_insiders(now, path="insiders.json"):
+    """Insider buys backlog from the committed insiders.json (KAN-118): counts and a date only."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    age = None
+    oldest = d.get("oldest_waiting")
+    if oldest:
+        try:
+            age = (now.date() - dt.date.fromisoformat(str(oldest))).days
+        except ValueError:
+            age = None
+    return {"waiting": d.get("waiting"), "oldest_age_days": age}
+
+
 def collect_flags(url=None):
     """{'v', 'updated', 'flags'} from the public endpoint, or {'unreachable': True}. Read only."""
     try:
@@ -566,6 +592,7 @@ def main(argv):
     gtoken, repo = env.get("GITHUB_TOKEN", ""), env.get("GITHUB_REPOSITORY", "")
     data["github"] = collect_github(gtoken, repo, now) if gtoken and repo else {}
     data["senate"] = collect_senate(now)
+    data["insiders"] = collect_insiders(now)
     data["flags"] = collect_flags()
     if problems:
         for p in problems:

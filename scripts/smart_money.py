@@ -39,6 +39,25 @@ INSIDER_MAX = 1e9   # no single open-market insider purchase comes near this: la
 # so a backlog clears over a few runs instead of one run using up the job limit.
 INSIDER_BUDGET_MIN = float(os.environ.get('SMART_MONEY_INSIDER_BUDGET_MIN') or 8)
 INSIDER_MAX_TRIES = 3  # a Form 4 that fails this many runs in a row is given up and logged
+# Daily indexes read each run. A filing still waiting when its day leaves this window is never read,
+# so it matches the 8 days "seen" is kept (KAN-118; was 4).
+INSIDER_LOOKBACK_DAYS = int(os.environ.get('SMART_MONEY_LOOKBACK_DAYS') or 7)
+# smart_money.yml runs every 3 hours; the 13F, yields and OGE parts run only when older than this
+DAILY_HOURS = float(os.environ.get('SMART_MONEY_DAILY_HOURS') or 20)
+
+
+def daily_due(path='smart_money.json', now=None):
+    """True when the daily parts (13F holdings, yields, OGE) should run: the file is missing,
+    unreadable or older than DAILY_HOURS."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    try:
+        with open(path) as f:
+            ts = datetime.datetime.fromisoformat(str(json.load(f).get('updated') or '').replace('Z', '+00:00'))
+    except Exception:
+        return True
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=datetime.timezone.utc)
+    return (now - ts).total_seconds() >= DAILY_HOURS * 3600
 
 
 def implausible(sh, px):
@@ -226,7 +245,7 @@ def insiders(budget_s=None, clock=time.monotonic):
     buys = store.get('buys', [])
     today = datetime.date.today()
     queue = []
-    for back in range(1, 5):
+    for back in range(1, INSIDER_LOOKBACK_DAYS + 1):
         day = today - datetime.timedelta(days=back)
         q = (day.month - 1) // 3 + 1
         try:
@@ -264,8 +283,11 @@ def insiders(budget_s=None, clock=time.monotonic):
         failed.pop(p, None)
         seen[p] = day.isoformat()
     waiting = len(queue) - done
+    # Oldest filing day not yet read: unread queue items plus filings that failed and will be retried
+    pending_days = [d.isoformat() for _, d in queue[done:]] + [f.get('day') for f in failed.values() if f.get('day')]
+    oldest_waiting = min(pending_days) if pending_days else None
     print(f'Form 4 filings read this run: {done} ({errors} failed). Still waiting: {waiting}. '
-          f'Retrying next run: {len(failed)}. Given up this run: {gave_up}'
+          f'Retrying next run: {len(failed)}. Given up this run: {gave_up}. Oldest waiting: {oldest_waiting or "none"}'
           + (f' (time budget of {budget_s / 60:.1f} minutes reached)' if waiting else ''))
     cutoff = (today - datetime.timedelta(days=INSIDER_DAYS)).isoformat()
     uniq = {}
@@ -277,10 +299,15 @@ def insiders(budget_s=None, clock=time.monotonic):
     week = (today - datetime.timedelta(days=8)).isoformat()
     return {'buys': buys, 'seen': {k: v for k, v in seen.items() if v >= week},
             'failed': {k: v for k, v in failed.items() if (v.get('day') or '') >= week},
-            'read': done, 'waiting': waiting, 'retrying': len(failed), 'gave_up': gave_up}
+            'read': done, 'waiting': waiting, 'retrying': len(failed), 'gave_up': gave_up,
+            'oldest_waiting': oldest_waiting}
 
 
 if __name__ == '__main__':
+    import sys
+    if '--daily-due' in sys.argv:  # smart_money.yml asks whether the daily parts should run
+        print('true' if daily_due() else 'false')
+        raise SystemExit
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     # Insiders first and saved at once: the time budget bounds it, and its "seen" list is what lets
     # the next run resume, so a slow 13F fetch after it can never lose it.
@@ -288,6 +315,9 @@ if __name__ == '__main__':
     with open('insiders.json', 'w') as f:
         json.dump({'updated': now, **ins}, f)
     print(f'Insider buys kept: {len(ins["buys"])}')
+    if os.environ.get('SMART_MONEY_DAILY') == 'false':
+        print('13F holdings are fresh (updated in the last day); skipped this run')
+        raise SystemExit
     inv = investors()
     if inv:
         with open('smart_money.json', 'w') as f:

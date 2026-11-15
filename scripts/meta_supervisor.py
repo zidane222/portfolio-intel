@@ -446,7 +446,11 @@ def check_data_workflows(token, repo, now):
     return out
 
 
-def check_insider_backlog(path="insiders.json"):
+INSIDER_AGE_WARN_DAYS = 1    # same thresholds as the SOC monitor
+INSIDER_AGE_ALERT_DAYS = 3
+
+
+def check_insider_backlog(path="insiders.json", now=None):
     """smart_money.py records how many Form 4 filings its time budget left waiting."""
     try:
         with open(path, encoding="utf-8") as fh:
@@ -460,6 +464,19 @@ def check_insider_backlog(path="insiders.json"):
     text = f"insider buys: {d.get('read', '?')} Form 4 filings read last run, {waiting} still waiting"
     if isinstance(d.get("retrying"), int):  # KAN-117: failed filings retried, given up after 3 tries
         text += f", {d['retrying']} retrying, {d.get('gave_up', 0)} given up"
+    # KAN-118: the age of the oldest unread filing is the real measure of how far behind we are
+    oldest = d.get("oldest_waiting")
+    if oldest and now is not None:
+        try:
+            age = (now.date() - dt.date.fromisoformat(str(oldest))).days
+        except ValueError:
+            age = None
+        if age is not None:
+            text += f", oldest unread from {oldest} ({age} days old)"
+            if age >= INSIDER_AGE_ALERT_DAYS:
+                sev = ALERT
+            elif age > INSIDER_AGE_WARN_DAYS:
+                sev = max(sev, WARN, key=lambda s: RANK[s])
     return [(sev, text)]
 
 
@@ -559,7 +576,7 @@ def main():
     for name, fn in (("Ask health", lambda: check_ask_health(clean(os.environ.get("cfk") or os.environ.get("cf")), clean(os.environ.get("cfkd")), now)),
                      ("SOC monitor heartbeat", lambda: check_peer(github_token, github_repo, now)),
                      ("Data workflows", lambda: check_data_workflows(github_token, github_repo, now)),
-                     ("Insider backlog", check_insider_backlog)):
+                     ("Insider backlog", lambda: check_insider_backlog(now=now))):
         try:
             all_findings.extend(fn())
         except Exception as exc:

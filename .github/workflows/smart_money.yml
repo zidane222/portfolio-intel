@@ -1,11 +1,12 @@
 name: Smart money and yields
 
 # Split out of fetch_trades.yml (KAN-116) so a slow SEC fetch can never stop trades.json from saving.
-# Runs 2 hours after Fetch Congress Trades (06:00 UTC) and commits only its own files.
+# Commits only its own files. Runs every 3 hours (KAN-118) so the Form 4 backlog is read in small
+# batches; the 13F, yields and OGE parts run only when smart_money.json is more than 20 hours old.
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # 08:00 UTC daily
+    - cron: '0 */3 * * *'   # every 3 hours, on the hour UTC
   workflow_dispatch:
 
 permissions:
@@ -32,20 +33,29 @@ jobs:
         timeout-minutes: 2
         run: python3 -m unittest scripts/test_smart_money.py
 
+      - name: What is due this run
+        id: due
+        timeout-minutes: 1
+        run: echo "daily=$(python3 scripts/smart_money.py --daily-due)" >> "$GITHUB_OUTPUT"
+
       - name: Famous investors and insider buys (SEC)
-        timeout-minutes: 12
+        timeout-minutes: 16
         continue-on-error: true
         env:
-          SMART_MONEY_INSIDER_BUDGET_MIN: '8'   # Form 4 loop stops here and resumes next run
+          SMART_MONEY_DAILY: ${{ steps.due.outputs.daily }}
+          # Form 4 loop stops here and resumes next run: 8 min when the 13F fetch also runs, 14 otherwise
+          SMART_MONEY_INSIDER_BUDGET_MIN: ${{ steps.due.outputs.daily == 'true' && '8' || '14' }}
         # -u: unbuffered, so progress shows in the log while it runs
         run: python3 -u scripts/smart_money.py
 
       - name: Treasury yields
+        if: steps.due.outputs.daily == 'true'
         timeout-minutes: 3
         continue-on-error: true
         run: python3 -u scripts/yields.py
 
       - name: Fetch Trump OGE filings list
+        if: steps.due.outputs.daily == 'true'
         timeout-minutes: 4
         continue-on-error: true
         run: |
