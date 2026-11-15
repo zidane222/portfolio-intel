@@ -37,6 +37,7 @@ create policy "public read" on public.hist_trades for select to anon, authentica
 create policy "public read" on public.hist_prices for select to anon, authenticated using (true);
 revoke insert, update, delete on public.hist_trades, public.hist_prices from anon, authenticated;
 grant select on public.hist_trades, public.hist_prices to anon, authenticated;
+revoke truncate, trigger, references on public.hist_trades, public.hist_prices from anon, authenticated;
 
 -- Size of the history tables in bytes, for the loader's 450 MB guard.
 create or replace function public.hist_size() returns bigint language sql security definer set search_path = '' as $$
